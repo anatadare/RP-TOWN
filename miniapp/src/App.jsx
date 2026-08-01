@@ -73,8 +73,8 @@ export default function App() {
     try {
       await enterRoom(citizen.id, selectedRoom.id)
       hapticSuccess()
-      if (selectedRoom.telegram_topic_url) {
-        openTelegramLink(selectedRoom.telegram_topic_url)
+      if (selectedRoom.telegram_group_url) {
+        openTelegramLink(selectedRoom.telegram_group_url)
       }
     } catch (err) {
       console.error(err)
