@@ -1,0 +1,403 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
+
+:root {
+  --sky-dusk-1: #1b2340;
+  --sky-dusk-2: #2f2b57;
+  --sky-dusk-3: #6b3f66;
+  --lantern: #ffb454;
+  --lantern-soft: #ffd699;
+  --moss: #3e5c50;
+  --moss-light: #5b7f6e;
+  --paper: #f4ecd8;
+  --ink: #201a2e;
+  --ink-soft: #cfc9e8;
+  --path: rgba(244, 236, 216, 0.28);
+
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--ink-soft);
+  background: linear-gradient(180deg, var(--sky-dusk-1) 0%, var(--sky-dusk-2) 55%, var(--sky-dusk-3) 100%);
+  overflow-x: hidden;
+}
+
+.town {
+  min-height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px 16px 32px;
+  position: relative;
+}
+
+/* Bintang ambient di langit */
+.town::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 20% 15%, #fff, transparent),
+    radial-gradient(1px 1px at 60% 8%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 80% 20%, #fff, transparent),
+    radial-gradient(1px 1px at 35% 25%, #fff, transparent),
+    radial-gradient(1px 1px at 90% 12%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 10% 35%, #fff, transparent);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Header */
+.town-header {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.town-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 34px;
+  letter-spacing: 0.5px;
+  color: var(--paper);
+  margin: 0;
+  text-shadow: 0 0 24px rgba(255, 180, 84, 0.25);
+}
+
+.town-subtitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--lantern-soft);
+  opacity: 0.8;
+  margin: 4px 0 0;
+}
+
+/* Clock badge — signature element: waktu & fase dunia */
+.world-clock {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 18px auto 26px;
+  padding: 10px 18px;
+  width: fit-content;
+  border-radius: 999px;
+  background: rgba(244, 236, 216, 0.08);
+  border: 1px solid rgba(244, 236, 216, 0.16);
+  backdrop-filter: blur(6px);
+}
+
+.world-clock .phase-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lantern);
+  box-shadow: 0 0 10px 2px var(--lantern);
+}
+
+.world-clock span {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--paper);
+}
+
+/* Card citizen */
+.citizen-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(244, 236, 216, 0.06);
+  border: 1px solid rgba(244, 236, 216, 0.14);
+  border-radius: 16px;
+  padding: 12px 14px;
+  margin-bottom: 24px;
+}
+
+.citizen-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--moss);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--paper);
+  font-size: 16px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.citizen-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.citizen-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--paper);
+  margin: 0;
+}
+
+.citizen-status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  opacity: 0.75;
+  margin: 2px 0 0;
+}
+
+/* Jalur peta — garis titik-titik penghubung antar room */
+.town-map {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.town-map::before {
+  content: '';
+  position: absolute;
+  top: 28px;
+  bottom: 28px;
+  left: 34px;
+  width: 2px;
+  background-image: linear-gradient(var(--path) 50%, transparent 0%);
+  background-size: 2px 10px;
+  background-repeat: repeat-y;
+  z-index: -1;
+}
+
+/* Room building card */
+.room-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(244, 236, 216, 0.09), rgba(244, 236, 216, 0.03));
+  border: 1px solid rgba(244, 236, 216, 0.14);
+  margin-bottom: 14px;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  color: inherit;
+}
+
+.room-card:active {
+  transform: scale(0.98);
+}
+
+.room-card:hover,
+.room-card:focus-visible {
+  background: linear-gradient(135deg, rgba(255, 180, 84, 0.14), rgba(244, 236, 216, 0.04));
+  border-color: rgba(255, 180, 84, 0.35);
+  outline: none;
+}
+
+.room-icon-wrap {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--moss);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+}
+
+.room-lantern-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--lantern);
+  color: #201a2e;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 10.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 8px 1px rgba(255, 180, 84, 0.6);
+}
+
+.room-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.room-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--paper);
+  margin: 0 0 2px;
+}
+
+.room-desc {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  opacity: 0.75;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-occupants {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.room-occupant-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lantern-soft);
+  opacity: 0.8;
+}
+
+.room-occupant-names {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--lantern-soft);
+  opacity: 0.85;
+}
+
+.room-arrow {
+  font-size: 18px;
+  color: var(--lantern-soft);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* Loading & error states */
+.state-message {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 40px 20px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  opacity: 0.7;
+  line-height: 1.6;
+}
+
+/* Modal masuk room */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 8, 20, 0.7);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 10;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-sheet {
+  width: 100%;
+  max-width: 480px;
+  background: var(--sky-dusk-2);
+  border: 1px solid rgba(244, 236, 216, 0.15);
+  border-bottom: none;
+  border-radius: 22px 22px 0 0;
+  padding: 24px 20px 28px;
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-icon {
+  font-size: 40px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.modal-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 20px;
+  color: var(--paper);
+  text-align: center;
+  margin: 0 0 6px;
+}
+
+.modal-desc {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--ink-soft);
+  opacity: 0.8;
+  text-align: center;
+  margin: 0 0 22px;
+  line-height: 1.5;
+}
+
+.modal-btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 14px;
+  border: none;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14.5px;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+
+.modal-btn-primary {
+  background: var(--lantern);
+  color: #201a2e;
+}
+
+.modal-btn-secondary {
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid rgba(244, 236, 216, 0.18);
+}
