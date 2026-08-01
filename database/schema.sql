@@ -23,7 +23,7 @@ create table if not exists rooms (
   name text not null,                 -- contoh: 'Pantai'
   emoji text not null default '📍',
   description text,
-  telegram_topic_url text,            -- link deep-link ke Forum Topic Telegram, contoh: https://t.me/c/1234567890/5
+  telegram_group_url text,            -- link invite grup Telegram khusus room ini, contoh: https://t.me/+AbCdEfGhIjK
   sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
@@ -69,8 +69,8 @@ alter publication supabase_realtime add table room_presence;
 
 -- ============================================
 -- Data awal: 5 room pertama
--- Ganti telegram_topic_url dengan link topic beneran setelah kamu
--- bikin Forum Topics di grup Telegram kamu (lihat README bot/).
+-- Ganti telegram_group_url dengan link invite grup beneran setelah kamu
+-- bikin grup terpisah untuk tiap room (lihat README).
 -- ============================================
 insert into rooms (slug, name, emoji, description, sort_order) values
   ('rumah', 'Rumah', '🏠', 'Tempat istirahat & personal space kamu', 1),
