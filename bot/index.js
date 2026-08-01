@@ -38,7 +38,7 @@ bot.command('town', (ctx) => {
 // Placeholder: nanti di sini kita tambahkan
 // - cron job siklus waktu/cuaca dunia
 // - broadcast event / "berita kota" terjadwal
-// - command admin untuk membuat Forum Topic baru per room
+// - command admin untuk mendaftarkan link grup baru per room
 
 bot.launch()
 console.log('RP Town bot jalan...')
