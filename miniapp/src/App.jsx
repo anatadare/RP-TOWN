@@ -3,6 +3,7 @@ import './App.css'
 import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSuccess } from './lib/telegram'
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms } from './lib/rooms'
 import TownMap from './components/TownMap'
+import HousingDistrict from './components/HousingDistrict'
 
 const POLL_INTERVAL_MS = 5000 // fetch ulang data tiap 5 detik
 
@@ -26,6 +27,7 @@ export default function App() {
   const [error, setError] = useState(null)
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [entering, setEntering] = useState(false)
+  const [housingRoom, setHousingRoom] = useState(null)
 
   const phase = useMemo(getWorldPhase, [])
 
@@ -96,7 +98,11 @@ export default function App() {
 
   function handleOpenRoom(room) {
     hapticSelect()
-    setSelectedRoom(room)
+    if (room.slug === 'rumah') {
+      setHousingRoom(room)
+    } else {
+      setSelectedRoom(room)
+    }
   }
 
   async function handleConfirmEnter() {
@@ -165,6 +171,14 @@ export default function App() {
             </button>
           </div>
         </div>
+      )}
+      {housingRoom && (
+        <HousingDistrict
+          districtRoom={housingRoom}
+          citizen={citizen}
+          onClose={() => setHousingRoom(null)}
+          onCitizenUpdate={setCitizen}
+        />
       )}
     </div>
   )
