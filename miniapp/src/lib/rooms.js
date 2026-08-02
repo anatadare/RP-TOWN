@@ -62,16 +62,9 @@ export async function enterRoom(citizenId, roomId) {
   if (insertError) throw insertError
 }
 
-// Subscribe realtime: setiap kali ada perubahan presence, callback dipanggil
-export function subscribeToPresence(callback) {
-  const channel = supabase
-    .channel('room_presence_changes')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'room_presence' },
-      callback
-    )
-    .subscribe()
-
-  return () => supabase.removeChannel(channel)
+// Polling: dipanggil berulang dari App.jsx tiap beberapa detik,
+// bukan koneksi realtime yang "nyantol" terus. Ini menghindari limit
+// concurrent realtime connections di Supabase free tier.
+export async function pollRooms() {
+  return getRoomsWithPresence()
 }
