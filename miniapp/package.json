@@ -11,9 +11,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
+    "@react-three/drei": "^9.114.0",
+    "@react-three/fiber": "^9.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-zoom-pan-pinch": "^4.0.3"
+    "react-zoom-pan-pinch": "^4.0.3",
+    "three": "^0.169.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
