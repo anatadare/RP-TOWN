@@ -1,6 +1,6 @@
-import { Suspense, useEffect, useMemo, useState } from 'react'
-import { Canvas } from '@react-three/fiber'
-import { Bounds, OrbitControls, useGLTF } from '@react-three/drei'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Canvas, useThree } from '@react-three/fiber'
+import { OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { assignBuildingToRoom, unassignBuilding, createRoomForBuilding } from '../lib/rooms'
 
@@ -52,7 +52,7 @@ function TownModel({ assignedByKey, adminMode, hoveredKey, onHover, onBuildingCl
     })
   }, [scene, assignedByKey, hoveredKey, adminMode])
 
-  function handlePointerDown(e) {
+  function handleClick(e) {
     const name = e.object?.name
     if (name && name.startsWith(BUILDING_PREFIX)) {
       e.stopPropagation()
@@ -71,7 +71,7 @@ function TownModel({ assignedByKey, adminMode, hoveredKey, onHover, onBuildingCl
   return (
     <primitive
       object={scene}
-      onPointerDown={handlePointerDown}
+      onClick={handleClick}
       onPointerMove={handlePointerMove}
       onPointerOut={() => onHover(null)}
     />
@@ -79,6 +79,51 @@ function TownModel({ assignedByKey, adminMode, hoveredKey, onHover, onBuildingCl
 }
 
 useGLTF.preload(MODEL_URL)
+
+// Naro posisi kamera SEKALI aja pas model pertama kali kebaca, fokus ke area
+// bangunan aja (bukan ke seluruh peta termasuk jalan yang jauh di pinggir).
+// Sengaja tidak "observe"/refit terus-terusan, biar posisi kamera user
+// tidak ke-reset sendiri tiap ada resize (misal address bar HP muncul-hilang).
+function FrameBuildingsOnce({ groupRef }) {
+  const { camera, controls } = useThree()
+  const framed = useRef(false)
+
+  useEffect(() => {
+    if (framed.current || !groupRef.current) return
+
+    const box = new THREE.Box3()
+    let found = false
+    groupRef.current.traverse((obj) => {
+      if (obj.isMesh && obj.name.startsWith(BUILDING_PREFIX)) {
+        box.expandByObject(obj)
+        found = true
+      }
+    })
+    if (!found) return
+
+    framed.current = true
+
+    const size = box.getSize(new THREE.Vector3())
+    const center = box.getCenter(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.z) || 1
+
+    camera.position.set(center.x, center.y + maxDim * 1.05, center.z + maxDim * 0.5)
+    camera.near = Math.max(maxDim / 200, 0.1)
+    camera.far = maxDim * 20
+    camera.updateProjectionMatrix()
+
+    if (controls) {
+      controls.target.copy(center)
+      controls.minDistance = maxDim * 0.12
+      controls.maxDistance = maxDim * 2.2
+      controls.update()
+    } else {
+      camera.lookAt(center)
+    }
+  })
+
+  return null
+}
 
 // Panel yang muncul pas sebuah bangunan diklik dalam mode admin:
 // pilih room yang sudah ada, lepas assignment, atau bikin room baru.
@@ -207,6 +252,7 @@ function BuildingAssignPanel({ buildingKey, rooms, currentRoom, onAssign, onUnas
 export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChanged }) {
   const [hoveredKey, setHoveredKey] = useState(null)
   const [pickerBuilding, setPickerBuilding] = useState(null)
+  const modelGroupRef = useRef()
 
   const assignedByKey = useMemo(() => {
     const map = {}
@@ -233,7 +279,7 @@ export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChang
         <directionalLight position={[60, 100, 40]} intensity={1.15} castShadow />
         <hemisphereLight args={['#6b7fd9', '#232a45', 0.4]} />
         <Suspense fallback={null}>
-          <Bounds fit clip observe margin={1.15}>
+          <group ref={modelGroupRef}>
             <TownModel
               assignedByKey={assignedByKey}
               adminMode={adminMode}
@@ -241,15 +287,22 @@ export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChang
               onHover={setHoveredKey}
               onBuildingClick={handleBuildingClick}
             />
-          </Bounds>
+          </group>
         </Suspense>
+        {/* Interaksi ala "papan": geser (pan) + zoom aja, TIDAK bisa diputer (rotate),
+            biar gampang milih bangunan dan gak bikin pusing kayak orbit 3D bebas */}
         <OrbitControls
           makeDefault
+          enableRotate={false}
           enableDamping
-          dampingFactor={0.08}
-          maxPolarAngle={Math.PI / 2.15}
-          minDistance={10}
+          dampingFactor={0.12}
+          screenSpacePanning
+          zoomSpeed={0.8}
+          panSpeed={0.9}
+          mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
+          touches={{ ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN }}
         />
+        <FrameBuildingsOnce groupRef={modelGroupRef} />
       </Canvas>
 
       {adminMode && (
