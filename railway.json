@@ -1,9 +1,9 @@
 {
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "cd bot && npm install"
+    "buildCommand": "npm install"
   },
   "deploy": {
-    "startCommand": "cd bot && npm start"
+    "startCommand": "npm start"
   }
 }
