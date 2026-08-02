@@ -13,6 +13,18 @@ const COLOR_ASSIGNED = '#ffb454' // lantern, bangunan yang sudah jadi room
 const COLOR_HOVER_ASSIGNED = '#ffd699'
 const COLOR_HOVER_EMPTY = '#7fb8ff' // biru, dipakai pas admin hover bangunan kosong
 
+// File .glb-nya diekspor dengan sumbu "atas" di Z (bukan Y seperti standar
+// three.js/glTF), makanya kalau dipasang apa adanya, kamera "tampak atas" jadi
+// nge-liat dari samping/miring parah (peta jadi kayak "kebalik"). Ini koreksi
+// satu kali: puter -90° di sumbu X supaya Z (asli: atas) jadi Y (three.js: atas).
+const AXIS_FIX_ROTATION = [-Math.PI / 2, 0, 0]
+
+// Kemiringan kamera dikunci sangat kecil (bukan 0 derajat persis) supaya tetap
+// terasa "tampak atas" kayak papan, tapi menghindari kondisi kamera lurus 90°
+// yang bikin arah "atas" kamera jadi tidak stabil (gimbal lock). Dipakai
+// bareng di posisi kamera awal & batas OrbitControls, biar konsisten.
+const TOP_DOWN_TILT = THREE.MathUtils.degToRad(6)
+
 function TownModel({ assignedByKey, adminMode, hoveredKey, onHover, onBuildingClick }) {
   const { scene } = useGLTF(MODEL_URL)
 
@@ -69,12 +81,14 @@ function TownModel({ assignedByKey, adminMode, hoveredKey, onHover, onBuildingCl
   }
 
   return (
-    <primitive
-      object={scene}
-      onClick={handleClick}
-      onPointerMove={handlePointerMove}
-      onPointerOut={() => onHover(null)}
-    />
+    <group rotation={AXIS_FIX_ROTATION}>
+      <primitive
+        object={scene}
+        onClick={handleClick}
+        onPointerMove={handlePointerMove}
+        onPointerOut={() => onHover(null)}
+      />
+    </group>
   )
 }
 
@@ -90,6 +104,11 @@ function FrameBuildingsOnce({ groupRef }) {
 
   useEffect(() => {
     if (framed.current || !groupRef.current) return
+
+    // Pastikan matrix dunia (termasuk rotasi koreksi sumbu di atas) sudah
+    // ke-update sebelum dipakai buat hitung bounding box, biar tidak kebaca
+    // posisi lama (frame sebelum rotasi diterapkan).
+    groupRef.current.updateMatrixWorld(true)
 
     const box = new THREE.Box3()
     let found = false
@@ -107,15 +126,19 @@ function FrameBuildingsOnce({ groupRef }) {
     const center = box.getCenter(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.z) || 1
 
-    camera.position.set(center.x, center.y + maxDim * 1.05, center.z + maxDim * 0.5)
+    // Kamera diposisikan hampir tegak lurus di atas pusat kota (tampak atas
+    // ala papan), dengan sedikit offset horizontal sesuai TOP_DOWN_TILT biar
+    // orientasi kamera tetap stabil (lihat komentar di atas const-nya).
+    const height = maxDim * 1.4
+    camera.position.set(center.x, center.y + height, center.z + height * Math.tan(TOP_DOWN_TILT))
     camera.near = Math.max(maxDim / 200, 0.1)
     camera.far = maxDim * 20
     camera.updateProjectionMatrix()
 
     if (controls) {
       controls.target.copy(center)
-      controls.minDistance = maxDim * 0.12
-      controls.maxDistance = maxDim * 2.2
+      controls.minDistance = maxDim * 0.3
+      controls.maxDistance = maxDim * 3
       controls.update()
     } else {
       camera.lookAt(center)
@@ -289,11 +312,14 @@ export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChang
             />
           </group>
         </Suspense>
-        {/* Interaksi ala "papan": geser (pan) + zoom aja, TIDAK bisa diputer (rotate),
-            biar gampang milih bangunan dan gak bikin pusing kayak orbit 3D bebas */}
+        {/* Interaksi ala "papan": geser (pan) + zoom aja, TIDAK bisa diputer (rotate)
+            ataupun dimiringkan (polar angle dikunci), biar peta selalu tampak dari
+            atas dan user tidak akan pernah bisa "kebalik" lihat sisi bawah peta. */}
         <OrbitControls
           makeDefault
           enableRotate={false}
+          minPolarAngle={TOP_DOWN_TILT}
+          maxPolarAngle={TOP_DOWN_TILT}
           enableDamping
           dampingFactor={0.12}
           screenSpacePanning
