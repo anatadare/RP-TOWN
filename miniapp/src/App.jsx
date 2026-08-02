@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import './App.css'
 import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSuccess } from './lib/telegram'
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms } from './lib/rooms'
+import TownMap from './components/TownMap'
 
 const POLL_INTERVAL_MS = 5000 // fetch ulang data tiap 5 detik
 
@@ -117,62 +118,35 @@ export default function App() {
 
   return (
     <div className="town">
-      <header className="town-header">
-        <h1 className="town-title">RP Town</h1>
-        <p className="town-subtitle">Kota kecil untuk komunitas roleplay</p>
-      </header>
+      <div className="town-overlay-top">
+        <header className="town-header">
+          <h1 className="town-title">RP Town</h1>
+          <p className="town-subtitle">Kota kecil untuk komunitas roleplay</p>
+        </header>
 
-      <div className="world-clock">
-        <span className="phase-dot" style={{ background: phase.dot, boxShadow: `0 0 10px 2px ${phase.dot}` }} />
-        <span>{phase.label}</span>
-      </div>
-
-      {citizen && (
-        <div className="citizen-card">
-          <div className="citizen-avatar">
-            {citizen.avatar_url ? <img src={citizen.avatar_url} alt="" /> : initials(citizen.display_name)}
-          </div>
-          <div>
-            <p className="citizen-name">{citizen.display_name || citizen.username || 'Warga Baru'}</p>
-            <p className="citizen-status">Ketuk sebuah tempat untuk masuk & mulai roleplay</p>
-          </div>
+        <div className="world-clock">
+          <span className="phase-dot" style={{ background: phase.dot, boxShadow: `0 0 10px 2px ${phase.dot}` }} />
+          <span>{phase.label}</span>
         </div>
-      )}
+
+        {citizen && (
+          <div className="citizen-card">
+            <div className="citizen-avatar">
+              {citizen.avatar_url ? <img src={citizen.avatar_url} alt="" /> : initials(citizen.display_name)}
+            </div>
+            <div>
+              <p className="citizen-name">{citizen.display_name || citizen.username || 'Warga Baru'}</p>
+              <p className="citizen-status">Geser & cubit peta untuk jelajahi kota</p>
+            </div>
+          </div>
+        )}
+      </div>
 
       {loading && <p className="state-message">Membuka gerbang kota...</p>}
       {error && <p className="state-message">{error}</p>}
 
       {!loading && !error && (
-        <div className="town-map">
-          {rooms.map((room) => (
-            <button key={room.id} className="room-card" onClick={() => handleOpenRoom(room)}>
-              <div className="room-icon-wrap">
-                <span>{room.emoji}</span>
-                {room.occupantCount > 0 && (
-                  <span className="room-lantern-count">{room.occupantCount}</span>
-                )}
-              </div>
-              <div className="room-info">
-                <p className="room-name">{room.name}</p>
-                <p className="room-desc">{room.description}</p>
-                {room.occupantCount > 0 && (
-                  <div className="room-occupants">
-                    <span className="room-occupant-dot" />
-                    <span className="room-occupant-names">
-                      {room.occupants
-                        .slice(0, 3)
-                        .map((o) => o?.display_name)
-                        .filter(Boolean)
-                        .join(', ')}
-                      {room.occupantCount > 3 ? ` +${room.occupantCount - 3} lagi` : ''}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <span className="room-arrow">›</span>
-            </button>
-          ))}
-        </div>
+        <TownMap rooms={rooms} onSelectRoom={handleOpenRoom} />
       )}
 
       {selectedRoom && (
