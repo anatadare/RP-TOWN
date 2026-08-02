@@ -1,0 +1,5 @@
+{
+  "deploy": {
+    "startCommand": "cd bot && npm start"
+  }
+}
