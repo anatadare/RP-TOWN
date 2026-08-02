@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
 import './App.css'
 import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSuccess } from './lib/telegram'
-import { ensureCitizen, getRoomsWithPresence, enterRoom, subscribeToPresence } from './lib/rooms'
+import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms } from './lib/rooms'
+
+const POLL_INTERVAL_MS = 5000 // fetch ulang data tiap 5 detik
 
 function getWorldPhase() {
   const hour = new Date().getHours()
@@ -51,15 +53,44 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const unsubscribe = subscribeToPresence(async () => {
+    let intervalId
+
+    async function refreshRooms() {
       try {
-        const roomsData = await getRoomsWithPresence()
+        const roomsData = await pollRooms()
         setRooms(roomsData)
       } catch (err) {
         console.error(err)
       }
-    })
-    return unsubscribe
+    }
+
+    function startPolling() {
+      // langsung refresh sekali, lalu ulangi tiap POLL_INTERVAL_MS
+      refreshRooms()
+      intervalId = setInterval(refreshRooms, POLL_INTERVAL_MS)
+    }
+
+    function stopPolling() {
+      clearInterval(intervalId)
+    }
+
+    // Hemat request: berhenti polling kalau Mini App di-background/minimize,
+    // lanjut lagi begitu user balik buka
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        startPolling()
+      } else {
+        stopPolling()
+      }
+    }
+
+    startPolling()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      stopPolling()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   function handleOpenRoom(room) {
