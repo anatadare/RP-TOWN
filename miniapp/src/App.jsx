@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import './App.css'
 import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSuccess } from './lib/telegram'
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms } from './lib/rooms'
-import TownMap from './components/TownMap'
+import TownMap3D from './components/TownMap3D'
 import HousingDistrict from './components/HousingDistrict'
 
 const POLL_INTERVAL_MS = 5000 // fetch ulang data tiap 5 detik
@@ -28,8 +28,20 @@ export default function App() {
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [entering, setEntering] = useState(false)
   const [housingRoom, setHousingRoom] = useState(null)
+  const [adminMode, setAdminMode] = useState(false)
 
   const phase = useMemo(getWorldPhase, [])
+
+  // Dipakai polling berkala DAN dipanggil manual abis admin assign/bikin room baru,
+  // biar peta langsung nunjukkin perubahan tanpa nunggu interval berikutnya
+  const refreshRooms = useCallback(async () => {
+    try {
+      const roomsData = await pollRooms()
+      setRooms(roomsData)
+    } catch (err) {
+      console.error(err)
+    }
+  }, [])
 
   useEffect(() => {
     initTelegram()
@@ -58,15 +70,6 @@ export default function App() {
   useEffect(() => {
     let intervalId
 
-    async function refreshRooms() {
-      try {
-        const roomsData = await pollRooms()
-        setRooms(roomsData)
-      } catch (err) {
-        console.error(err)
-      }
-    }
-
     function startPolling() {
       // langsung refresh sekali, lalu ulangi tiap POLL_INTERVAL_MS
       refreshRooms()
@@ -94,7 +97,7 @@ export default function App() {
       stopPolling()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [])
+  }, [refreshRooms])
 
   function handleOpenRoom(room) {
     hapticSelect()
@@ -152,7 +155,21 @@ export default function App() {
       {error && <p className="state-message">{error}</p>}
 
       {!loading && !error && (
-        <TownMap rooms={rooms} onSelectRoom={handleOpenRoom} />
+        <>
+          <button
+            className={`admin-toggle${adminMode ? ' is-active' : ''}`}
+            onClick={() => setAdminMode((v) => !v)}
+            title="Mode admin: atur bangunan mana yang jadi room"
+          >
+            ⚙️
+          </button>
+          <TownMap3D
+            rooms={rooms}
+            adminMode={adminMode}
+            onSelectRoom={handleOpenRoom}
+            onRoomsChanged={refreshRooms}
+          />
+        </>
       )}
 
       {selectedRoom && (
