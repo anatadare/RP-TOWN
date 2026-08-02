@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getHouses, rentHouse } from '../lib/houses'
-import { hapticSuccess, hapticSelect } from '../lib/telegram'
+import { hapticSuccess, hapticSelect, openTelegramLink } from '../lib/telegram'
 
 export default function HousingDistrict({ districtRoom, citizen, onClose, onCitizenUpdate }) {
   const [houses, setHouses] = useState([])
@@ -124,6 +124,18 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
                 <div className="modal-icon">🏡</div>
                 <h2 className="modal-title">Petak {selectedHouse.plot_number}</h2>
                 <p className="modal-desc">Ini rumahmu sendiri di RP Town.</p>
+                {selectedHouse.telegram_topic_url ? (
+                  <button
+                    className="modal-btn modal-btn-primary"
+                    onClick={() => openTelegramLink(selectedHouse.telegram_topic_url)}
+                  >
+                    Buka Chat Rumah
+                  </button>
+                ) : (
+                  <p className="housing-hint" style={{ margin: '0 0 14px' }}>
+                    Ruang chat rumahmu lagi disiapkan, coba buka lagi beberapa detik ke depan.
+                  </p>
+                )}
                 <button className="modal-btn modal-btn-secondary" onClick={() => setSelectedHouse(null)}>
                   Tutup
                 </button>
