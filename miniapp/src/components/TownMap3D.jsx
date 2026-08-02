@@ -19,11 +19,14 @@ const COLOR_HOVER_EMPTY = '#7fb8ff' // biru, dipakai pas admin hover bangunan ko
 // satu kali: puter -90° di sumbu X supaya Z (asli: atas) jadi Y (three.js: atas).
 const AXIS_FIX_ROTATION = [-Math.PI / 2, 0, 0]
 
-// Kemiringan kamera dikunci sangat kecil (bukan 0 derajat persis) supaya tetap
-// terasa "tampak atas" kayak papan, tapi menghindari kondisi kamera lurus 90°
-// yang bikin arah "atas" kamera jadi tidak stabil (gimbal lock). Dipakai
-// bareng di posisi kamera awal & batas OrbitControls, biar konsisten.
-const TOP_DOWN_TILT = THREE.MathUtils.degToRad(6)
+// Kemiringan kamera default saat pertama kali dibuka (masih berasa "tampak atas").
+const DEFAULT_TILT = THREE.MathUtils.degToRad(28)
+
+// Batas kemiringan kamera: boleh diputer bebas kiri-kanan (azimuth) dan boleh
+// dimiringkan naik-turun, TAPI cuma sampai mepet horizon — tidak pernah boleh
+// nembus ke bawah 90° dari atas, biar user gak pernah lihat sisi bawah peta.
+const MIN_POLAR_ANGLE = THREE.MathUtils.degToRad(2) // nyaris lurus dari atas
+const MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(80) // mepet horizon, gak sampe kebalik
 
 function TownModel({ assignedByKey, adminMode, hoveredKey, onHover, onBuildingClick }) {
   const { scene } = useGLTF(MODEL_URL)
@@ -126,11 +129,15 @@ function FrameBuildingsOnce({ groupRef }) {
     const center = box.getCenter(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.z) || 1
 
-    // Kamera diposisikan hampir tegak lurus di atas pusat kota (tampak atas
-    // ala papan), dengan sedikit offset horizontal sesuai TOP_DOWN_TILT biar
-    // orientasi kamera tetap stabil (lihat komentar di atas const-nya).
+    // Kamera diposisikan miring sedikit dari atas (tampak atas ala papan) saat
+    // pertama kali dibuka. Setelah ini, user boleh muter & miringin sendiri
+    // lewat OrbitControls (dibatasi MIN/MAX_POLAR_ANGLE di bawah).
     const height = maxDim * 1.4
-    camera.position.set(center.x, center.y + height, center.z + height * Math.tan(TOP_DOWN_TILT))
+    camera.position.set(
+      center.x,
+      center.y + height * Math.cos(DEFAULT_TILT),
+      center.z + height * Math.sin(DEFAULT_TILT)
+    )
     camera.near = Math.max(maxDim / 200, 0.1)
     camera.far = maxDim * 20
     camera.updateProjectionMatrix()
@@ -312,21 +319,23 @@ export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChang
             />
           </group>
         </Suspense>
-        {/* Interaksi ala "papan": geser (pan) + zoom aja, TIDAK bisa diputer (rotate)
-            ataupun dimiringkan (polar angle dikunci), biar peta selalu tampak dari
-            atas dan user tidak akan pernah bisa "kebalik" lihat sisi bawah peta. */}
+        {/* Boleh diputer bebas kiri-kanan & dimiringkan (rotate), boleh digeser
+            (pan), dan boleh di-zoom — tapi kemiringannya dikunci di
+            MIN/MAX_POLAR_ANGLE, jadi kamera gak akan pernah nembus sampai
+            kelihatan sisi bawah peta. */}
         <OrbitControls
           makeDefault
-          enableRotate={false}
-          minPolarAngle={TOP_DOWN_TILT}
-          maxPolarAngle={TOP_DOWN_TILT}
+          enableRotate
+          minPolarAngle={MIN_POLAR_ANGLE}
+          maxPolarAngle={MAX_POLAR_ANGLE}
           enableDamping
           dampingFactor={0.12}
           screenSpacePanning
+          rotateSpeed={0.6}
           zoomSpeed={0.8}
           panSpeed={0.9}
-          mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
-          touches={{ ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN }}
+          mouseButtons={{ LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
+          touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
         />
         <FrameBuildingsOnce groupRef={modelGroupRef} />
       </Canvas>
