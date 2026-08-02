@@ -68,3 +68,54 @@ export async function enterRoom(citizenId, roomId) {
 export async function pollRooms() {
   return getRoomsWithPresence()
 }
+
+// Bikin slug dari nama room, dipakai pas admin bikin room baru dari 3D map
+// (contoh: "Balai Kota" -> "balai-kota")
+function slugify(name) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+}
+
+// Tempelin sebuah room ke bangunan tertentu di 3D map (dipanggil dari mode admin)
+export async function assignBuildingToRoom(roomId, buildingKey) {
+  const { data, error } = await supabase
+    .from('rooms')
+    .update({ building_key: buildingKey })
+    .eq('id', roomId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Lepas sambungan bangunan <-> room (building_key dikosongin lagi)
+export async function unassignBuilding(buildingKey) {
+  const { error } = await supabase
+    .from('rooms')
+    .update({ building_key: null })
+    .eq('building_key', buildingKey)
+
+  if (error) throw error
+}
+
+// Bikin room baru sekaligus langsung ditempel ke sebuah bangunan di 3D map
+export async function createRoomForBuilding({ name, emoji, telegramGroupUrl, buildingKey }) {
+  const { data, error } = await supabase
+    .from('rooms')
+    .insert({
+      slug: `${slugify(name)}-${buildingKey.toLowerCase()}`,
+      name,
+      emoji: emoji || '📍',
+      telegram_group_url: telegramGroupUrl || null,
+      building_key: buildingKey,
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
