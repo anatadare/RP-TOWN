@@ -97,9 +97,10 @@ function TownModel({ assignedByKey, adminMode, hoveredKey, onHover, onBuildingCl
 
 useGLTF.preload(MODEL_URL)
 
-// Naro posisi kamera SEKALI aja pas model pertama kali kebaca. Sengaja tidak
-// "observe"/refit terus-terusan, biar posisi kamera user tidak ke-reset
-// sendiri tiap ada resize (misal address bar HP muncul-hilang).
+// Naro posisi kamera SEKALI aja pas model pertama kali kebaca, fokus ke area
+// bangunan aja (bukan ke seluruh peta termasuk jalan yang jauh di pinggir).
+// Sengaja tidak "observe"/refit terus-terusan, biar posisi kamera user
+// tidak ke-reset sendiri tiap ada resize (misal address bar HP muncul-hilang).
 function FrameBuildingsOnce({ groupRef }) {
   const { camera, controls } = useThree()
   const framed = useRef(false)
@@ -113,66 +114,60 @@ function FrameBuildingsOnce({ groupRef }) {
     groupRef.current.updateMatrixWorld(true)
 
     // Dua bounding box dihitung terpisah:
-    // - buildingsBox: cuma bangunan, dipakai buat nentuin seberapa "dekat"
-    //   kamera nge-zoom di awal (biar fokus ke bangunan, bukan ke jalan/laut
-    //   yang jauh di pinggir).
-    // - fullBox: SEMUA elemen peta (bangunan, jalan, sungai, pohon, taman),
-    //   dipakai buat nentuin titik poros putaran (target OrbitControls) biar
-    //   pas diputer, porosnya di TENGAH peta beneran — bukan di tengah
-    //   kumpulan bangunan aja (yang bisa aja nyempil di satu sisi peta).
+    // - buildingsBox: cuma bangunan, dipakai buat nentuin seberapa "zoom in"
+    //   tampilan awal (biar tetap fokus ke cluster bangunan, bukan zoom out
+    //   ke seluruh peta termasuk jalan/air yang jauh di pinggir).
+    // - fullBox: SELURUH model (bangunan + jalan + air + pohon, dst), dipakai
+    //   buat nentuin titik tengah peta secara keseluruhan.
     const buildingsBox = new THREE.Box3()
     const fullBox = new THREE.Box3()
     let foundBuildings = false
     let foundAny = false
     groupRef.current.traverse((obj) => {
-      if (!obj.isMesh) return
-      fullBox.expandByObject(obj)
-      foundAny = true
-      if (obj.name.startsWith(BUILDING_PREFIX)) {
-        buildingsBox.expandByObject(obj)
-        foundBuildings = true
+      if (obj.isMesh) {
+        fullBox.expandByObject(obj)
+        foundAny = true
+        if (obj.name.startsWith(BUILDING_PREFIX)) {
+          buildingsBox.expandByObject(obj)
+          foundBuildings = true
+        }
       }
     })
-    if (!foundAny) return
+    if (!foundBuildings || !foundAny) return
 
     framed.current = true
 
-    const zoomBox = foundBuildings ? buildingsBox : fullBox
-    const zoomSize = zoomBox.getSize(new THREE.Vector3())
-    const maxDim = Math.max(zoomSize.x, zoomSize.z) || 1
-
-    // Titik poros (target) = tengah SELURUH peta secara horizontal (x/z).
-    // Tinggi (y) tetap dipatok ke tengah bangunan biar kamera tidak "tenggelam"
-    // ke ketinggian jalan/tanah.
-    const fullCenter = fullBox.getCenter(new THREE.Vector3())
+    const buildingsSize = buildingsBox.getSize(new THREE.Vector3())
     const buildingsCenter = buildingsBox.getCenter(new THREE.Vector3())
-    const target = new THREE.Vector3(
-      fullCenter.x,
-      foundBuildings ? buildingsCenter.y : fullCenter.y,
-      fullCenter.z
-    )
+    const maxDim = Math.max(buildingsSize.x, buildingsSize.z) || 1
+
+    // Poros putaran (titik yang jadi pusat orbit kamera) diletakkan di tengah
+    // SELURUH peta (termasuk area air di sekelilingnya), bukan di tengah
+    // cluster bangunan — biar muternya berasa muter dari tengah kota/pulau,
+    // bukan dari pinggir cluster bangunan.
+    const mapCenter = fullBox.getCenter(new THREE.Vector3())
+    const pivot = new THREE.Vector3(mapCenter.x, buildingsCenter.y, mapCenter.z)
 
     // Kamera diposisikan miring sedikit dari atas (tampak atas ala papan) saat
-    // pertama kali dibuka, mengelilingi titik poros di atas. Setelah ini, user
-    // boleh muter & miringin sendiri lewat OrbitControls (dibatasi
-    // MIN/MAX_POLAR_ANGLE di bawah).
+    // pertama kali dibuka. Setelah ini, user boleh muter & miringin sendiri
+    // lewat OrbitControls (dibatasi MIN/MAX_POLAR_ANGLE di bawah).
     const height = maxDim * 1.4
     camera.position.set(
-      target.x,
-      target.y + height * Math.cos(DEFAULT_TILT),
-      target.z + height * Math.sin(DEFAULT_TILT)
+      pivot.x,
+      pivot.y + height * Math.cos(DEFAULT_TILT),
+      pivot.z + height * Math.sin(DEFAULT_TILT)
     )
     camera.near = Math.max(maxDim / 200, 0.1)
     camera.far = maxDim * 20
     camera.updateProjectionMatrix()
 
     if (controls) {
-      controls.target.copy(target)
+      controls.target.copy(pivot)
       controls.minDistance = maxDim * 0.3
       controls.maxDistance = maxDim * 3
       controls.update()
     } else {
-      camera.lookAt(target)
+      camera.lookAt(pivot)
     }
   })
 
