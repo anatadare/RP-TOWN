@@ -3,10 +3,12 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { assignBuildingToRoom, unassignBuilding, createRoomForBuilding } from '../lib/rooms'
+import { MAPS } from '../lib/maps'
 
-// Prefix nama node bangunan di file .glb (lihat topoexport_3D_modeling.glb)
+// Prefix nama node bangunan di file .glb (lihat topoexport_3D_modeling.glb).
+// Semua peta hasil export topoexport pakai prefix yang sama, jadi 1 konstanta
+// ini berlaku buat peta manapun yang lagi aktif.
 const BUILDING_PREFIX = 'TPX_Buildings_'
-const MODEL_URL = '/models/town.glb'
 
 // Warna highlight
 const COLOR_ASSIGNED = '#ffb454' // lantern, bangunan yang sudah jadi room
@@ -29,8 +31,8 @@ const DEFAULT_TILT = THREE.MathUtils.degToRad(28)
 const MIN_POLAR_ANGLE = THREE.MathUtils.degToRad(0.1) // nyaris lurus dari atas
 const MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(89.5) // nyaris sejajar horizon, gak sampe kebalik
 
-function TownModel({ assignedByKey, adminMode, hoveredKey, onHover, onBuildingClick }) {
-  const { scene } = useGLTF(MODEL_URL)
+function TownModel({ modelUrl, assignedByKey, adminMode, hoveredKey, onHover, onBuildingClick }) {
+  const { scene } = useGLTF(modelUrl)
 
   // Tiap mesh bangunan dikasih material sendiri-sendiri (clone),
   // soalnya aslinya beberapa bangunan berbagi 1 material yang sama —
@@ -96,7 +98,9 @@ function TownModel({ assignedByKey, adminMode, hoveredKey, onHover, onBuildingCl
   )
 }
 
-useGLTF.preload(MODEL_URL)
+// Preload semua peta yang terdaftar (bukan cuma yang lagi aktif), biar pas
+// user pindah peta modelnya sudah kebaca duluan di background dan gak nunggu.
+MAPS.forEach((map) => useGLTF.preload(map.modelUrl))
 
 // Naro posisi kamera SEKALI aja pas model pertama kali kebaca, fokus ke area
 // bangunan aja (bukan ke seluruh peta termasuk jalan yang jauh di pinggir).
@@ -280,7 +284,7 @@ function BuildingAssignPanel({ buildingKey, rooms, currentRoom, onAssign, onUnas
   )
 }
 
-export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChanged }) {
+export default function TownMap3D({ mapKey, modelUrl, rooms, adminMode, onSelectRoom, onRoomsChanged }) {
   const [hoveredKey, setHoveredKey] = useState(null)
   const [pickerBuilding, setPickerBuilding] = useState(null)
   const modelGroupRef = useRef()
@@ -293,6 +297,13 @@ export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChang
     return map
   }, [rooms])
 
+  // Reset state lokal tiap kali pindah peta (peta lain punya bangunan &
+  // nomor node yang beda, jadi hoveredKey/picker lama sudah gak relevan)
+  useEffect(() => {
+    setHoveredKey(null)
+    setPickerBuilding(null)
+  }, [mapKey])
+
   function handleBuildingClick(buildingKey) {
     if (adminMode) {
       setPickerBuilding(buildingKey)
@@ -304,7 +315,10 @@ export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChang
 
   return (
     <div className="map3d-viewport">
-      <Canvas shadows dpr={[1, 2]} camera={{ fov: 42, near: 1, far: 5000 }}>
+      {/* key={mapKey} di sini sengaja bikin seluruh <Canvas> remount pas pindah
+          peta: model lama di-unload, kamera & framing dihitung ulang dari nol
+          buat bounding box peta yang baru (tiap peta beda ukuran/posisi). */}
+      <Canvas key={mapKey} shadows dpr={[1, 2]} camera={{ fov: 42, near: 1, far: 5000 }}>
         <color attach="background" args={['#1b2340']} />
         <ambientLight intensity={0.65} />
         <directionalLight position={[60, 100, 40]} intensity={1.15} castShadow />
@@ -312,6 +326,7 @@ export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChang
         <Suspense fallback={null}>
           <group ref={modelGroupRef}>
             <TownModel
+              modelUrl={modelUrl}
               assignedByKey={assignedByKey}
               adminMode={adminMode}
               hoveredKey={hoveredKey}
@@ -351,7 +366,7 @@ export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChang
           rooms={rooms}
           currentRoom={assignedByKey[pickerBuilding]}
           onAssign={async (roomId) => {
-            await assignBuildingToRoom(roomId, pickerBuilding)
+            await assignBuildingToRoom(roomId, pickerBuilding, mapKey)
             await onRoomsChanged()
             setPickerBuilding(null)
           }}
@@ -361,7 +376,7 @@ export default function TownMap3D({ rooms, adminMode, onSelectRoom, onRoomsChang
             setPickerBuilding(null)
           }}
           onCreateNew={async (fields) => {
-            await createRoomForBuilding({ ...fields, buildingKey: pickerBuilding })
+            await createRoomForBuilding({ ...fields, buildingKey: pickerBuilding, mapKey })
             await onRoomsChanged()
             setPickerBuilding(null)
           }}
