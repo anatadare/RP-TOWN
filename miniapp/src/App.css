@@ -126,6 +126,41 @@ body {
   white-space: nowrap;
 }
 
+/* Switcher pindah peta — tab kecil di bawah header, kawasan pantai vs LPM dst */
+.map-switcher {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 10px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(244, 236, 216, 0.08);
+  border: 1px solid rgba(244, 236, 216, 0.16);
+  backdrop-filter: blur(6px);
+}
+
+.map-switcher-item {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  opacity: 0.65;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.map-switcher-item.is-active {
+  opacity: 1;
+  background: rgba(255, 180, 84, 0.16);
+  color: var(--lantern-soft);
+}
+
 /* Card citizen */
 .citizen-card {
   position: relative;
