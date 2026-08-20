@@ -160,13 +160,12 @@ export default function App() {
       <div className="town-overlay-top">
         <header className="town-header">
           <h1 className="town-title">RP Town</h1>
-          <p className="town-subtitle">Kota kecil untuk komunitas roleplay</p>
-        </header>
 
-        <div className="world-clock">
-          <span className="phase-dot" style={{ background: phase.dot, boxShadow: `0 0 10px 2px ${phase.dot}` }} />
-          <span>{phase.label}</span>
-        </div>
+          <div className="world-clock">
+            <span className="phase-dot" style={{ background: phase.dot, boxShadow: `0 0 10px 2px ${phase.dot}` }} />
+            <span>{phase.label}</span>
+          </div>
+        </header>
       </div>
 
       {loading && <p className="state-message">Membuka gerbang kota...</p>}
