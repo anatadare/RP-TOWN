@@ -75,30 +75,23 @@ body {
   pointer-events: auto;
 }
 
-/* Header */
+/* Header — judul kiri, status waktu kanan */
 .town-header {
-  text-align: center;
-  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .town-title {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 34px;
-  letter-spacing: 0.5px;
+  font-size: 22px;
+  letter-spacing: 0.3px;
   color: var(--paper);
   margin: 0;
   text-shadow: 0 0 24px rgba(255, 180, 84, 0.25);
-}
-
-.town-subtitle {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--lantern-soft);
-  opacity: 0.8;
-  margin: 4px 0 0;
+  white-space: nowrap;
 }
 
 /* Clock badge — signature element: waktu & fase dunia */
@@ -107,11 +100,10 @@ body {
   z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin: 18px auto 26px;
-  padding: 10px 18px;
+  gap: 7px;
+  padding: 7px 12px;
   width: fit-content;
+  flex-shrink: 0;
   border-radius: 999px;
   background: rgba(244, 236, 216, 0.08);
   border: 1px solid rgba(244, 236, 216, 0.16);
@@ -119,17 +111,19 @@ body {
 }
 
 .world-clock .phase-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--lantern);
   box-shadow: 0 0 10px 2px var(--lantern);
+  flex-shrink: 0;
 }
 
-.world-clock span {
+.world-clock span:not(.phase-dot) {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 10.5px;
   color: var(--paper);
+  white-space: nowrap;
 }
 
 /* Card citizen */
