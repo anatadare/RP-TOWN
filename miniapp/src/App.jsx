@@ -20,6 +20,35 @@ function initials(name) {
   return name.trim().split(/\s+/).slice(0, 2).map((s) => s[0]?.toUpperCase()).join('')
 }
 
+// Ikon-ikon kecil buat bottom nav, biar gak perlu tambah dependency icon library
+function MapIcon({ active }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M9 4l-6 2v14l6-2 6 2 6-2V4l-6 2-6-2z"
+        stroke={active ? 'var(--lantern)' : 'currentColor'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M9 4v14M15 6v14" stroke={active ? 'var(--lantern)' : 'currentColor'} strokeWidth="1.6" />
+    </svg>
+  )
+}
+
+function ProfileIcon({ active }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="8" r="3.6" stroke={active ? 'var(--lantern)' : 'currentColor'} strokeWidth="1.6" />
+      <path
+        d="M4.5 19.5c1.6-3.4 4.4-5.1 7.5-5.1s5.9 1.7 7.5 5.1"
+        stroke={active ? 'var(--lantern)' : 'currentColor'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 export default function App() {
   const [citizen, setCitizen] = useState(null)
   const [rooms, setRooms] = useState([])
@@ -29,6 +58,7 @@ export default function App() {
   const [entering, setEntering] = useState(false)
   const [housingRoom, setHousingRoom] = useState(null)
   const [adminMode, setAdminMode] = useState(false)
+  const [showProfile, setShowProfile] = useState(false)
 
   const phase = useMemo(getWorldPhase, [])
 
@@ -137,39 +167,38 @@ export default function App() {
           <span className="phase-dot" style={{ background: phase.dot, boxShadow: `0 0 10px 2px ${phase.dot}` }} />
           <span>{phase.label}</span>
         </div>
-
-        {citizen && (
-          <div className="citizen-card">
-            <div className="citizen-avatar">
-              {citizen.avatar_url ? <img src={citizen.avatar_url} alt="" /> : initials(citizen.display_name)}
-            </div>
-            <div>
-              <p className="citizen-name">{citizen.display_name || citizen.username || 'Warga Baru'}</p>
-              <p className="citizen-status">Geser & cubit peta untuk jelajahi kota</p>
-            </div>
-          </div>
-        )}
       </div>
 
       {loading && <p className="state-message">Membuka gerbang kota...</p>}
       {error && <p className="state-message">{error}</p>}
 
       {!loading && !error && (
-        <>
-          <button
-            className={`admin-toggle${adminMode ? ' is-active' : ''}`}
-            onClick={() => setAdminMode((v) => !v)}
-            title="Mode admin: atur bangunan mana yang jadi room"
-          >
-            ⚙️
+        <TownMap3D
+          rooms={rooms}
+          adminMode={adminMode}
+          onSelectRoom={handleOpenRoom}
+          onRoomsChanged={refreshRooms}
+        />
+      )}
+
+      {!loading && !error && (
+        <nav className="bottom-nav">
+          <button className="bottom-nav-item is-active" type="button">
+            <MapIcon active />
+            <span>Peta</span>
           </button>
-          <TownMap3D
-            rooms={rooms}
-            adminMode={adminMode}
-            onSelectRoom={handleOpenRoom}
-            onRoomsChanged={refreshRooms}
-          />
-        </>
+          <button
+            className="bottom-nav-item"
+            type="button"
+            onClick={() => {
+              hapticSelect()
+              setShowProfile(true)
+            }}
+          >
+            <ProfileIcon />
+            <span>Profil</span>
+          </button>
+        </nav>
       )}
 
       {selectedRoom && (
@@ -196,6 +225,49 @@ export default function App() {
           onClose={() => setHousingRoom(null)}
           onCitizenUpdate={setCitizen}
         />
+      )}
+
+      {showProfile && (
+        <div className="modal-backdrop" onClick={() => setShowProfile(false)}>
+          <div className="modal-sheet profile-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="profile-header">
+              <h2 className="modal-title" style={{ margin: 0 }}>Profil</h2>
+              <button className="housing-close-btn" onClick={() => setShowProfile(false)}>
+                ✕
+              </button>
+            </div>
+
+            {citizen ? (
+              <div className="citizen-card citizen-card-static">
+                <div className="citizen-avatar">
+                  {citizen.avatar_url ? <img src={citizen.avatar_url} alt="" /> : initials(citizen.display_name)}
+                </div>
+                <div>
+                  <p className="citizen-name">{citizen.display_name || citizen.username || 'Warga Baru'}</p>
+                  <p className="citizen-status">Geser & cubit peta untuk jelajahi kota</p>
+                </div>
+              </div>
+            ) : (
+              <p className="state-message" style={{ position: 'static', padding: '20px 0' }}>
+                Data warga belum dimuat.
+              </p>
+            )}
+
+            <button
+              type="button"
+              className="admin-mode-row"
+              onClick={() => setAdminMode((v) => !v)}
+            >
+              <div>
+                <p className="admin-mode-title">Mode Admin</p>
+                <p className="admin-mode-desc">Atur bangunan mana yang jadi room</p>
+              </div>
+              <span className={`switch${adminMode ? ' is-on' : ''}`}>
+                <span className="switch-knob" />
+              </span>
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
