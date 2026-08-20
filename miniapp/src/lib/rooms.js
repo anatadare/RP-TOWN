@@ -79,11 +79,14 @@ function slugify(name) {
     .replace(/(^-|-$)/g, '')
 }
 
-// Tempelin sebuah room ke bangunan tertentu di 3D map (dipanggil dari mode admin)
-export async function assignBuildingToRoom(roomId, buildingKey) {
+// Tempelin sebuah room ke bangunan tertentu di 3D map (dipanggil dari mode admin).
+// mapKey ikut ditulis ulang supaya room yang tadinya belum punya peta (atau
+// pindah dari peta lain) ke-tandain sebagai milik peta yang lagi aktif —
+// soalnya nomor node bangunan (TPX_Buildings_N) bisa nabrak antar peta.
+export async function assignBuildingToRoom(roomId, buildingKey, mapKey) {
   const { data, error } = await supabase
     .from('rooms')
-    .update({ building_key: buildingKey })
+    .update({ building_key: buildingKey, map_key: mapKey })
     .eq('id', roomId)
     .select()
     .single()
@@ -103,15 +106,18 @@ export async function unassignBuilding(buildingKey) {
 }
 
 // Bikin room baru sekaligus langsung ditempel ke sebuah bangunan di 3D map
-export async function createRoomForBuilding({ name, emoji, telegramGroupUrl, buildingKey }) {
+export async function createRoomForBuilding({ name, emoji, telegramGroupUrl, buildingKey, mapKey }) {
   const { data, error } = await supabase
     .from('rooms')
     .insert({
-      slug: `${slugify(name)}-${buildingKey.toLowerCase()}`,
+      // ikut prefix map biar slug gak nabrak sama room bangunan di peta lain
+      // yang nomor node-nya kebetulan sama (contoh: TPX_Buildings_5 di 2 peta)
+      slug: `${slugify(name)}-${mapKey}-${buildingKey.toLowerCase()}`,
       name,
       emoji: emoji || '📍',
       telegram_group_url: telegramGroupUrl || null,
       building_key: buildingKey,
+      map_key: mapKey,
     })
     .select()
     .single()
