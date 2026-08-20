@@ -4,6 +4,7 @@ import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSu
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms } from './lib/rooms'
 import TownMap3D from './components/TownMap3D'
 import HousingDistrict from './components/HousingDistrict'
+import { MAPS, DEFAULT_MAP_KEY, getMapByKey } from './lib/maps'
 
 const POLL_INTERVAL_MS = 5000 // fetch ulang data tiap 5 detik
 
@@ -59,8 +60,18 @@ export default function App() {
   const [housingRoom, setHousingRoom] = useState(null)
   const [adminMode, setAdminMode] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+  const [activeMapKey, setActiveMapKey] = useState(DEFAULT_MAP_KEY)
 
   const phase = useMemo(getWorldPhase, [])
+  const activeMap = useMemo(() => getMapByKey(activeMapKey), [activeMapKey])
+
+  // Cuma room yang "milik" peta yang lagi aktif yang ditampilkan/bisa
+  // ditempel ke bangunan — room lama (sebelum fitur multi-map) otomatis
+  // dianggap punya map_key 'kawasan-pantai' lewat migration-004.
+  const roomsOnActiveMap = useMemo(
+    () => rooms.filter((r) => (r.map_key || DEFAULT_MAP_KEY) === activeMapKey),
+    [rooms, activeMapKey]
+  )
 
   // Dipakai polling berkala DAN dipanggil manual abis admin assign/bikin room baru,
   // biar peta langsung nunjukkin perubahan tanpa nunggu interval berikutnya
@@ -166,6 +177,23 @@ export default function App() {
             <span>{phase.label}</span>
           </div>
         </header>
+
+        <div className="map-switcher">
+          {MAPS.map((map) => (
+            <button
+              key={map.key}
+              type="button"
+              className={`map-switcher-item${map.key === activeMapKey ? ' is-active' : ''}`}
+              onClick={() => {
+                if (map.key === activeMapKey) return
+                hapticSelect()
+                setActiveMapKey(map.key)
+              }}
+            >
+              {map.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading && <p className="state-message">Membuka gerbang kota...</p>}
@@ -173,7 +201,9 @@ export default function App() {
 
       {!loading && !error && (
         <TownMap3D
-          rooms={rooms}
+          mapKey={activeMap.key}
+          modelUrl={activeMap.modelUrl}
+          rooms={roomsOnActiveMap}
           adminMode={adminMode}
           onSelectRoom={handleOpenRoom}
           onRoomsChanged={refreshRooms}
