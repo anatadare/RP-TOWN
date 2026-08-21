@@ -4,7 +4,9 @@ import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSu
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms } from './lib/rooms'
 import TownMap3D from './components/TownMap3D'
 import HousingDistrict from './components/HousingDistrict'
+import BuildingSearch from './components/BuildingSearch'
 import { MAPS, DEFAULT_MAP_KEY, getMapByKey } from './lib/maps'
+import { buildBuildingDirectory } from './lib/buildings'
 
 const POLL_INTERVAL_MS = 5000 // fetch ulang data tiap 5 detik
 
@@ -61,6 +63,13 @@ export default function App() {
   const [adminMode, setAdminMode] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [activeMapKey, setActiveMapKey] = useState(DEFAULT_MAP_KEY)
+  // Nomor node bangunan (TPX_Buildings_N) yang beneran ada di tiap peta,
+  // dilaporkan TownMap3D pas model .glb-nya kebaca. Disimpan per map_key
+  // biar gak ilang pas gonta-ganti peta.
+  const [mapBuildingKeys, setMapBuildingKeys] = useState({})
+  // Permintaan "fokus ke bangunan X" dari search bar -> dikirim ke TownMap3D
+  // buat nge-zoom kamera. `nonce` supaya bangunan yang sama bisa dipilih ulang.
+  const [focusRequest, setFocusRequest] = useState(null)
 
   const phase = useMemo(getWorldPhase, [])
   const activeMap = useMemo(() => getMapByKey(activeMapKey), [activeMapKey])
@@ -72,6 +81,40 @@ export default function App() {
     () => rooms.filter((r) => (r.map_key || DEFAULT_MAP_KEY) === activeMapKey),
     [rooms, activeMapKey]
   )
+
+  // Daftar bangunan buat search bar: gabungan room yang sudah "disewa" (punya
+  // nama/emoji custom) + bangunan yang node-nya ada di model tapi belum
+  // ke-assign room (ditampilin sementara sebagai "Bangunan N").
+  const buildingDirectory = useMemo(
+    () => buildBuildingDirectory(mapBuildingKeys[activeMapKey] || [], roomsOnActiveMap),
+    [mapBuildingKeys, activeMapKey, roomsOnActiveMap]
+  )
+
+  // Stabil per activeMapKey (gak berubah tiap polling) supaya TownMap3D gak
+  // scan ulang scene tiap 5 detik — cuma dipanggil ulang beneran kalau
+  // daftar node-nya emang berubah.
+  const handleBuildingsLoaded = useCallback((keys) => {
+    setMapBuildingKeys((prev) => {
+      const prevKeys = prev[activeMapKey]
+      const same =
+        prevKeys && prevKeys.length === keys.length && prevKeys.every((k, i) => k === keys[i])
+      if (same) return prev
+      return { ...prev, [activeMapKey]: keys }
+    })
+  }, [activeMapKey])
+
+  // Reset hasil fokus search tiap ganti peta (bangunan lama sudah gak relevan)
+  useEffect(() => {
+    setFocusRequest(null)
+  }, [activeMapKey])
+
+  function handleSelectBuildingFromSearch(entry) {
+    hapticSelect()
+    setFocusRequest({ buildingKey: entry.buildingKey, nonce: Date.now() })
+    if (entry.room) {
+      handleOpenRoom(entry.room)
+    }
+  }
 
   // Dipakai polling berkala DAN dipanggil manual abis admin assign/bikin room baru,
   // biar peta langsung nunjukkin perubahan tanpa nunggu interval berikutnya
@@ -194,6 +237,13 @@ export default function App() {
             </button>
           ))}
         </div>
+
+        <BuildingSearch
+          key={activeMapKey}
+          buildings={buildingDirectory}
+          mapName={activeMap.name}
+          onSelectBuilding={handleSelectBuildingFromSearch}
+        />
       </div>
 
       {loading && <p className="state-message">Membuka gerbang kota...</p>}
@@ -207,6 +257,8 @@ export default function App() {
           adminMode={adminMode}
           onSelectRoom={handleOpenRoom}
           onRoomsChanged={refreshRooms}
+          onBuildingsLoaded={handleBuildingsLoaded}
+          focusRequest={focusRequest}
         />
       )}
 
