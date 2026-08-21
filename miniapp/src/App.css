@@ -161,6 +161,191 @@ body {
   color: var(--lantern-soft);
 }
 
+/* ============================================
+   SEARCH BAR BANGUNAN — di bawah map-switcher.
+   Klik/fokus -> top 5 populasi. Ngetik -> cari semua bangunan di peta aktif.
+   ============================================ */
+.building-search {
+  position: relative;
+  z-index: 2;
+  margin-top: 10px;
+}
+
+.building-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(244, 236, 216, 0.08);
+  border: 1px solid rgba(244, 236, 216, 0.16);
+  backdrop-filter: blur(6px);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.building-search-box.is-open {
+  border-color: rgba(255, 180, 84, 0.4);
+  background: rgba(244, 236, 216, 0.1);
+}
+
+.building-search-icon {
+  display: flex;
+  color: var(--ink-soft);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.building-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--paper);
+}
+
+.building-search-input::placeholder {
+  color: var(--ink-soft);
+  opacity: 0.55;
+}
+
+.building-search-clear {
+  border: none;
+  background: rgba(244, 236, 216, 0.12);
+  color: var(--ink-soft);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.building-search-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  border-radius: 16px;
+  background: rgba(27, 22, 46, 0.96);
+  border: 1px solid rgba(244, 236, 216, 0.16);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  animation: fadeIn 0.12s ease;
+}
+
+.building-search-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--lantern-soft);
+  opacity: 0.85;
+}
+
+.building-search-count {
+  color: var(--ink-soft);
+  opacity: 0.6;
+  text-transform: none;
+}
+
+.building-search-empty {
+  padding: 6px 14px 16px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  opacity: 0.65;
+}
+
+.building-search-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 6px;
+}
+
+.building-search-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.building-search-item:active {
+  background: rgba(255, 180, 84, 0.14);
+}
+
+.building-search-rank {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 180, 84, 0.16);
+  color: var(--lantern-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.building-search-emoji {
+  flex-shrink: 0;
+  font-size: 18px;
+  width: 22px;
+  text-align: center;
+}
+
+.building-search-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.building-search-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--paper);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.building-search-sub {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--ink-soft);
+  opacity: 0.6;
+}
+
+.building-search-pop {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--lantern-soft);
+  white-space: nowrap;
+}
+
 /* Card citizen */
 .citizen-card {
   position: relative;
