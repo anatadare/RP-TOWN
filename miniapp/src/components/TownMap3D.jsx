@@ -4,16 +4,13 @@ import { OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { unassignBuilding, createRoomForBuilding } from '../lib/rooms'
 import { MAPS } from '../lib/maps'
-
-// Prefix nama node bangunan di file .glb (lihat topoexport_3D_modeling.glb).
-// Semua peta hasil export topoexport pakai prefix yang sama, jadi 1 konstanta
-// ini berlaku buat peta manapun yang lagi aktif.
-const BUILDING_PREFIX = 'TPX_Buildings_'
+import { BUILDING_PREFIX } from '../lib/buildings'
 
 // Warna highlight
 const COLOR_ASSIGNED = '#ffb454' // lantern, bangunan yang sudah jadi room
 const COLOR_HOVER_ASSIGNED = '#ffd699'
 const COLOR_HOVER_EMPTY = '#7fb8ff' // biru, dipakai pas admin hover bangunan kosong
+const COLOR_SEARCH_FOCUS = '#7fe7ff' // cyan, dipakai pas bangunan ke-pilih dari search bar
 
 // File .glb-nya diekspor dengan sumbu "atas" di Z (bukan Y seperti standar
 // three.js/glTF), makanya kalau dipasang apa adanya, kamera "tampak atas" jadi
@@ -31,7 +28,16 @@ const DEFAULT_TILT = THREE.MathUtils.degToRad(28)
 const MIN_POLAR_ANGLE = THREE.MathUtils.degToRad(0.1) // nyaris lurus dari atas
 const MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(89.5) // nyaris sejajar horizon, gak sampe kebalik
 
-function TownModel({ modelUrl, assignedByKey, adminMode, hoveredKey, onHover, onBuildingClick }) {
+function TownModel({
+  modelUrl,
+  assignedByKey,
+  adminMode,
+  hoveredKey,
+  onHover,
+  onBuildingClick,
+  onBuildingsLoaded,
+  focusedKey,
+}) {
   const { scene } = useGLTF(modelUrl)
 
   // Tiap mesh bangunan dikasih material sendiri-sendiri (clone),
@@ -46,15 +52,31 @@ function TownModel({ modelUrl, assignedByKey, adminMode, hoveredKey, onHover, on
     })
   }, [scene])
 
-  // Update warna emissive tiap kali status assigned/hover berubah
+  // Kumpulin semua nomor node bangunan yang beneran ada di model peta ini,
+  // lalu lapor ke atas (App.jsx) — dipakai buat search bar: berapa total
+  // bangunan di peta ini, dan bikin entry "Bangunan N" buat yang belum ada room-nya.
+  useEffect(() => {
+    if (!onBuildingsLoaded) return
+    const keys = new Set()
+    scene.traverse((obj) => {
+      if (obj.isMesh && obj.name.startsWith(BUILDING_PREFIX)) keys.add(obj.name)
+    })
+    onBuildingsLoaded(Array.from(keys))
+  }, [scene, onBuildingsLoaded])
+
+  // Update warna emissive tiap kali status assigned/hover/search-focus berubah
   useEffect(() => {
     scene.traverse((obj) => {
       if (!(obj.isMesh && obj.name.startsWith(BUILDING_PREFIX))) return
       const mat = obj.material
       const isAssigned = Boolean(assignedByKey[obj.name])
       const isHovered = hoveredKey === obj.name
+      const isSearchFocused = focusedKey === obj.name
 
-      if (isHovered && adminMode) {
+      if (isSearchFocused) {
+        mat.emissive = new THREE.Color(COLOR_SEARCH_FOCUS)
+        mat.emissiveIntensity = 0.6
+      } else if (isHovered && adminMode) {
         mat.emissive = new THREE.Color(isAssigned ? COLOR_HOVER_ASSIGNED : COLOR_HOVER_EMPTY)
         mat.emissiveIntensity = 0.55
       } else if (isHovered && isAssigned) {
@@ -68,7 +90,7 @@ function TownModel({ modelUrl, assignedByKey, adminMode, hoveredKey, onHover, on
         mat.emissiveIntensity = 0
       }
     })
-  }, [scene, assignedByKey, hoveredKey, adminMode])
+  }, [scene, assignedByKey, hoveredKey, adminMode, focusedKey])
 
   function handleClick(e) {
     const name = e.object?.name
@@ -160,6 +182,57 @@ function FrameBuildingsOnce({ groupRef }) {
   return null
 }
 
+// Dipicu tiap kali ada bangunan yang dipilih dari search bar (App.jsx).
+// Beda dari FrameBuildingsOnce di atas: ini nge-zoom ke SATU bangunan aja,
+// dan boleh dipanggil berkali-kali (tiap kali user pilih hasil search baru).
+function FocusBuilding({ groupRef, focusRequest }) {
+  const { camera, controls } = useThree()
+  const lastHandled = useRef(null)
+
+  useEffect(() => {
+    if (!focusRequest || !focusRequest.buildingKey) return
+    if (lastHandled.current === focusRequest.nonce) return
+    if (!groupRef.current) return
+
+    let targetObj = null
+    groupRef.current.traverse((obj) => {
+      if (obj.isMesh && obj.name === focusRequest.buildingKey) targetObj = obj
+    })
+    if (!targetObj) return
+
+    lastHandled.current = focusRequest.nonce
+
+    const box = new THREE.Box3().setFromObject(targetObj)
+    const size = box.getSize(new THREE.Vector3())
+    const center = box.getCenter(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z) || 1
+
+    // Jarak kamera dari bangunan yang dipilih. Di-clamp ke minDistance yang
+    // udah di-set FrameBuildingsOnce (berdasar ukuran seluruh peta), biar
+    // OrbitControls gak langsung "narik mundur" kamera pas user pertama kali
+    // muter/zoom setelah hasil search dipilih.
+    const rawHeight = maxDim * 4.5
+    const minAllowed = controls?.minDistance || 0
+    const height = Math.max(rawHeight, minAllowed)
+
+    camera.position.set(
+      center.x,
+      center.y + height * Math.cos(DEFAULT_TILT),
+      center.z + height * Math.sin(DEFAULT_TILT)
+    )
+    camera.updateProjectionMatrix()
+
+    if (controls) {
+      controls.target.copy(center)
+      controls.update()
+    } else {
+      camera.lookAt(center)
+    }
+  }, [focusRequest, groupRef, camera, controls])
+
+  return null
+}
+
 // Panel yang muncul pas sebuah bangunan diklik dalam mode admin:
 // lepas assignment, atau bikin room baru (bebas nama/emoji sendiri).
 function BuildingAssignPanel({ buildingKey, currentRoom, onUnassign, onCreateNew, onClose }) {
@@ -246,7 +319,16 @@ function BuildingAssignPanel({ buildingKey, currentRoom, onUnassign, onCreateNew
   )
 }
 
-export default function TownMap3D({ mapKey, modelUrl, rooms, adminMode, onSelectRoom, onRoomsChanged }) {
+export default function TownMap3D({
+  mapKey,
+  modelUrl,
+  rooms,
+  adminMode,
+  onSelectRoom,
+  onRoomsChanged,
+  onBuildingsLoaded,
+  focusRequest,
+}) {
   const [hoveredKey, setHoveredKey] = useState(null)
   const [pickerBuilding, setPickerBuilding] = useState(null)
   const modelGroupRef = useRef()
@@ -294,9 +376,12 @@ export default function TownMap3D({ mapKey, modelUrl, rooms, adminMode, onSelect
               hoveredKey={hoveredKey}
               onHover={setHoveredKey}
               onBuildingClick={handleBuildingClick}
+              onBuildingsLoaded={onBuildingsLoaded}
+              focusedKey={focusRequest?.buildingKey || null}
             />
           </group>
         </Suspense>
+        <FocusBuilding groupRef={modelGroupRef} focusRequest={focusRequest} />
         {/* Boleh diputer bebas kiri-kanan & dimiringkan (rotate), boleh digeser
             (pan), dan boleh di-zoom — tapi kemiringannya dikunci di
             MIN/MAX_POLAR_ANGLE, jadi kamera gak akan pernah nembus sampai
