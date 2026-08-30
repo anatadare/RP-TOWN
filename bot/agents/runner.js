@@ -472,15 +472,21 @@ function startAgent(agent) {
   // Set biar cek grup cepat, dan aman dibanding-bandingkan sebagai string
   // (chat id dari Telegram numeric, tapi kita simpen/baca dari .env sebagai string).
   const groupIdSet = new Set(agent.groupIds.map(String))
+  const threadIdSet = agent.threadIds ? new Set(agent.threadIds.map(String)) : null
 
   bot.on('message', async (ctx) => {
     try {
       if (!groupIdSet.has(String(ctx.chat.id))) return
 
+      const threadId = ctx.message.message_thread_id ?? null
+
+      // Kalau agent ini punya batasan room/topic (*_THREAD_IDS diisi),
+      // pesan di luar room-nya diabaikan — biar Gavin cuma jawab di 2
+      // room miliknya, bukan di semua room dalam 1 grup yang sama.
+      if (threadIdSet && !threadIdSet.has(String(threadId))) return
+
       const text = ctx.message.text || ctx.message.caption
       if (!text) return
-
-      const threadId = ctx.message.message_thread_id ?? null
 
       if (agent.kind === 'penghulu') {
         await handlePenghuluMessage(agent, ctx, text, threadId)
@@ -493,7 +499,8 @@ function startAgent(agent) {
   })
 
   bot.launch()
-  console.log(`[agents] ${agent.key} ("${agent.name}") jalan di grup: ${agent.groupIds.join(', ')}`)
+  const roomsLabel = agent.threadIds ? ` (room: ${agent.threadIds.join(', ')})` : ''
+  console.log(`[agents] ${agent.key} ("${agent.name}") jalan di grup: ${agent.groupIds.join(', ')}${roomsLabel}`)
 
   process.once('SIGINT', () => bot.stop('SIGINT'))
   process.once('SIGTERM', () => bot.stop('SIGTERM'))
