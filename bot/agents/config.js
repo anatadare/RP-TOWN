@@ -13,7 +13,12 @@ const KUA_GROUP_CHAT_ID = process.env.KUA_GROUP_CHAT_ID // contoh: -100987654321
 // jadi "penghulu ...", "... penghulu ...", "... penghulu" semua ke-trigger,
 // sesuai permintaan.
 const TRIGGER_WORD_PENGHULU = (process.env.TRIGGER_WORD_PENGHULU || 'penghulu').toLowerCase()
+
+// Dua kata pemicu buat Pegawai: "asisten" (nama lama, tetap didukung biar
+// nggak breaking buat yang udah kebiasa) dan "pegawai" (nama baru).
 const TRIGGER_WORD_ASSISTANT = (process.env.TRIGGER_WORD_ASSISTANT || 'asisten').toLowerCase()
+const TRIGGER_WORD_PEGAWAI = (process.env.TRIGGER_WORD_PEGAWAI || 'pegawai').toLowerCase()
+const TRIGGER_WORDS_PEGAWAI = [TRIGGER_WORD_ASSISTANT, TRIGGER_WORD_PEGAWAI]
 
 function buildAgentList(prefix, kind, count, defaultNames) {
   const list = []
@@ -34,18 +39,23 @@ function buildAgentList(prefix, kind, count, defaultNames) {
   return list
 }
 
+// Nama default 5 Penghulu — urutan ini nentuin PENGHULU_1..5 di .env.
+// Sifat masing-masing ada di bot/agents/personas/penghulu.js (PENGHULU_TRAITS).
 const PENGHULU_AGENTS = buildAgentList('PENGHULU', 'penghulu', 5, [
-  'Pak Haji Somad',
-  'Ustadz Fikri',
-  'Pak Modin Jaya',
-  'Kyai Ridho',
-  'Pak Penghulu Bahagia',
+  'Zavier',
+  'Axel',
+  'Valdez',
+  'Gavin',
+  'Baron',
 ])
 
+// Nama default 3 Pegawai — urutan ini nentuin ASSISTANT_1..3 di .env
+// (env prefix tetap "ASSISTANT" biar konfigurasi lama nggak perlu diubah).
+// Sifat masing-masing ada di bot/agents/personas/pegawai.js (PEGAWAI_TRAITS).
 const ASSISTANT_AGENTS = buildAgentList('ASSISTANT', 'assistant', 3, [
-  'Mbak Sinta (Asisten KUA)',
-  'Mas Rudi (Asisten KUA)',
-  'Bu Tari (Asisten KUA)',
+  'Mimi',
+  'Naya',
+  'Cika',
 ])
 
 const AGENTS = [...PENGHULU_AGENTS, ...ASSISTANT_AGENTS]
@@ -56,6 +66,8 @@ module.exports = {
   KUA_GROUP_CHAT_ID,
   TRIGGER_WORD_PENGHULU,
   TRIGGER_WORD_ASSISTANT,
+  TRIGGER_WORD_PEGAWAI,
+  TRIGGER_WORDS_PEGAWAI,
   PENGHULU_AGENTS,
   ASSISTANT_AGENTS,
   AGENTS,
