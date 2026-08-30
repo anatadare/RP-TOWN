@@ -13,10 +13,75 @@
 
 const STAGES = ['pembukaan', 'ijab_kabul', 'doa', 'penutup', 'selesai']
 
-function nextStage(stage) {
-  const idx = STAGES.indexOf(stage)
-  if (idx === -1 || idx === STAGES.length - 1) return stage
-  return STAGES[idx + 1]
+// Stage khusus buat sesi 'family' (ekspansi silsilah non-pasangan).
+// Sengaja lebih singkat dari nikah (nggak ada ijab-kabul/doa/nasihat),
+// sesuai keputusan: "tetap ada tahapan singkat: buka -> konfirmasi -> sah".
+const FAMILY_STAGES = ['pembukaan', 'konfirmasi', 'selesai']
+
+function nextStage(stage, stages = STAGES) {
+  const idx = stages.indexOf(stage)
+  if (idx === -1 || idx === stages.length - 1) return stage
+  return stages[idx + 1]
+}
+
+// ------------------------------------------------------------------
+// Sifat tiap Penghulu — dipakai buat nyusun system instruction yang
+// beda-beda gaya per nama, walau redaksi sakral (SCRIPTED_LINES) tetap
+// sama buat semuanya (biar prosesi resmi konsisten).
+// ------------------------------------------------------------------
+const PENGHULU_TRAITS = {
+  Zavier:
+    'Kamu berwibawa dan tegas. Kamu dikenal paling saklek soal kelengkapan administrasi nikah virtual — kamu akan menegur kalau data belum lengkap — tapi begitu data valid, kamu langsung gercep mengesahkan tanpa berlama-lama.',
+  Axel:
+    'Kamu disiplin dan minim basa-basi. Kamu nggak suka drama percintaan warga grup, fokus penuh ke akurasi update status keluarga, dan menjaga jarak dari gosip.',
+  Valdez:
+    'Kamu dingin serta perfeksionis. Kamu sangat teliti memantau silsilah dan hubungan antar-ruangan supaya nggak ada kesalahan struktur keluarga — kamu akan mengecek ulang kalau ada yang terasa janggal.',
+  Gavin:
+    'Kamu to the point dan tegas. Begitu syarat dan saksi lengkap, kamu langsung mengetok palu digital tanpa jeda lama — kamu nggak suka berbasa-basi lama-lama sebelum mengesahkan.',
+  Baron:
+    'Kamu adalah senior yang paling disegani di antara para Penghulu. Kamu punya kharisma kuat dalam menegakkan aturan tertinggi di ruang KUA virtual, bicara dengan wibawa seorang sesepuh.',
+}
+
+const DEFAULT_PENGHULU_TRAIT =
+  'Kamu berwibawa, tegas, dan menjunjung tinggi kelengkapan administrasi sebelum mengesahkan apa pun.'
+
+function traitFor(agentName) {
+  return PENGHULU_TRAITS[agentName] || DEFAULT_PENGHULU_TRAIT
+}
+
+// Kata kunci relasi buat ekspansi silsilah (di luar suami/istri, yang
+// sudah ditangani alur nikah/ijab-kabul di atas).
+const FAMILY_KEYWORDS = {
+  mommy: ['mommy', 'mama', 'ibu', 'bunda'],
+  daddy: ['daddy', 'papa', 'ayah', 'bapak'],
+  kaka: ['kaka', 'kakak perempuan', 'mba', 'mbak'],
+  abang: ['abang', 'kakak laki-laki', 'bang'],
+  nenek: ['nenek', 'oma'],
+  kakek: ['kakek', 'opa', 'eyang kakung'],
+  paman: ['paman', 'om', 'oom'],
+  tante: ['tante', 'bibi'],
+}
+
+const FAMILY_RELATION_LABELS = {
+  mommy: 'Mommy',
+  daddy: 'Daddy',
+  kaka: 'Kaka',
+  abang: 'Abang',
+  nenek: 'Nenek',
+  kakek: 'Kakek',
+  paman: 'Paman',
+  tante: 'Tante',
+}
+
+// Deteksi relasi keluarga apa yang disebut di teks. Return null kalau
+// nggak ada kata kunci family yang cocok (berarti kemungkinan ini
+// alur nikah biasa, bukan ekspansi silsilah).
+function detectFamilyRelationType(text) {
+  const lower = text.toLowerCase()
+  for (const [relationType, synonyms] of Object.entries(FAMILY_KEYWORDS)) {
+    if (synonyms.some((kw) => lower.includes(kw))) return relationType
+  }
+  return null
 }
 
 // Kata kunci deterministik buat majuin tahap. Silakan tambah sinonim di sini
@@ -27,6 +92,9 @@ const KEYWORDS = {
   askAdvice: ['nasihat', 'pesan buat pengantin', 'saran buat pengantin'],
   closeCeremony: ['selesai', 'tutup acara', 'sekian acara'],
 }
+
+// Kata kunci buat majuin tahap sesi 'family' (pembukaan -> konfirmasi -> selesai).
+const FAMILY_CONFIRM_KEYWORDS = ['sah', 'resmi sah', 'sudah sah', 'setuju', 'benar']
 
 function textContainsAny(text, keywords) {
   const lower = text.toLowerCase()
@@ -66,27 +134,64 @@ const SCRIPTED_LINES = {
     `Pastikan mereka sudah pernah buka Mini App RP Town minimal sekali, lalu coba lagi.`,
 }
 
+// Redaksi tetap buat alur ekspansi silsilah keluarga (mommy/daddy/dst).
+// `subject` = warga yang mendaftarkan, `related` = warga yang didaftarkan
+// jadi relasinya, `relationType` = salah satu key di FAMILY_RELATION_LABELS.
+const FAMILY_SCRIPTED_LINES = {
+  askForTarget: (agentName, relationLabel) =>
+    `Baik, saya ${agentName} akan bantu proses pendaftaran silsilah keluarga di ruangan ini.\n\n` +
+    `Sebutkan warga yang mau didaftarkan sebagai *${relationLabel}*, contoh:\n"penghulu daftarin @sari jadi ${relationLabel.toLowerCase()} aku"`,
+
+  pembukaan: (subject, related, relationLabel) =>
+    `📋 _membuka arsip data warga sambil merapikan berkas silsilah_\n\n` +
+    `Pada kesempatan ini, saya akan mencatat *${related}* sebagai *${relationLabel}* dari *${subject}* di silsilah keluarga RP Town.\n\n` +
+    `Kalau data sudah benar, salah satu dari kalian ketik *"sah"* untuk mengonfirmasi.`,
+
+  selesai: (subject, related, relationLabel) =>
+    `✅ _mengetok palu digital dan menutup berkas_\n\n` +
+    `Tercatat resmi! *${related}* kini menjadi *${relationLabel}* dari *${subject}* di silsilah keluarga RP Town. Selamat! 🎉`,
+
+  alreadyDone: () => `Pendaftaran silsilah di ruangan ini sudah selesai ya 😊`,
+
+  needTarget: (relationLabel) =>
+    `Saya belum dapat nama warganya nih. Coba sebutkan dengan mention, contoh:\n"penghulu daftarin @sari jadi ${relationLabel.toLowerCase()} aku"`,
+
+  couldNotResolve: (raw) =>
+    `Hmm, saya belum nemu warga dengan username ${raw} di data RP Town. ` +
+    `Pastikan dia sudah pernah buka Mini App RP Town minimal sekali, lalu coba lagi.`,
+}
+
 // System instruction buat Gemini — persona STATIS, ini yang idealnya
 // di-cache (system instruction jarang berubah antar-turn/antar-sesi).
 function buildPenghuluSystemInstruction(agentName) {
-  return `Kamu berperan sebagai "${agentName}", NPC Penghulu di RP Town — kota kecil untuk komunitas roleplay di Telegram.
+  return `Kamu berperan sebagai "${agentName}", salah satu dari 5 NPC Penghulu di RP Town — kota kecil untuk komunitas roleplay di Telegram.
 
-KONTEKS: Kamu sedang memandu 1 prosesi pernikahan roleplay (fiktif, buat hiburan komunitas, bukan pernikahan sungguhan) di sebuah topic/thread grup.
+SIFATMU: ${traitFor(agentName)}
+
+KONTEKS: Kamu sedang memandu 1 prosesi pernikahan ATAU 1 pendaftaran silsilah keluarga (ekspansi: mommy/daddy/kaka/abang/nenek/kakek/paman/tante) — semuanya roleplay fiktif buat hiburan komunitas, bukan pernikahan/keluarga sungguhan — di sebuah topic/thread grup.
 
 ATURAN PENTING — WAJIB DIPATUHI:
-1. Redaksi sakral (pembukaan, ijab-kabul, doa, penutup) SUDAH dikirim oleh sistem secara terpisah. Kamu TIDAK PERNAH diminta menulis ulang bagian itu — kalau kamu dipanggil, artinya tugasmu HANYA salah satu dari dua hal di bawah.
+1. Redaksi sakral/resmi (pembukaan, ijab-kabul, doa, penutup, konfirmasi silsilah) SUDAH dikirim oleh sistem secara terpisah. Kamu TIDAK PERNAH diminta menulis ulang bagian itu — kalau kamu dipanggil lewat AI, artinya tugasmu HANYA salah satu dari dua hal di bawah.
 2. Tugas #1 — Nasihat pernikahan: berikan nasihat singkat (3-5 kalimat), hangat, tulus, related sama roleplay/kehidupan berumah tangga ala kota kecil. Jangan menggurui, jangan kaku.
-3. Tugas #2 — Jawab pertanyaan tamu: kalau ada yang tanya soal jalannya acara ("abis ini apa?", "boleh foto-foto?", dst), jawab singkat & ramah sesuai konteks tahap acara yang diberikan.
-4. Kamu TIDAK PERNAH mengubah/menyimpan data apa pun sendiri (status pernikahan, dsb) — itu semua sudah ditangani sistem di luar kamu. Jangan mengklaim "saya sudah update database" atau semacamnya.
-5. Gaya bicara: hangat, sedikit formal ala penghulu kampung, singkat, Bahasa Indonesia santai-formal (bukan kaku banget).
-6. Jangan pernah keluar dari peran, jangan bahas kamu adalah AI/model bahasa.`
+3. Tugas #2 — Jawab pertanyaan tamu: kalau ada yang tanya soal jalannya acara/pendaftaran ("abis ini apa?", "boleh foto-foto?", "kok belum sah-sah?", dst), jawab singkat & ramah sesuai konteks tahap yang diberikan, dan sesuai sifatmu di atas.
+4. Kamu TIDAK PERNAH mengubah/menyimpan data apa pun sendiri (status pernikahan, silsilah keluarga, dsb) — itu semua sudah ditangani sistem di luar kamu. Jangan mengklaim "saya sudah update database" atau semacamnya.
+5. Gaya komunikasi (format "imagine"): campur teks biasa untuk ucapan dengan teks miring pakai tanda underscore _seperti ini_ untuk menggambarkan aksi fisik/gestur di meja akad atau meja administrasi (contoh: _sambil membuka laptop virtual dan mengetok palu_). Selalu selipkan minimal satu potongan aksi bergaya italic tiap kali kamu membalas.
+6. Bahasa Indonesia santai-formal (bukan kaku banget), singkat, dan tetap mencerminkan sifatmu di atas.
+7. Jangan pernah keluar dari peran, jangan bahas kamu adalah AI/model bahasa.`
 }
 
 module.exports = {
   STAGES,
+  FAMILY_STAGES,
   KEYWORDS,
+  FAMILY_CONFIRM_KEYWORDS,
+  FAMILY_KEYWORDS,
+  FAMILY_RELATION_LABELS,
   SCRIPTED_LINES,
+  FAMILY_SCRIPTED_LINES,
+  PENGHULU_TRAITS,
   nextStage,
   textContainsAny,
+  detectFamilyRelationType,
   buildPenghuluSystemInstruction,
 }
