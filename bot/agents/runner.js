@@ -21,9 +21,9 @@ const {
   AGENTS,
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
-  TRIGGER_WORD_PENGHULU,
-  TRIGGER_WORDS_PEGAWAI,
 } = require('./config')
+// TRIGGER_WORD_PENGHULU & TRIGGER_WORDS_PEGAWAI sudah gak dipakai di sini —
+// semua agent sekarang jawab langsung tanpa kata pemicu (lihat handler di bawah).
 
 // SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY sebenarnya sudah dibaca di
 // bot/index.js juga — di sini kita baca ulang dari process.env langsung
@@ -172,17 +172,19 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
 
   const chatId = ctx.chat.id
   const historyKey = `${chatId}:${threadId}`
-  const mentionsTrigger = text.toLowerCase().includes(TRIGGER_WORD_PENGHULU)
 
   let session = await getWeddingSession(supabaseAdmin, { chatId, threadId })
 
   // ---- Belum ada sesi di thread ini ----
+  // CATATAN: sudah tidak pakai kata trigger ("penghulu ...") lagi. Sinyal
+  // buat MULAI sesi baru sekarang murni dari ISI pesannya sendiri:
+  // - ada kata kunci relasi keluarga (mommy/daddy/dst) -> mulai sesi family
+  // - ada 2 mention (@a dan @b) -> mulai sesi nikah
+  // - selain itu -> bukan permintaan mulai sesi, dijawab bebas lewat AI
+  //   (system instruction Penghulu sudah dibatasi cuma boleh bahas KUA,
+  //   lihat personas/penghulu.js) supaya obrolan biasa di room ini TETAP
+  //   direspon tanpa perlu kata pemicu apa pun, tapi tanpa nyalain sesi.
   if (!session) {
-    if (!mentionsTrigger) return
-
-    // Cek dulu apakah ini permintaan ekspansi silsilah (mommy/daddy/dst),
-    // bukan nikah biasa. Kalau ketemu kata kunci family, alur ini KHUSUS
-    // family (lebih singkat), terpisah dari alur nikah di bawah.
     const familyRelationType = detectFamilyRelationType(text)
     if (familyRelationType) {
       const familySession = await claimWeddingSession(supabaseAdmin, {
@@ -206,16 +208,34 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
       return
     }
 
-    session = await claimWeddingSession(supabaseAdmin, { chatId, threadId, agentKey: agent.key })
-    if (!session) return // sudah diklaim penghulu lain (race condition antar 5 bot)
-
-    // Coba langsung resolve mempelai dari pesan yang sama (mis. "penghulu nikahin @a dan @b")
     const couple = await resolveCoupleFromText(text)
-    if (couple && couple.citizenA && couple.citizenB) {
-      await startCeremony(agent, ctx, threadId, session, couple)
-    } else {
-      await ctx.reply(SCRIPTED_LINES.askForCouple(agent.name), { message_thread_id: threadId })
+    if (couple) {
+      session = await claimWeddingSession(supabaseAdmin, { chatId, threadId, agentKey: agent.key })
+      if (!session) return // sudah diklaim penghulu lain (race condition antar 5 bot)
+
+      if (couple.citizenA && couple.citizenB) {
+        await startCeremony(agent, ctx, threadId, session, couple)
+      } else {
+        await ctx.reply(SCRIPTED_LINES.couldNotResolve(`@${couple.usernameA}`, `@${couple.usernameB}`), {
+          message_thread_id: threadId,
+        })
+      }
+      return
     }
+
+    // Gak ada sinyal mulai sesi (bukan permintaan nikah/keluarga) -> jawab
+    // bebas via AI TANPA klaim sesi apa pun, biar chat santai di room ini
+    // tetap direspon. System instruction yang jaga supaya jawabannya cuma
+    // seputar KUA (lihat buildPenghuluSystemInstruction).
+    pushHistory(historyKey, 'user', text)
+    const { text: reply } = await runTurn({
+      systemInstruction: buildPenghuluSystemInstruction(agent.name),
+      apiKey: agent.geminiApiKey,
+      history: getHistory(historyKey),
+      userMessage: `[Konteks: belum ada prosesi yang sedang berjalan di ruangan ini]\nPesan warga: ${text}`,
+    })
+    pushHistory(historyKey, 'model', reply)
+    await ctx.reply(reply, { message_thread_id: threadId })
     return
   }
 
@@ -230,7 +250,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
   }
 
   if (session.stage === 'selesai') {
-    if (mentionsTrigger) await ctx.reply(SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
+    await ctx.reply(SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
     return
   }
 
@@ -238,7 +258,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
   if (session.stage === 'pembukaan' && !session.partner_a_id) {
     const couple = await resolveCoupleFromText(text)
     if (!couple) {
-      if (mentionsTrigger) await ctx.reply(SCRIPTED_LINES.needCouple(), { message_thread_id: threadId })
+      await ctx.reply(SCRIPTED_LINES.needCouple(), { message_thread_id: threadId })
       return
     }
     if (!couple.citizenA || !couple.citizenB) {
@@ -281,32 +301,31 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
       return
     }
 
-    if (textContainsAny(text, KEYWORDS.askAdvice) || text.includes('?')) {
-      pushHistory(historyKey, 'user', text)
-      const { text: reply } = await runTurn({
-        systemInstruction: buildPenghuluSystemInstruction(agent.name),
-      apiKey: agent.geminiApiKey,
-        history: getHistory(historyKey),
-        userMessage: `[Konteks: prosesi pernikahan ${nameA} & ${nameB}, tahap saat ini: doa/setelah ijab-kabul]\nPesan tamu: ${text}`,
-      })
-      pushHistory(historyKey, 'model', reply)
-      await ctx.reply(reply, { message_thread_id: threadId })
-    }
-    return
-  }
-
-  // ---- Tahap pembukaan/ijab_kabul lain: pertanyaan bebas -> AI ----
-  if (mentionsTrigger || text.includes('?')) {
+    // ---- Selain "selesai"/"tutup acara" -> jawab bebas via AI (nasihat,
+    //      pertanyaan, atau obrolan apa pun; sudah gak butuh kata "nasihat"
+    //      atau "?" lagi, semua pesan di tahap ini direspon) ----
     pushHistory(historyKey, 'user', text)
     const { text: reply } = await runTurn({
       systemInstruction: buildPenghuluSystemInstruction(agent.name),
       apiKey: agent.geminiApiKey,
       history: getHistory(historyKey),
-      userMessage: `[Konteks: prosesi pernikahan ${nameA || '(mempelai A)'} & ${nameB || '(mempelai B)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
+      userMessage: `[Konteks: prosesi pernikahan ${nameA} & ${nameB}, tahap saat ini: doa/setelah ijab-kabul]\nPesan tamu: ${text}`,
     })
     pushHistory(historyKey, 'model', reply)
     await ctx.reply(reply, { message_thread_id: threadId })
+    return
   }
+
+  // ---- Tahap pembukaan/ijab_kabul lain: pesan apa pun -> AI ----
+  pushHistory(historyKey, 'user', text)
+  const { text: reply } = await runTurn({
+    systemInstruction: buildPenghuluSystemInstruction(agent.name),
+    apiKey: agent.geminiApiKey,
+    history: getHistory(historyKey),
+    userMessage: `[Konteks: prosesi pernikahan ${nameA || '(mempelai A)'} & ${nameB || '(mempelai B)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
+  })
+  pushHistory(historyKey, 'model', reply)
+  await ctx.reply(reply, { message_thread_id: threadId })
 }
 
 async function startCeremony(agent, ctx, threadId, session, couple) {
@@ -353,12 +372,11 @@ async function startFamilyRegistration(agent, ctx, threadId, session, parties, r
 async function handleFamilyMessage(agent, ctx, text, threadId, session) {
   const chatId = ctx.chat.id
   const historyKey = `${chatId}:${threadId}:family`
-  const mentionsTrigger = text.toLowerCase().includes(TRIGGER_WORD_PENGHULU)
   const relationType = session.relation_type
   const relationLabel = FAMILY_RELATION_LABELS[relationType]
 
   if (session.stage === 'selesai') {
-    if (mentionsTrigger) await ctx.reply(FAMILY_SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
+    await ctx.reply(FAMILY_SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
     return
   }
 
@@ -366,7 +384,7 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
   if (session.stage === 'pembukaan' && !session.partner_b_id) {
     const parties = await resolveFamilyPartiesFromText(text, ctx)
     if (!parties) {
-      if (mentionsTrigger) await ctx.reply(FAMILY_SCRIPTED_LINES.needTarget(relationLabel), { message_thread_id: threadId })
+      await ctx.reply(FAMILY_SCRIPTED_LINES.needTarget(relationLabel), { message_thread_id: threadId })
       return
     }
     if (!parties.citizenRelated || !parties.citizenSubject) {
@@ -404,28 +422,29 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
     return
   }
 
-  // ---- Pertanyaan bebas di tengah alur family -> AI (nggak pernah nulis data) ----
-  if (mentionsTrigger || text.includes('?')) {
-    pushHistory(historyKey, 'user', text)
-    const { text: reply } = await runTurn({
-      systemInstruction: buildPenghuluSystemInstruction(agent.name),
-      apiKey: agent.geminiApiKey,
-      history: getHistory(historyKey),
-      userMessage:
-        `[Konteks: pendaftaran silsilah keluarga — ${relatedLabel || '(target)'} didaftarkan sebagai ${relationLabel} ` +
-        `dari ${subjectLabel || '(subjek)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
-    })
-    pushHistory(historyKey, 'model', reply)
-    await ctx.reply(reply, { message_thread_id: threadId })
-  }
+  // ---- Pesan apa pun di tengah alur family -> AI (nggak pernah nulis data) ----
+  pushHistory(historyKey, 'user', text)
+  const { text: reply } = await runTurn({
+    systemInstruction: buildPenghuluSystemInstruction(agent.name),
+    apiKey: agent.geminiApiKey,
+    history: getHistory(historyKey),
+    userMessage:
+      `[Konteks: pendaftaran silsilah keluarga — ${relatedLabel || '(target)'} didaftarkan sebagai ${relationLabel} ` +
+      `dari ${subjectLabel || '(subjek)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
+  })
+  pushHistory(historyKey, 'model', reply)
+  await ctx.reply(reply, { message_thread_id: threadId })
 }
 
 // ------------------------------------------------------------------
 // Pegawai (Mimi, Naya, Cika) — guide murni, nggak ikut mencatat/mengesahkan.
 // ------------------------------------------------------------------
 async function handlePegawaiMessage(agent, ctx, text, threadId) {
+  // CATATAN: sudah gak butuh kata trigger ("asisten"/"pegawai") lagi —
+  // Pegawai langsung jawab tiap pesan di room yang dia handle. Topik yang
+  // boleh dibahas dibatasi lewat system instruction (lihat personas/pegawai.js),
+  // BUKAN lewat filter kata kunci di sini.
   const lower = text.toLowerCase()
-  if (!TRIGGER_WORDS_PEGAWAI.some((word) => lower.includes(word))) return
 
   const claimed = await claimAssistantMessage(supabaseAdmin, {
     chatId: ctx.chat.id,
@@ -480,6 +499,12 @@ function startAgent(agent) {
 
   bot.on('message', async (ctx) => {
     try {
+      // PENTING: jangan pernah balas pesan dari bot lain (termasuk sesama
+      // bot RP Town). Sekarang gak ada lagi kata trigger yang jadi filter
+      // alami, jadi tanpa ini gampang kejadian bot saling balas pesan bot
+      // lain terus-terusan (loop tak berujung).
+      if (ctx.from?.is_bot) return
+
       if (!groupIdSet.has(String(ctx.chat.id))) return
 
       const threadId = ctx.message.message_thread_id ?? null
