@@ -27,10 +27,23 @@ async function getWeddingSession(supabaseAdmin, { chatId, threadId }) {
 
 // Coba klaim thread ini buat sebuah agent penghulu. Return null kalau sudah
 // diklaim agent lain (race condition antar 5 bot penghulu ke-handle di sini).
-async function claimWeddingSession(supabaseAdmin, { chatId, threadId, agentKey }) {
+//
+// `sessionType`: 'marriage' (default, alur nikah) atau 'family' (alur
+// ekspansi silsilah). `relationType` cuma diisi kalau sessionType='family'
+// (lihat FAMILY_KEYWORDS di personas/penghulu.js).
+async function claimWeddingSession(
+  supabaseAdmin,
+  { chatId, threadId, agentKey, sessionType = 'marriage', relationType = null }
+) {
   const { data, error } = await supabaseAdmin
     .from('wedding_sessions')
-    .insert({ chat_id: chatId, thread_id: threadId, agent_key: agentKey })
+    .insert({
+      chat_id: chatId,
+      thread_id: threadId,
+      agent_key: agentKey,
+      session_type: sessionType,
+      relation_type: relationType,
+    })
     .select()
     .single()
 
