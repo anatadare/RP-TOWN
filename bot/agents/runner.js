@@ -1,4 +1,4 @@
-// Runner buat 8 NPC agent (5 Penghulu + 3 Asisten).
+// Runner buat 8 NPC agent (5 Penghulu + 3 Pegawai).
 //
 // Tiap agent = 1 instance Telegraf sendiri (token sendiri dari BotFather),
 // semuanya connect ke Supabase yang SAMA lewat service_role key. Karena
@@ -6,6 +6,13 @@
 // (bukan in-memory per-proses), 1 "karakter" bisa aja logically hadir di
 // banyak room/thread sekaligus tanpa nabrak satu sama lain — sesuai rencana
 // "1 agent bisa hadir di banyak room asal state dipisah per room".
+//
+// Ada 2 alur yang dipandu Penghulu di 1 thread:
+// - 'marriage' : nikah (suami/istri) — alur lama, 5 tahap (pembukaan s.d. selesai).
+// - 'family'   : ekspansi silsilah (mommy/daddy/kaka/abang/nenek/kakek/paman/tante)
+//                — alur baru, 3 tahap (pembukaan -> konfirmasi -> selesai).
+// Keduanya disimpan di tabel `wedding_sessions` yang sama, dibedakan lewat
+// kolom `session_type` (lihat database/migration-006-family-tree.sql).
 
 const { Telegraf } = require('telegraf')
 const { createClient } = require('@supabase/supabase-js')
@@ -16,7 +23,7 @@ const {
   SUPABASE_SERVICE_ROLE_KEY,
   KUA_GROUP_CHAT_ID,
   TRIGGER_WORD_PENGHULU,
-  TRIGGER_WORD_ASSISTANT,
+  TRIGGER_WORDS_PEGAWAI,
 } = require('./config')
 
 // SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY sebenarnya sudah dibaca di
@@ -30,19 +37,28 @@ const supabaseAdmin = createClient(
 const { runTurn } = require('./geminiClient')
 const {
   SCRIPTED_LINES,
+  FAMILY_SCRIPTED_LINES,
+  FAMILY_RELATION_LABELS,
   KEYWORDS,
+  FAMILY_CONFIRM_KEYWORDS,
   textContainsAny,
   nextStage,
+  detectFamilyRelationType,
   buildPenghuluSystemInstruction,
 } = require('./personas/penghulu')
-const { buildAssistantSystemInstruction } = require('./personas/assistant')
-const { updateMarriageStatusDeclaration, handleUpdateMarriageStatus } = require('./tools')
+const { buildPegawaiSystemInstruction } = require('./personas/pegawai')
+const { updateMarriageStatusDeclaration, handleUpdateMarriageStatus, handleAddFamilyRelation } = require('./tools')
 const {
   getWeddingSession,
   claimWeddingSession,
   updateWeddingSession,
   claimAssistantMessage,
 } = require('./stateStore')
+const { getRoomAvailabilitySummary, formatRoomAvailabilityContext } = require('./roomStatus')
+
+// Kata kunci yang nandain warga lagi nanya soal ketersediaan ruangan —
+// dipakai Pegawai buat mutusin perlu nge-query data ruangan asli atau nggak.
+const ROOM_AVAILABILITY_KEYWORDS = ['ruang', 'room', 'kosong', 'sepi', 'kamar']
 
 // Rolling history super pendek per thread, cuma buat kasih konteks ke
 // Gemini pas nasihat/tanya-jawab (BUKAN sumber kebenaran state acara —
@@ -95,6 +111,60 @@ function labelFor(citizen, fallbackUsername) {
   return citizen ? citizen.display_name || `@${citizen.username}` : `@${fallbackUsername}`
 }
 
+async function resolveCitizenByTelegramId(telegramId) {
+  const { data, error } = await supabaseAdmin
+    .from('citizens')
+    .select('id, username, display_name')
+    .eq('telegram_id', telegramId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
+// ------------------------------------------------------------------
+// Helper: cari siapa "related" (warga yang didaftarkan jadi mommy/daddy/dst)
+// dan siapa "subject" (warga yang jadi pemilik relasi itu) dari teks.
+//
+// Dukung 2 pola:
+// 1. "penghulu daftarin @sari jadi mommy aku"   -> 1 mention -> related =
+//    @sari, subject = warga yang ngirim pesan ini sendiri.
+// 2. "penghulu daftarin @sari jadi mommy @budi" -> 2 mention -> related =
+//    mention pertama, subject = mention kedua.
+// ------------------------------------------------------------------
+async function resolveFamilyPartiesFromText(text, ctx) {
+  const mentionRegex = /@([a-zA-Z0-9_]{3,})/g
+  const matches = [...text.matchAll(mentionRegex)].map((m) => m[1])
+  if (matches.length === 0) return null
+
+  if (matches.length >= 2) {
+    const [usernameRelated, usernameSubject] = matches
+    const { data, error } = await supabaseAdmin
+      .from('citizens')
+      .select('id, username, display_name')
+      .in('username', [usernameRelated, usernameSubject])
+    if (error) throw error
+
+    const citizenRelated = data.find((c) => c.username?.toLowerCase() === usernameRelated.toLowerCase()) || null
+    const citizenSubject = data.find((c) => c.username?.toLowerCase() === usernameSubject.toLowerCase()) || null
+
+    return { usernameRelated, usernameSubject, citizenRelated, citizenSubject }
+  }
+
+  const usernameRelated = matches[0]
+  const { data: relatedRow, error: relatedError } = await supabaseAdmin
+    .from('citizens')
+    .select('id, username, display_name')
+    .ilike('username', usernameRelated)
+    .maybeSingle()
+  if (relatedError) throw relatedError
+
+  const citizenSubject = await resolveCitizenByTelegramId(ctx.from.id)
+  const usernameSubject = ctx.from.username || ctx.from.first_name || 'kamu'
+
+  return { usernameRelated, usernameSubject, citizenRelated: relatedRow || null, citizenSubject }
+}
+
 // ------------------------------------------------------------------
 // Penghulu
 // ------------------------------------------------------------------
@@ -111,6 +181,32 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
   if (!session) {
     if (!mentionsTrigger) return
 
+    // Cek dulu apakah ini permintaan ekspansi silsilah (mommy/daddy/dst),
+    // bukan nikah biasa. Kalau ketemu kata kunci family, alur ini KHUSUS
+    // family (lebih singkat), terpisah dari alur nikah di bawah.
+    const familyRelationType = detectFamilyRelationType(text)
+    if (familyRelationType) {
+      const familySession = await claimWeddingSession(supabaseAdmin, {
+        chatId,
+        threadId,
+        agentKey: agent.key,
+        sessionType: 'family',
+        relationType: familyRelationType,
+      })
+      if (!familySession) return // sudah diklaim penghulu lain
+
+      const parties = await resolveFamilyPartiesFromText(text, ctx)
+      if (parties && parties.citizenRelated && parties.citizenSubject) {
+        await startFamilyRegistration(agent, ctx, threadId, familySession, parties, familyRelationType)
+      } else {
+        const relationLabel = FAMILY_RELATION_LABELS[familyRelationType]
+        await ctx.reply(FAMILY_SCRIPTED_LINES.askForTarget(agent.name, relationLabel), {
+          message_thread_id: threadId,
+        })
+      }
+      return
+    }
+
     session = await claimWeddingSession(supabaseAdmin, { chatId, threadId, agentKey: agent.key })
     if (!session) return // sudah diklaim penghulu lain (race condition antar 5 bot)
 
@@ -126,6 +222,13 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
 
   // ---- Sesi ini bukan punya agent ini -> diam ----
   if (session.agent_key !== agent.key) return
+
+  // ---- Sesi tipe 'family' punya alur & tahapannya sendiri, dilempar ke
+  //      handler terpisah biar nggak nyampur sama state machine nikah ----
+  if (session.session_type === 'family') {
+    await handleFamilyMessage(agent, ctx, text, threadId, session)
+    return
+  }
 
   if (session.stage === 'selesai') {
     if (mentionsTrigger) await ctx.reply(SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
@@ -222,20 +325,128 @@ async function startCeremony(agent, ctx, threadId, session, couple) {
 }
 
 // ------------------------------------------------------------------
-// Asisten
+// Penghulu — alur ekspansi silsilah keluarga (mommy/daddy/kaka/abang/
+// nenek/kakek/paman/tante). Lebih singkat dari nikah: cuma 3 tahap
+// (pembukaan -> konfirmasi -> selesai), sesuai keputusan project.
+// `session.partner_a_id/label` dipakai sebagai SUBJEK (pemilik relasi),
+// `session.partner_b_id/label` dipakai sebagai TARGET (yang didaftarkan).
 // ------------------------------------------------------------------
-async function handleAssistantMessage(agent, ctx, text, threadId) {
-  if (!text.toLowerCase().includes(TRIGGER_WORD_ASSISTANT)) return
+async function startFamilyRegistration(agent, ctx, threadId, session, parties, relationType) {
+  const relationLabel = FAMILY_RELATION_LABELS[relationType]
+  const subjectLabel = labelFor(parties.citizenSubject, parties.usernameSubject)
+  const relatedLabel = labelFor(parties.citizenRelated, parties.usernameRelated)
+
+  await updateWeddingSession(supabaseAdmin, session.id, {
+    partner_a_id: parties.citizenSubject.id,
+    partner_a_label: subjectLabel,
+    partner_b_id: parties.citizenRelated.id,
+    partner_b_label: relatedLabel,
+    stage: 'konfirmasi',
+  })
+
+  await ctx.reply(FAMILY_SCRIPTED_LINES.pembukaan(subjectLabel, relatedLabel, relationLabel), {
+    message_thread_id: threadId,
+  })
+}
+
+async function handleFamilyMessage(agent, ctx, text, threadId, session) {
+  const chatId = ctx.chat.id
+  const historyKey = `${chatId}:${threadId}:family`
+  const mentionsTrigger = text.toLowerCase().includes(TRIGGER_WORD_PENGHULU)
+  const relationType = session.relation_type
+  const relationLabel = FAMILY_RELATION_LABELS[relationType]
+
+  if (session.stage === 'selesai') {
+    if (mentionsTrigger) await ctx.reply(FAMILY_SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
+    return
+  }
+
+  // ---- Masih nunggu target didaftarkan ----
+  if (session.stage === 'pembukaan' && !session.partner_b_id) {
+    const parties = await resolveFamilyPartiesFromText(text, ctx)
+    if (!parties) {
+      if (mentionsTrigger) await ctx.reply(FAMILY_SCRIPTED_LINES.needTarget(relationLabel), { message_thread_id: threadId })
+      return
+    }
+    if (!parties.citizenRelated || !parties.citizenSubject) {
+      await ctx.reply(FAMILY_SCRIPTED_LINES.couldNotResolve(`@${parties.usernameRelated}`), {
+        message_thread_id: threadId,
+      })
+      return
+    }
+    await startFamilyRegistration(agent, ctx, threadId, session, parties, relationType)
+    return
+  }
+
+  const subjectLabel = session.partner_a_label
+  const relatedLabel = session.partner_b_label
+
+  // ---- Tahap konfirmasi: nunggu kata kunci "sah" (deterministik, bukan AI) ----
+  if (session.stage === 'konfirmasi' && textContainsAny(text, FAMILY_CONFIRM_KEYWORDS)) {
+    await updateWeddingSession(supabaseAdmin, session.id, { stage: 'selesai' })
+    await ctx.reply(FAMILY_SCRIPTED_LINES.selesai(subjectLabel, relatedLabel, relationLabel), {
+      message_thread_id: threadId,
+    })
+
+    // Tool call beneran ke database, dipicu KODE (bukan AI) begitu tahap
+    // konfirmasi dinyatakan sah — sama prinsipnya kayak alur nikah.
+    try {
+      await handleAddFamilyRelation(supabaseAdmin, {
+        citizenId: session.partner_a_id,
+        relatedCitizenId: session.partner_b_id,
+        relationType,
+        agentKey: agent.key,
+      })
+    } catch (err) {
+      console.error(`[${agent.key}] gagal add_family_relation:`, err)
+    }
+    return
+  }
+
+  // ---- Pertanyaan bebas di tengah alur family -> AI (nggak pernah nulis data) ----
+  if (mentionsTrigger || text.includes('?')) {
+    pushHistory(historyKey, 'user', text)
+    const { text: reply } = await runTurn({
+      systemInstruction: buildPenghuluSystemInstruction(agent.name),
+      history: getHistory(historyKey),
+      userMessage:
+        `[Konteks: pendaftaran silsilah keluarga — ${relatedLabel || '(target)'} didaftarkan sebagai ${relationLabel} ` +
+        `dari ${subjectLabel || '(subjek)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
+    })
+    pushHistory(historyKey, 'model', reply)
+    await ctx.reply(reply, { message_thread_id: threadId })
+  }
+}
+
+// ------------------------------------------------------------------
+// Pegawai (Mimi, Naya, Cika) — guide murni, nggak ikut mencatat/mengesahkan.
+// ------------------------------------------------------------------
+async function handlePegawaiMessage(agent, ctx, text, threadId) {
+  const lower = text.toLowerCase()
+  if (!TRIGGER_WORDS_PEGAWAI.some((word) => lower.includes(word))) return
 
   const claimed = await claimAssistantMessage(supabaseAdmin, {
     chatId: ctx.chat.id,
     messageId: ctx.message.message_id,
     agentKey: agent.key,
   })
-  if (!claimed) return // salah satu dari 2 asisten lain sudah lebih cepat ambil pertanyaan ini
+  if (!claimed) return // salah satu dari 2 pegawai lain sudah lebih cepat ambil pertanyaan ini
+
+  // Kalau warga kelihatannya nanya soal ketersediaan ruangan, ambil data
+  // ASLI dari DB dulu (bukan biar AI nebak-nebak) baru dikasih ke AI
+  // sebagai konteks buat dibungkus sesuai gaya persona.
+  let roomStatusContext = null
+  if (ROOM_AVAILABILITY_KEYWORDS.some((kw) => lower.includes(kw))) {
+    try {
+      const summary = await getRoomAvailabilitySummary(supabaseAdmin)
+      roomStatusContext = formatRoomAvailabilityContext(summary)
+    } catch (err) {
+      console.error(`[${agent.key}] gagal ambil status ruangan:`, err)
+    }
+  }
 
   const { text: reply } = await runTurn({
-    systemInstruction: buildAssistantSystemInstruction(agent.name),
+    systemInstruction: buildPegawaiSystemInstruction(agent.name, roomStatusContext),
     history: [],
     userMessage: text,
   })
@@ -276,7 +487,7 @@ function startAgent(agent) {
       if (agent.kind === 'penghulu') {
         await handlePenghuluMessage(agent, ctx, text, threadId)
       } else {
-        await handleAssistantMessage(agent, ctx, text, threadId)
+        await handlePegawaiMessage(agent, ctx, text, threadId)
       }
     } catch (err) {
       console.error(`[${agent.key}] error:`, err)
