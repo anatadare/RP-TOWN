@@ -51,7 +51,9 @@ bot.command('town', (ctx) => {
   )
 })
 
-bot.launch()
+bot.launch({ dropPendingUpdates: true }).catch((err) => {
+  console.error('Bot utama gagal launch:', err.message)
+})
 console.log('RP Town bot jalan...')
 
 // NPC agents (Penghulu & Asisten) — proses terpisah secara logika, tapi
