@@ -84,9 +84,53 @@ async function claimAssistantMessage(supabaseAdmin, { chatId, messageId, agentKe
   return true
 }
 
+// ---- Pegawai sessions (1 sesi = 1 pegawai lagi handel 1 warga tertentu) ----
+//
+// Beda sama claimAssistantMessage di atas (klaim per-PESAN, race "siapa
+// cepat"): ini klaim per-WARGA, jadi 1 pegawai "nempel" ke 1 warga terus
+// sampai idle >3 menit atau warga udah diarahkan ke Penghulu. Logikanya
+// atomik di database lewat RPC `claim_pegawai_session` (lihat
+// migration-007-pegawai-sessions.sql) biar gak race antar 3 proses bot
+// pegawai yang jalan bersamaan.
+
+const PEGAWAI_IDLE_SECONDS = 180 // 3 menit
+
+// `priorityAgentKeys`/`priorityAgentNames` HARUS sudah diurutkan sesuai
+// prioritas (Naya -> Mimi -> Cika, lihat personas/pegawai.js) sebelum
+// dikirim ke sini — urutan array inilah yang dipakai database buat
+// nentuin siapa yang nganggur duluan.
+//
+// Return: row sesi (ada agent_key-nya) kalau berhasil/udah ada, atau
+// `null` kalau semua pegawai lagi sibuk pegang warga lain.
+async function claimPegawaiSession(
+  supabaseAdmin,
+  { chatId, telegramUserId, priorityAgentKeys, priorityAgentNames, idleSeconds = PEGAWAI_IDLE_SECONDS }
+) {
+  const { data, error } = await supabaseAdmin.rpc('claim_pegawai_session', {
+    p_chat_id: chatId,
+    p_telegram_user_id: telegramUserId,
+    p_agent_keys: priorityAgentKeys,
+    p_agent_names: priorityAgentNames,
+    p_idle_seconds: idleSeconds,
+  })
+
+  if (error) throw error
+  return data
+}
+
+// Lepas sesi (dipanggil begitu pegawai berhasil arahkan warga ke Penghulu
+// yang nganggur -> tugas pegawai ke warga ini dianggap selesai).
+async function releasePegawaiSession(supabaseAdmin, sessionId) {
+  const { error } = await supabaseAdmin.rpc('release_pegawai_session', { p_session_id: sessionId })
+  if (error) throw error
+}
+
 module.exports = {
   getWeddingSession,
   claimWeddingSession,
   updateWeddingSession,
   claimAssistantMessage,
+  PEGAWAI_IDLE_SECONDS,
+  claimPegawaiSession,
+  releasePegawaiSession,
 }
