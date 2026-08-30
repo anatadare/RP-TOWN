@@ -13,18 +13,31 @@ const { GoogleGenerativeAI } = require('@google/generative-ai')
 const { GEMINI_API_KEY, GEMINI_MODEL } = require('./config')
 
 if (!GEMINI_API_KEY) {
-  console.warn('[agents] GEMINI_API_KEY belum diisi — agent NPC tidak akan bisa membalas.')
+  console.warn('[agents] GEMINI_API_KEY (default/shared) belum diisi. Agent yang gak punya API key sendiri tidak akan bisa membalas.')
 }
 
-const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null
+// Cache 1 instance GoogleGenerativeAI per API key, biar kalau ada 8 bot
+// dengan 8 API key beda-beda, tiap key cuma di-init sekali (bukan bikin
+// instance baru tiap kirim pesan).
+const clientCache = new Map() // apiKey -> GoogleGenerativeAI instance
+
+function getClient(apiKey) {
+  if (!clientCache.has(apiKey)) {
+    clientCache.set(apiKey, new GoogleGenerativeAI(apiKey))
+  }
+  return clientCache.get(apiKey)
+}
 
 // Jalanin 1 giliran chat: system instruction (statis, persona) + history
 // pendek + pesan user terbaru. Kalau model minta function call, jalankan
 // `onFunctionCall`, kirim hasilnya balik ke model, lalu ambil balasan teks
 // finalnya.
-async function runTurn({ systemInstruction, history = [], userMessage, tools, onFunctionCall }) {
-  if (!genAI) throw new Error('GEMINI_API_KEY belum dikonfigurasi')
+// `apiKey` opsional — kalau gak dikasih, fallback ke GEMINI_API_KEY (share).
+async function runTurn({ systemInstruction, history = [], userMessage, tools, onFunctionCall, apiKey }) {
+  const key = apiKey || GEMINI_API_KEY
+  if (!key) throw new Error('GEMINI_API_KEY belum dikonfigurasi')
 
+  const genAI = getClient(key)
   const model = genAI.getGenerativeModel({
     model: GEMINI_MODEL,
     systemInstruction,
