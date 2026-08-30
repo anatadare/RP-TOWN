@@ -786,6 +786,251 @@ body {
   margin-bottom: 20px;
 }
 
+/* ---- Identitas (avatar besar + nama + online) ---- */
+.profile-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.profile-avatar-large {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--moss);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--paper);
+  font-size: 30px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  border: 2px solid rgba(255, 180, 84, 0.35);
+}
+
+.profile-avatar-large img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 19px;
+  color: var(--paper);
+  margin: 0 0 4px;
+}
+
+.profile-online {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  opacity: 0.8;
+  margin: 0;
+}
+
+.profile-online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lantern);
+  box-shadow: 0 0 6px 1px var(--lantern);
+}
+
+/* ---- Baris tombol aksi ---- */
+.profile-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.profile-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 6px;
+  border-radius: 14px;
+  border: 1px solid rgba(244, 236, 216, 0.14);
+  background: rgba(244, 236, 216, 0.06);
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+}
+
+.profile-action-btn span {
+  line-height: 1.2;
+}
+
+.profile-action-btn.is-active {
+  background: rgba(255, 180, 84, 0.12);
+  border-color: rgba(255, 180, 84, 0.3);
+  color: var(--lantern-soft);
+}
+
+.profile-toast {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--lantern-soft);
+  background: rgba(255, 180, 84, 0.1);
+  border: 1px solid rgba(255, 180, 84, 0.25);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 0 0 14px;
+}
+
+/* ---- Section title (mis. "Rumah") ---- */
+.profile-section {
+  margin-bottom: 16px;
+}
+
+.profile-section-title-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.profile-section-title {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--lantern-soft);
+}
+
+/* ---- Kartu Rumah ---- */
+.profile-house-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  background: rgba(244, 236, 216, 0.06);
+  border: 1px solid rgba(244, 236, 216, 0.14);
+  border-radius: 16px;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.profile-house-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(255, 180, 84, 0.12);
+  color: var(--lantern-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.profile-house-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-house-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--paper);
+  margin: 0 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-house-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  opacity: 0.75;
+  margin: 0;
+}
+
+.profile-house-arrow {
+  font-size: 20px;
+  color: var(--ink-soft);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.profile-house-empty {
+  cursor: default;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.profile-house-empty-text {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--ink-soft);
+  opacity: 0.8;
+  margin: 0;
+  text-align: center;
+}
+
+.profile-house-cta {
+  width: 100%;
+  padding: 11px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 180, 84, 0.3);
+  background: rgba(255, 180, 84, 0.12);
+  color: var(--lantern-soft);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ---- Kartu info (Status, Bio, Username) ---- */
+.profile-info-card {
+  background: rgba(244, 236, 216, 0.06);
+  border: 1px solid rgba(244, 236, 216, 0.14);
+  border-radius: 16px;
+  padding: 4px 14px;
+  margin-bottom: 20px;
+}
+
+.profile-info-row {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(244, 236, 216, 0.08);
+}
+
+.profile-info-row:last-child {
+  border-bottom: none;
+}
+
+.profile-info-value {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--paper);
+  margin: 0 0 2px;
+  word-break: break-word;
+}
+
+.profile-info-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  opacity: 0.65;
+  margin: 0;
+}
+
 .admin-mode-row {
   display: flex;
   align-items: center;
