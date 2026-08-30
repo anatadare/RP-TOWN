@@ -502,7 +502,20 @@ function startAgent(agent) {
     }
   })
 
-  bot.launch()
+  // dropPendingUpdates: true -> pas start, buang update lama yang numpuk
+  // (misal pas container lama masih polling terus digantiin container baru).
+  // .catch(...) di sini KRUSIAL: tanpa ini, 1 bot yang lagi conflict
+  // (409, biasanya pas Railway redeploy & instance lama belum mati total)
+  // bakal ngelempar unhandled rejection yang nge-crash SELURUH proses
+  // Node — matiin 8 bot + bot utama sekaligus, bukan cuma 1 bot ini aja.
+  bot.launch({ dropPendingUpdates: true }).catch((err) => {
+    console.error(`[agents] ${agent.key} ("${agent.name}") gagal launch:`, err.message)
+    console.error(
+      `[agents] Kalau errornya 409 Conflict, biasanya ada instance lama yang masih polling ` +
+        `token yang sama (overlap pas redeploy). Tunggu ~30 detik dan cek log lagi — kalau ` +
+        `masih looping terus, redeploy manual sekali lagi dari Railway.`
+    )
+  })
   const roomsLabel = agent.threadIds ? ` (room: ${agent.threadIds.join(', ')})` : ''
   console.log(`[agents] ${agent.key} ("${agent.name}") jalan di grup: ${agent.groupIds.join(', ')}${roomsLabel}`)
 
