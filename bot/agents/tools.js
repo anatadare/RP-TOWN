@@ -35,4 +35,57 @@ async function handleUpdateMarriageStatus(supabaseAdmin, { citizenAId, citizenBI
   return { success: true }
 }
 
-module.exports = { updateMarriageStatusDeclaration, handleUpdateMarriageStatus }
+// ------------------------------------------------------------------
+// Ekspansi silsilah keluarga (mommy/daddy/kaka/abang/nenek/kakek/paman/tante)
+// Sama kayak update_marriage_status: HANYA dipanggil oleh kode di stage
+// 'konfirmasi' -> 'selesai' (deterministik, bukan hasil keputusan AI).
+// Tabel & RPC-nya ada di database/migration-006-family-tree.sql.
+// ------------------------------------------------------------------
+
+const FAMILY_RELATION_TYPES = ['mommy', 'daddy', 'kaka', 'abang', 'nenek', 'kakek', 'paman', 'tante']
+
+const addFamilyRelationDeclaration = {
+  name: 'add_family_relation',
+  description:
+    'Catat relasi keluarga non-pasangan (mommy/daddy/kaka/abang/nenek/kakek/paman/tante) antara dua warga. ' +
+    'HANYA panggil ini kalau tahap konfirmasi sudah benar-benar dinyatakan sah oleh sistem (bukan tebakan kamu sendiri).',
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      citizenId: { type: SchemaType.STRING, description: 'UUID warga yang mendaftarkan (subjek), dari tabel citizens' },
+      relatedCitizenId: { type: SchemaType.STRING, description: 'UUID warga yang didaftarkan sebagai relasi, dari tabel citizens' },
+      relationType: {
+        type: SchemaType.STRING,
+        description: `Jenis relasi, salah satu dari: ${FAMILY_RELATION_TYPES.join(', ')}`,
+      },
+    },
+    required: ['citizenId', 'relatedCitizenId', 'relationType'],
+  },
+}
+
+async function handleAddFamilyRelation(supabaseAdmin, { citizenId, relatedCitizenId, relationType, agentKey }) {
+  if (!citizenId || !relatedCitizenId || !relationType) {
+    throw new Error('citizenId, relatedCitizenId, dan relationType wajib diisi')
+  }
+  if (!FAMILY_RELATION_TYPES.includes(relationType)) {
+    throw new Error(`relationType tidak valid: ${relationType}`)
+  }
+
+  const { data, error } = await supabaseAdmin.rpc('add_family_relation', {
+    p_citizen_id: citizenId,
+    p_related_citizen_id: relatedCitizenId,
+    p_relation_type: relationType,
+    p_agent_key: agentKey || null,
+  })
+
+  if (error) throw error
+  return { success: true, row: data }
+}
+
+module.exports = {
+  updateMarriageStatusDeclaration,
+  handleUpdateMarriageStatus,
+  FAMILY_RELATION_TYPES,
+  addFamilyRelationDeclaration,
+  handleAddFamilyRelation,
+}
