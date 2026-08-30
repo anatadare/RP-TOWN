@@ -21,7 +21,6 @@ const {
   AGENTS,
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
-  KUA_GROUP_CHAT_ID,
   TRIGGER_WORD_PENGHULU,
   TRIGGER_WORDS_PEGAWAI,
 } = require('./config')
@@ -458,12 +457,8 @@ async function handlePegawaiMessage(agent, ctx, text, threadId) {
 // Bootstrap
 // ------------------------------------------------------------------
 function startAgents() {
-  if (!KUA_GROUP_CHAT_ID) {
-    console.warn('[agents] KUA_GROUP_CHAT_ID belum diisi, agent NPC tidak dijalankan.')
-    return
-  }
   if (AGENTS.length === 0) {
-    console.warn('[agents] Tidak ada agent dengan token valid, tidak ada yang dijalankan.')
+    console.warn('[agents] Tidak ada agent dengan token & grup valid, tidak ada yang dijalankan.')
     return
   }
 
@@ -474,10 +469,13 @@ function startAgents() {
 
 function startAgent(agent) {
   const bot = new Telegraf(agent.token)
+  // Set biar cek grup cepat, dan aman dibanding-bandingkan sebagai string
+  // (chat id dari Telegram numeric, tapi kita simpen/baca dari .env sebagai string).
+  const groupIdSet = new Set(agent.groupIds.map(String))
 
   bot.on('message', async (ctx) => {
     try {
-      if (String(ctx.chat.id) !== String(KUA_GROUP_CHAT_ID)) return
+      if (!groupIdSet.has(String(ctx.chat.id))) return
 
       const text = ctx.message.text || ctx.message.caption
       if (!text) return
@@ -495,7 +493,7 @@ function startAgent(agent) {
   })
 
   bot.launch()
-  console.log(`[agents] ${agent.key} ("${agent.name}") jalan...`)
+  console.log(`[agents] ${agent.key} ("${agent.name}") jalan di grup: ${agent.groupIds.join(', ')}`)
 
   process.once('SIGINT', () => bot.stop('SIGINT'))
   process.once('SIGTERM', () => bot.stop('SIGTERM'))
