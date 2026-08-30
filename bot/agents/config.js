@@ -30,12 +30,9 @@ function buildAgentList(prefix, kind, count, defaultNames) {
       continue
     }
 
-    // Grup yang di-handle agent ini, dipisah koma buat lebih dari 1 grup,
-    // misal: PENGHULU_1_GROUP_IDS=-1001111111111,-1002222222222
-    // (dipakai buat 1 penghulu yang jaga 2 grup sekaligus).
+    // Grup yang di-handle agent ini, dipisah koma buat lebih dari 1 grup.
     // Kalau env khusus agent ini kosong, fallback ke KUA_GROUP_CHAT_ID
-    // (perilaku lama: 1 grup yang sama dipakai semua agent — cocok buat
-    // 3 pegawai yang emang cuma jaga 1 grup bareng-bareng).
+    // (perilaku lama: 1 grup yang sama dipakai semua agent).
     const groupIdsRaw = process.env[`${prefix}_${i}_GROUP_IDS`]
     const groupIds = groupIdsRaw
       ? groupIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -48,12 +45,23 @@ function buildAgentList(prefix, kind, count, defaultNames) {
       continue
     }
 
+    // Room/topic (forum thread) spesifik yang di-handle agent ini di DALAM
+    // grup di atas, dipisah koma, misal: PENGHULU_4_THREAD_IDS=101,205
+    // (dipakai buat kasus "1 grup dengan banyak room", tiap penghulu jaga
+    // 2 room tertentu aja). Kalau dikosongin, agent ini nangepin SEMUA
+    // room/topic di grup tsb (perilaku lama, siapa cepat dia dapat sesi).
+    const threadIdsRaw = process.env[`${prefix}_${i}_THREAD_IDS`]
+    const threadIds = threadIdsRaw
+      ? threadIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : null // null = semua room diterima
+
     list.push({
       key: `${kind}-${i}`,
       kind, // 'penghulu' | 'assistant'
       token,
       name,
       groupIds, // array of chat id (string), 1 atau lebih
+      threadIds, // array of thread id (string) atau null (semua room)
     })
   }
   return list
