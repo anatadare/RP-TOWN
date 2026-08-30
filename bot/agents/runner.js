@@ -285,6 +285,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
       pushHistory(historyKey, 'user', text)
       const { text: reply } = await runTurn({
         systemInstruction: buildPenghuluSystemInstruction(agent.name),
+      apiKey: agent.geminiApiKey,
         history: getHistory(historyKey),
         userMessage: `[Konteks: prosesi pernikahan ${nameA} & ${nameB}, tahap saat ini: doa/setelah ijab-kabul]\nPesan tamu: ${text}`,
       })
@@ -299,6 +300,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
     pushHistory(historyKey, 'user', text)
     const { text: reply } = await runTurn({
       systemInstruction: buildPenghuluSystemInstruction(agent.name),
+      apiKey: agent.geminiApiKey,
       history: getHistory(historyKey),
       userMessage: `[Konteks: prosesi pernikahan ${nameA || '(mempelai A)'} & ${nameB || '(mempelai B)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
     })
@@ -407,6 +409,7 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
     pushHistory(historyKey, 'user', text)
     const { text: reply } = await runTurn({
       systemInstruction: buildPenghuluSystemInstruction(agent.name),
+      apiKey: agent.geminiApiKey,
       history: getHistory(historyKey),
       userMessage:
         `[Konteks: pendaftaran silsilah keluarga — ${relatedLabel || '(target)'} didaftarkan sebagai ${relationLabel} ` +
@@ -446,6 +449,7 @@ async function handlePegawaiMessage(agent, ctx, text, threadId) {
 
   const { text: reply } = await runTurn({
     systemInstruction: buildPegawaiSystemInstruction(agent.name, roomStatusContext),
+    apiKey: agent.geminiApiKey,
     history: [],
     userMessage: text,
   })
