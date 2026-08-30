@@ -55,6 +55,17 @@ function buildAgentList(prefix, kind, count, defaultNames) {
       ? threadIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
       : null // null = semua room diterima
 
+    // API key Gemini punya sendiri per bot (kalau kamu punya 1 key per
+    // bot). Kalau env khusus agent ini kosong, fallback ke GEMINI_API_KEY
+    // yang di-share bareng (perilaku lama).
+    const geminiApiKey = process.env[`${prefix}_${i}_GEMINI_API_KEY`] || GEMINI_API_KEY
+    if (!geminiApiKey) {
+      console.warn(
+        `[agents] ${prefix}_${i}_GEMINI_API_KEY (atau GEMINI_API_KEY) belum diisi, agent "${name}" di-skip.`
+      )
+      continue
+    }
+
     list.push({
       key: `${kind}-${i}`,
       kind, // 'penghulu' | 'assistant'
@@ -62,6 +73,7 @@ function buildAgentList(prefix, kind, count, defaultNames) {
       name,
       groupIds, // array of chat id (string), 1 atau lebih
       threadIds, // array of thread id (string) atau null (semua room)
+      geminiApiKey,
     })
   }
   return list
