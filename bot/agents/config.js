@@ -29,11 +29,31 @@ function buildAgentList(prefix, kind, count, defaultNames) {
       console.warn(`[agents] ${prefix}_${i}_TOKEN belum diisi, agent "${name}" di-skip.`)
       continue
     }
+
+    // Grup yang di-handle agent ini, dipisah koma buat lebih dari 1 grup,
+    // misal: PENGHULU_1_GROUP_IDS=-1001111111111,-1002222222222
+    // (dipakai buat 1 penghulu yang jaga 2 grup sekaligus).
+    // Kalau env khusus agent ini kosong, fallback ke KUA_GROUP_CHAT_ID
+    // (perilaku lama: 1 grup yang sama dipakai semua agent — cocok buat
+    // 3 pegawai yang emang cuma jaga 1 grup bareng-bareng).
+    const groupIdsRaw = process.env[`${prefix}_${i}_GROUP_IDS`]
+    const groupIds = groupIdsRaw
+      ? groupIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : (KUA_GROUP_CHAT_ID ? [KUA_GROUP_CHAT_ID] : [])
+
+    if (groupIds.length === 0) {
+      console.warn(
+        `[agents] ${prefix}_${i}_GROUP_IDS (atau KUA_GROUP_CHAT_ID) belum diisi, agent "${name}" di-skip.`
+      )
+      continue
+    }
+
     list.push({
       key: `${kind}-${i}`,
       kind, // 'penghulu' | 'assistant'
       token,
       name,
+      groupIds, // array of chat id (string), 1 atau lebih
     })
   }
   return list
