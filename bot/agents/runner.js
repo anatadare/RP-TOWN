@@ -19,6 +19,8 @@ const { createClient } = require('@supabase/supabase-js')
 
 const {
   AGENTS,
+  ASSISTANT_AGENTS,
+  PENGHULU_AGENTS,
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
 } = require('./config')
@@ -45,19 +47,57 @@ const {
   detectFamilyRelationType,
   buildPenghuluSystemInstruction,
 } = require('./personas/penghulu')
-const { buildPegawaiSystemInstruction } = require('./personas/pegawai')
+const { buildPegawaiSystemInstruction, sortAgentsByPegawaiPriority } = require('./personas/pegawai')
 const { updateMarriageStatusDeclaration, handleUpdateMarriageStatus, handleAddFamilyRelation } = require('./tools')
 const {
   getWeddingSession,
   claimWeddingSession,
   updateWeddingSession,
-  claimAssistantMessage,
+  claimPegawaiSession,
+  releasePegawaiSession,
 } = require('./stateStore')
 const { getRoomAvailabilitySummary, formatRoomAvailabilityContext } = require('./roomStatus')
 
 // Kata kunci yang nandain warga lagi nanya soal ketersediaan ruangan —
 // dipakai Pegawai buat mutusin perlu nge-query data ruangan asli atau nggak.
 const ROOM_AVAILABILITY_KEYWORDS = ['ruang', 'room', 'kosong', 'sepi', 'kamar']
+
+// Kata kunci yang nandain warga lagi nanya/mau urusan nikah atau pendaftaran
+// silsilah keluarga -- dipakai Pegawai buat mutusin perlu ngasih tau siapa
+// Penghulu yang lagi nganggur (dan menganggap tugas pegawai ke warga ini
+// selesai begitu diarahkan). Lihat handlePegawaiMessage di bawah.
+const PENGHULU_INTENT_KEYWORDS = [
+  'nikah', 'kawin', 'daftar', 'penghulu',
+  'mommy', 'daddy', 'kaka', 'abang', 'nenek', 'kakek', 'paman', 'tante',
+]
+
+// Urutan prioritas pegawai (Naya -> Mimi -> Cika) dihitung SEKALI dari
+// daftar agent yang beneran aktif (punya token & konfigurasi valid di
+// config.js), dipakai ulang tiap ada warga baru yang butuh pegawai.
+const PEGAWAI_PRIORITY_AGENTS = sortAgentsByPegawaiPriority(ASSISTANT_AGENTS)
+const PEGAWAI_PRIORITY_KEYS = PEGAWAI_PRIORITY_AGENTS.map((a) => a.key)
+const PEGAWAI_PRIORITY_NAMES_SORTED = PEGAWAI_PRIORITY_AGENTS.map((a) => a.name)
+
+// Cek Penghulu mana yang lagi NGANGGUR (gak punya wedding_sessions yang
+// masih berjalan, di thread mana pun) -- data ASLI dari DB, bukan tebakan
+// AI, sama prinsipnya kayak getRoomAvailabilitySummary.
+async function getIdlePenghuluNames() {
+  const { data, error } = await supabaseAdmin
+    .from('wedding_sessions')
+    .select('agent_key')
+    .neq('stage', 'selesai')
+
+  if (error) throw error
+  const busyKeys = new Set((data || []).map((r) => r.agent_key))
+  return PENGHULU_AGENTS.filter((p) => !busyKeys.has(p.key)).map((p) => p.name)
+}
+
+function formatPenghuluStatusContext(idleNames) {
+  if (idleNames.length > 0) {
+    return `Penghulu yang lagi NGANGGUR (kosong, bisa langsung dipanggil sekarang): ${idleNames.join(', ')}.`
+  }
+  return 'Semua Penghulu lagi memandu prosesi warga lain, sarankan warga coba lagi beberapa saat lagi.'
+}
 
 // Rolling history super pendek per thread, cuma buat kasih konteks ke
 // Gemini pas nasihat/tanya-jawab (BUKAN sumber kebenaran state acara —
@@ -437,21 +477,46 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
 }
 
 // ------------------------------------------------------------------
-// Pegawai (Mimi, Naya, Cika) — guide murni, nggak ikut mencatat/mengesahkan.
+// Pegawai (Naya, Mimi, Cika) — guide murni, nggak ikut mencatat/mengesahkan.
+//
+// Beda sama dulu (klaim per-PESAN, siapa cepat dia jawab): sekarang klaim
+// per-WARGA. 1 warga = 1 pegawai (sticky) sampai:
+// - idle >3 menit (warga gak chat lagi), ATAU
+// - pegawai berhasil arahkan warga ke Penghulu yang nganggur (tugas selesai)
+// Urutan assign warga BARU: Naya (ketua pegawai) didahulukan, baru Mimi,
+// baru Cika — lihat PEGAWAI_PRIORITY_KEYS di atas & claim_pegawai_session
+// (migration-007-pegawai-sessions.sql) buat logika atomiknya.
 // ------------------------------------------------------------------
 async function handlePegawaiMessage(agent, ctx, text, threadId) {
-  // CATATAN: sudah gak butuh kata trigger ("asisten"/"pegawai") lagi —
-  // Pegawai langsung jawab tiap pesan di room yang dia handle. Topik yang
-  // boleh dibahas dibatasi lewat system instruction (lihat personas/pegawai.js),
-  // BUKAN lewat filter kata kunci di sini.
   const lower = text.toLowerCase()
+  const chatId = String(ctx.chat.id)
+  const telegramUserId = ctx.from.id
 
-  const claimed = await claimAssistantMessage(supabaseAdmin, {
-    chatId: ctx.chat.id,
-    messageId: ctx.message.message_id,
-    agentKey: agent.key,
+  const session = await claimPegawaiSession(supabaseAdmin, {
+    chatId,
+    telegramUserId,
+    priorityAgentKeys: PEGAWAI_PRIORITY_KEYS,
+    priorityAgentNames: PEGAWAI_PRIORITY_NAMES_SORTED,
   })
-  if (!claimed) return // salah satu dari 2 pegawai lain sudah lebih cepat ambil pertanyaan ini
+
+  if (!session) return // semua pegawai lagi sibuk pegang warga lain, belum ada yang bisa jawab dulu
+  if (session.agent_key !== agent.key) return // warga ini jatahnya pegawai lain, diam
+
+  // Kalau warga kelihatannya lagi nanya/mau urusan nikah/daftar keluarga,
+  // cek Penghulu mana yang beneran nganggur (data ASLI dari DB) supaya
+  // Pegawai bisa langsung arahin ke nama yang tepat -- dan anggap tugas
+  // pegawai ke warga ini SELESAI (sesi dilepas) begitu diarahkan.
+  let penghuluStatusContext = null
+  let directingToPenghulu = false
+  if (PENGHULU_INTENT_KEYWORDS.some((kw) => lower.includes(kw))) {
+    try {
+      const idleNames = await getIdlePenghuluNames()
+      penghuluStatusContext = formatPenghuluStatusContext(idleNames)
+      directingToPenghulu = true
+    } catch (err) {
+      console.error(`[${agent.key}] gagal ambil status penghulu:`, err)
+    }
+  }
 
   // Kalau warga kelihatannya nanya soal ketersediaan ruangan, ambil data
   // ASLI dari DB dulu (bukan biar AI nebak-nebak) baru dikasih ke AI
@@ -467,13 +532,21 @@ async function handlePegawaiMessage(agent, ctx, text, threadId) {
   }
 
   const { text: reply } = await runTurn({
-    systemInstruction: buildPegawaiSystemInstruction(agent.name, roomStatusContext),
+    systemInstruction: buildPegawaiSystemInstruction(agent.name, roomStatusContext, penghuluStatusContext),
     apiKey: agent.geminiApiKey,
     history: [],
     userMessage: text,
   })
 
   await ctx.reply(reply, threadId != null ? { message_thread_id: threadId } : undefined)
+
+  if (directingToPenghulu) {
+    try {
+      await releasePegawaiSession(supabaseAdmin, session.id) // tugas selesai, biar pegawai ini bisa nangepin warga lain
+    } catch (err) {
+      console.error(`[${agent.key}] gagal lepas sesi pegawai:`, err)
+    }
+  }
 }
 
 // ------------------------------------------------------------------
