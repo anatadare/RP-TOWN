@@ -54,6 +54,13 @@ bot.command('town', (ctx) => {
 bot.launch()
 console.log('RP Town bot jalan...')
 
+// NPC agents (Penghulu & Asisten) — proses terpisah secara logika, tapi
+// dijalankan di 1 service Node yang sama biar gak perlu setup deploy baru.
+// Lihat bot/agents/ untuk detailnya. Aman dipanggil walau .env agent belum
+// diisi lengkap — agent yang tokennya kosong otomatis di-skip.
+const { startAgents } = require('./agents/runner')
+startAgents()
+
 // ============================================
 // Webhook server — dipanggil Supabase Database Webhooks
 // tiap ada baris di tabel `houses` yang ter-update (owner_citizen_id keisi)
