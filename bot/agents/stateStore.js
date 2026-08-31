@@ -66,6 +66,15 @@ async function updateWeddingSession(supabaseAdmin, id, patch) {
   return data
 }
 
+// Lepas (hapus) sesi begitu 1 prosesi bener-bener kelar (nikah 'penutup',
+// atau family udah dijawab "selesai" di stage 'selesai_tanya') — biar
+// room-nya kosong lagi dan bisa dipakai pasangan/warga BERIKUTNYA, bukan
+// cuma sekali pakai selamanya per thread.
+async function releaseWeddingSession(supabaseAdmin, id) {
+  const { error } = await supabaseAdmin.from('wedding_sessions').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ---- Assistant message claims (1 klaim = 1 pertanyaan yang lagi dijawab) ----
 
 // Coba klaim 1 pesan spesifik buat salah satu dari 3 bot asisten, biar
@@ -129,6 +138,7 @@ module.exports = {
   getWeddingSession,
   claimWeddingSession,
   updateWeddingSession,
+  releaseWeddingSession,
   claimAssistantMessage,
   PEGAWAI_IDLE_SECONDS,
   claimPegawaiSession,
