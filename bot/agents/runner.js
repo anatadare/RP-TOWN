@@ -53,6 +53,7 @@ const {
   getWeddingSession,
   claimWeddingSession,
   updateWeddingSession,
+  releaseWeddingSession,
   claimPegawaiSession,
   releasePegawaiSession,
 } = require('./stateStore')
@@ -162,6 +163,26 @@ async function resolveCitizenByTelegramId(telegramId) {
 }
 
 // ------------------------------------------------------------------
+// Cek apakah PENGIRIM pesan ini termasuk pihak yang lagi dilayani sesi
+// ini (partner_a / partner_b — buat nikah = mempelai A & B, buat family
+// = subject & related). Dipanggil begitu KEDUA pihak sudah teridentifikasi,
+// biar warga LAIN yang nyelonong chat di room yang sama nggak ikut
+// mengubah state prosesi orang lain (misal kebetulan ngetik "sah").
+//
+// Kalau belum ada pihak yang teridentifikasi sama sekali (masih nunggu
+// mention/relasi di-resolve), balikin true dulu — belum ada yang perlu
+// dibatasi di tahap ini.
+// ------------------------------------------------------------------
+async function isSessionParty(session, telegramUserId) {
+  const partyIds = [session.partner_a_id, session.partner_b_id].filter(Boolean)
+  if (partyIds.length === 0) return true
+
+  const citizen = await resolveCitizenByTelegramId(telegramUserId)
+  if (!citizen) return false
+  return partyIds.includes(citizen.id)
+}
+
+// ------------------------------------------------------------------
 // Helper: cari siapa "related" (warga yang didaftarkan jadi mommy/daddy/dst)
 // dan siapa "subject" (warga yang jadi pemilik relasi itu) dari teks.
 //
@@ -263,24 +284,24 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
       return
     }
 
-    // Gak ada sinyal mulai sesi (bukan permintaan nikah/keluarga) -> jawab
-    // bebas via AI TANPA klaim sesi apa pun, biar chat santai di room ini
-    // tetap direspon. System instruction yang jaga supaya jawabannya cuma
-    // seputar KUA (lihat buildPenghuluSystemInstruction).
-    pushHistory(historyKey, 'user', text)
-    const { text: reply } = await runTurn({
-      systemInstruction: buildPenghuluSystemInstruction(agent.name),
-      apiKey: agent.geminiApiKey,
-      history: getHistory(historyKey),
-      userMessage: `[Konteks: belum ada prosesi yang sedang berjalan di ruangan ini]\nPesan warga: ${text}`,
-    })
-    pushHistory(historyKey, 'model', reply)
-    await ctx.reply(reply, { message_thread_id: threadId })
+    // Gak ada sinyal mulai sesi (bukan permintaan nikah/keluarga) -> kasih
+    // pembukaan baku nanyain "mau ngapain?" (DETERMINISTIK, bukan AI) biar
+    // jadi pintu masuk yang konsisten tiap room Penghulu.
+    await ctx.reply(SCRIPTED_LINES.greeting(agent.name), { message_thread_id: threadId })
     return
   }
 
   // ---- Sesi ini bukan punya agent ini -> diam ----
   if (session.agent_key !== agent.key) return
+
+  // ---- Ada pihak yang lagi diproses (mempelai/subject-related sudah
+  //      teridentifikasi) -> warga LAIN yang nyelonong chat di room yang
+  //      sama diminta duduk & nunggu giliran, chat mereka diabaikan sama
+  //      sekali (nggak diproses jadi bagian prosesi siapa pun). ----
+  if (!(await isSessionParty(session, ctx.from.id))) {
+    await ctx.reply(SCRIPTED_LINES.duduk(agent.name), { message_thread_id: threadId })
+    return
+  }
 
   // ---- Sesi tipe 'family' punya alur & tahapannya sendiri, dilempar ke
   //      handler terpisah biar nggak nyampur sama state machine nikah ----
@@ -336,8 +357,16 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
   // ---- Tahap doa: nunggu "nasihat" (AI) atau "selesai" (scripted) ----
   if (session.stage === 'doa') {
     if (textContainsAny(text, KEYWORDS.closeCeremony)) {
-      await updateWeddingSession(supabaseAdmin, session.id, { stage: nextStage(nextStage(session.stage)) }) // doa -> penutup -> selesai
       await ctx.reply(SCRIPTED_LINES.penutup(nameA, nameB), { message_thread_id: threadId })
+      await ctx.reply(SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
+
+      // Room-nya dikosongin lagi (bukan cuma di-mark 'selesai') biar bisa
+      // langsung dipakai pasangan/warga BERIKUTNYA di thread yang sama.
+      try {
+        await releaseWeddingSession(supabaseAdmin, session.id)
+      } catch (err) {
+        console.error(`[${agent.key}] gagal lepas sesi penghulu:`, err)
+      }
       return
     }
 
@@ -401,6 +430,11 @@ async function startFamilyRegistration(agent, ctx, threadId, session, parties, r
     partner_a_label: subjectLabel,
     partner_b_id: parties.citizenRelated.id,
     partner_b_label: relatedLabel,
+    // relation_type di-update lagi di sini (bukan cuma di-set sekali pas
+    // klaim) karena fungsi ini juga dipanggil ulang kalau warga yang sama
+    // mau nambah relasi LAIN dalam 1x kunjungan (lihat stage 'selesai_tanya'
+    // di handleFamilyMessage).
+    relation_type: relationType,
     stage: 'konfirmasi',
   })
 
@@ -415,7 +449,42 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
   const relationType = session.relation_type
   const relationLabel = FAMILY_RELATION_LABELS[relationType]
 
+  // ---- Nunggu jawaban "mau nambah anggota keluarga lain atau udah cukup?"
+  //      (ditanya begitu 1 relasi berhasil dicatat, lihat blok konfirmasi
+  //      di bawah) — biar 1 warga bisa daftarin >1 anggota keluarga dalam
+  //      1x kunjungan sebelum bener-bener diminta keluar ruangan. ----
+  if (session.stage === 'selesai_tanya') {
+    if (textContainsAny(text, KEYWORDS.closeCeremony)) {
+      await ctx.reply(SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
+      try {
+        await releaseWeddingSession(supabaseAdmin, session.id) // room kosong lagi buat warga berikutnya
+      } catch (err) {
+        console.error(`[${agent.key}] gagal lepas sesi penghulu:`, err)
+      }
+      return
+    }
+
+    const nextRelationType = detectFamilyRelationType(text)
+    if (nextRelationType) {
+      const parties = await resolveFamilyPartiesFromText(text, ctx)
+      if (parties && parties.citizenRelated && parties.citizenSubject) {
+        await startFamilyRegistration(agent, ctx, threadId, session, parties, nextRelationType)
+      } else {
+        const nextRelationLabel = FAMILY_RELATION_LABELS[nextRelationType]
+        await ctx.reply(FAMILY_SCRIPTED_LINES.needTarget(nextRelationLabel), { message_thread_id: threadId })
+      }
+      return
+    }
+
+    // Pesan gak jelas maksudnya nambah atau udahan -> ulangi pertanyaannya
+    await ctx.reply(FAMILY_SCRIPTED_LINES.tanyaLanjut(session.partner_a_label), { message_thread_id: threadId })
+    return
+  }
+
   if (session.stage === 'selesai') {
+    // Fallback aman kalau somehow masih ada row lama stage 'selesai' —
+    // normalnya row langsung dihapus (releaseWeddingSession) begitu warga
+    // jawab "selesai" di atas, jadi baris ini praktis gak akan kena lagi.
     await ctx.reply(FAMILY_SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
     return
   }
@@ -442,13 +511,16 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
 
   // ---- Tahap konfirmasi: nunggu kata kunci "sah" (deterministik, bukan AI) ----
   if (session.stage === 'konfirmasi' && textContainsAny(text, FAMILY_CONFIRM_KEYWORDS)) {
-    await updateWeddingSession(supabaseAdmin, session.id, { stage: 'selesai' })
+    await updateWeddingSession(supabaseAdmin, session.id, { stage: 'selesai_tanya' })
     await ctx.reply(FAMILY_SCRIPTED_LINES.selesai(subjectLabel, relatedLabel, relationLabel), {
       message_thread_id: threadId,
     })
+    await ctx.reply(FAMILY_SCRIPTED_LINES.tanyaLanjut(subjectLabel), { message_thread_id: threadId })
 
     // Tool call beneran ke database, dipicu KODE (bukan AI) begitu tahap
-    // konfirmasi dinyatakan sah — sama prinsipnya kayak alur nikah.
+    // konfirmasi dinyatakan sah — sama prinsipnya kayak alur nikah. Ini
+    // TETAP jalan biarpun nanti warganya milih nambah relasi lain lagi,
+    // karena relasi INI udah valid & harus tercatat independen.
     try {
       await handleAddFamilyRelation(supabaseAdmin, {
         citizenId: session.partner_a_id,
