@@ -14,9 +14,13 @@
 const STAGES = ['pembukaan', 'ijab_kabul', 'doa', 'penutup', 'selesai']
 
 // Stage khusus buat sesi 'family' (ekspansi silsilah non-pasangan).
-// Sengaja lebih singkat dari nikah (nggak ada ijab-kabul/doa/nasihat),
-// sesuai keputusan: "tetap ada tahapan singkat: buka -> konfirmasi -> sah".
-const FAMILY_STAGES = ['pembukaan', 'konfirmasi', 'selesai']
+// Sengaja lebih singkat dari nikah (nggak ada ijab-kabul/doa/nasihat).
+// 'selesai_tanya' = abis 1 relasi kelar, nanya "mau nambah lagi atau
+// udah?" — 1 warga boleh daftarin >1 anggota keluarga dalam 1x kunjungan
+// sebelum bener-bener 'selesai' (sesi dilepas, disuruh keluar ruangan).
+// CATATAN: transisi stage family di runner.js di-set string literal
+// langsung (bukan lewat nextStage()), jadi array ini murni dokumentasi.
+const FAMILY_STAGES = ['pembukaan', 'konfirmasi', 'selesai_tanya', 'selesai']
 
 function nextStage(stage, stages = STAGES) {
   const idx = stages.indexOf(stage)
@@ -90,7 +94,14 @@ const KEYWORDS = {
   // dari 'pembukaan' -> 'ijab_kabul' dipicu otomatis begitu 2 mempelai ke-resolve
   confirmIjab: ['sah', 'resmi sah', 'sudah sah', 'ijab kabul sah'],
   askAdvice: ['nasihat', 'pesan buat pengantin', 'saran buat pengantin'],
-  closeCeremony: ['selesai', 'tutup acara', 'sekian acara'],
+  // Sinyal "udah, gak ada lagi yang mau diurus" — dipakai buat nutup acara
+  // nikah (stage 'doa') MAUPUN buat jawab "mau nambah anggota keluarga
+  // lain atau udah cukup?" di alur family (stage 'selesai_tanya').
+  closeCeremony: [
+    'selesai', 'tutup acara', 'sekian acara',
+    'udah cukup', 'sudah cukup', 'cukup segitu aja', 'cukup segitu',
+    'gak ada lagi', 'nggak ada lagi', 'ga ada lagi',
+  ],
 }
 
 // Kata kunci buat majuin tahap sesi 'family' (pembukaan -> konfirmasi -> selesai).
@@ -103,9 +114,25 @@ function textContainsAny(text, keywords) {
 
 // Redaksi tetap tiap tahap. `a` & `b` = nama tampilan mempelai.
 const SCRIPTED_LINES = {
-  askForCouple: (agentName) =>
-    `Assalamualaikum warga RP Town 🌙\n\nSaya ${agentName}, akan memandu prosesi pernikahan roleplay di ruangan ini.\n\n` +
-    `Sebutkan dulu kedua mempelainya ya, contoh:\n"penghulu nikahin @andi dan @sari"`,
+  // Pembukaan baku begitu ada warga chat di room yang lagi nganggur tapi
+  // pesannya belum jelas mau ngapain (bukan langsung sebut mempelai/relasi).
+  // DETERMINISTIK (bukan AI) biar jadi "pintu masuk" yang konsisten tiap
+  // room Penghulu, gak tergantung mood Gemini hari itu.
+  greeting: (agentName) =>
+    `Assalamualaikum warga RP Town 🌙\n\nSaya ${agentName}, penghulu yang jaga ruangan ini. Mau ngapain nih?\n\n` +
+    `Kalau mau nikah, sebutin dulu 2 mempelainya, contoh:\n"nikahin @andi dan @sari"\n\n` +
+    `Kalau mau daftarin anggota keluarga (mommy/daddy/kaka/abang/nenek/kakek/paman/tante), sebutin relasinya + mention, contoh:\n"daftarin @sari jadi mommy aku"`,
+
+  // Dipakai begitu ruangan lagi dipakai (ada pasangan/pihak lain yang udah
+  // teridentifikasi) dan warga LAIN nyelonong chat di room yang sama.
+  // Chat mereka diabaikan (gak diproses jadi bagian prosesi).
+  duduk: (agentName) =>
+    `_menunjuk kursi tunggu di sudut ruangan_\n\nMaaf ya, saya ${agentName} lagi fokus ngurusin warga lain di ruangan ini dulu. Duduk dulu sebentar, nanti gantian ya 🙏`,
+
+  // Dipakai begitu 1 prosesi bener-bener kelar (dan sesinya udah dilepas),
+  // biar ruangan kosong lagi buat warga/pasangan berikutnya.
+  silakanKeluar: () =>
+    `Terima kasih banyak sudah mampir ya! 🙏 Mohon izin ruangannya dikosongkan dulu buat warga lain yang mau daftar juga — silakan lanjut ke ruangan lain dulu ya 😊`,
 
   pembukaan: (a, b) =>
     `📜 Pada hari ini kita berkumpul untuk menyaksikan prosesi pernikahan roleplay antara *${a}* dan *${b}*.\n\n` +
@@ -151,6 +178,12 @@ const FAMILY_SCRIPTED_LINES = {
     `✅ _mengetok palu digital dan menutup berkas_\n\n` +
     `Tercatat resmi! *${related}* kini menjadi *${relationLabel}* dari *${subject}* di silsilah keluarga RP Town. Selamat! 🎉`,
 
+  // Ditanyakan tiap kali 1 relasi berhasil dicatat — 1 warga boleh
+  // daftarin lebih dari 1 anggota keluarga dalam 1x kunjungan (masih
+  // sesi/ruangan yang sama), sebelum akhirnya diminta keluar.
+  tanyaLanjut: (subject) =>
+    `Mau daftarin anggota keluarga lain lagi buat *${subject}*? Sebutin relasi + mention lagi (misal "daftarin @budi jadi daddy aku"), atau ketik *"selesai"* kalau udah cukup sampai di sini.`,
+
   alreadyDone: () => `Pendaftaran silsilah di ruangan ini sudah selesai ya 😊`,
 
   needTarget: (relationLabel) =>
@@ -171,15 +204,16 @@ SIFATMU: ${traitFor(agentName)}
 KONTEKS: Kamu sedang memandu 1 prosesi pernikahan ATAU 1 pendaftaran silsilah keluarga (ekspansi: mommy/daddy/kaka/abang/nenek/kakek/paman/tante) — semuanya roleplay fiktif buat hiburan komunitas, bukan pernikahan/keluarga sungguhan — di sebuah topic/thread grup.
 
 ATURAN PENTING — WAJIB DIPATUHI:
-1. Redaksi sakral/resmi (pembukaan, ijab-kabul, doa, penutup, konfirmasi silsilah) SUDAH dikirim oleh sistem secara terpisah. Kamu TIDAK PERNAH diminta menulis ulang bagian itu — kalau kamu dipanggil lewat AI, artinya tugasmu HANYA salah satu dari tiga hal di bawah.
+1. Redaksi sakral/resmi (pembukaan, ijab-kabul, doa, penutup, konfirmasi silsilah, sapaan pembuka, permintaan tunggu giliran, permintaan keluar ruangan) SUDAH dikirim oleh sistem secara terpisah. Kamu TIDAK PERNAH diminta menulis ulang bagian itu — kalau kamu dipanggil lewat AI, artinya tugasmu HANYA salah satu dari tiga hal di bawah.
 2. Tugas #1 — Nasihat pernikahan: berikan nasihat singkat (3-5 kalimat), hangat, tulus, related sama roleplay/kehidupan berumah tangga ala kota kecil. Jangan menggurui, jangan kaku.
 3. Tugas #2 — Jawab pertanyaan tamu seputar layanan KUA: kalau ada yang tanya soal jalannya acara/pendaftaran nikah atau silsilah keluarga ("abis ini apa?", "boleh foto-foto?", "kok belum sah-sah?", "gimana caranya daftarin nenek?", dst), jawab singkat & ramah sesuai konteks tahap yang diberikan, dan sesuai sifatmu di atas.
-4. Tugas #3 — Obrolan santai TAPI masih di ruangan KUA (belum ada prosesi berjalan): boleh dijawab santai selama masih nyambung sama tema pernikahan/keluarga RP Town.
+4. Tugas #3 — Obrolan santai TAPI masih di ruangan KUA (ada prosesi berjalan, warga yang lagi dilayani ngajak ngobrol ringan di luar tahapan resmi): boleh dijawab santai selama masih nyambung sama tema pernikahan/keluarga RP Town.
 5. RUANG LINGKUP KETAT — kamu HANYA boleh membahas urusan KUA (pernikahan roleplay & pendaftaran silsilah keluarga di RP Town). Kalau ada yang nanya/ngobrolin hal LAIN sama sekali (rumah, distrik lain, peta kota, jual-beli, curhat pribadi di luar tema nikah, dsb), balas SANGAT SINGKAT (1-2 kalimat) sesuai sifatmu bahwa itu bukan urusanmu dan arahkan ke room/NPC yang sesuai atau ke admin grup — jangan coba jawab isi pertanyaannya, jangan menyambung ke topik itu.
 6. Kamu TIDAK PERNAH mengubah/menyimpan data apa pun sendiri (status pernikahan, silsilah keluarga, dsb) — itu semua sudah ditangani sistem di luar kamu. Jangan mengklaim "saya sudah update database" atau semacamnya.
-7. Gaya komunikasi (format "imagine"): campur teks biasa untuk ucapan dengan teks miring pakai tanda underscore _seperti ini_ untuk menggambarkan aksi fisik/gestur di meja akad atau meja administrasi (contoh: _sambil membuka laptop virtual dan mengetok palu_). Selalu selipkan minimal satu potongan aksi bergaya italic tiap kali kamu membalas.
-8. Bahasa Indonesia santai-formal (bukan kaku banget), singkat, dan tetap mencerminkan sifatmu di atas.
-9. Jangan pernah keluar dari peran, jangan bahas kamu adalah AI/model bahasa.`
+7. Kamu cuma layani 1 pasangan/pihak dalam 1 waktu di ruangan ini. Kalau kamu dipanggil AI, itu artinya pesan ini SUDAH DIPASTIKAN sistem datang dari pihak yang lagi dilayani (bukan warga lain yang nyelonong) — kamu nggak perlu curiga siapa pengirimnya.
+8. Gaya komunikasi (format "imagine"): campur teks biasa untuk ucapan dengan teks miring pakai tanda underscore _seperti ini_ untuk menggambarkan aksi fisik/gestur di meja akad atau meja administrasi (contoh: _sambil membuka laptop virtual dan mengetok palu_). Selalu selipkan minimal satu potongan aksi bergaya italic tiap kali kamu membalas.
+9. Bahasa Indonesia santai-formal (bukan kaku banget), singkat, dan tetap mencerminkan sifatmu di atas.
+10. Jangan pernah keluar dari peran, jangan bahas kamu adalah AI/model bahasa.`
 }
 
 module.exports = {
