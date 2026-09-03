@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { unassignBuilding, createRoomForBuilding } from '../lib/rooms'
@@ -28,6 +28,48 @@ const DEFAULT_TILT = THREE.MathUtils.degToRad(28)
 const MIN_POLAR_ANGLE = THREE.MathUtils.degToRad(0.1) // nyaris lurus dari atas
 const MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(89.5) // nyaris sejajar horizon, gak sampe kebalik
 
+// Prefix nama node laut/sungai yang ngelilingin pulau di tiap file .glb
+// (bawaan dari export topografi, sama kayak TPX_Buildings_ dkk).
+const WATER_PREFIX = 'TPX_Waterways'
+
+// Shader air super ringan: gak pake tekstur/reflection/refraction sama
+// sekali, cuma dua warna biru yang di-blend pake beberapa gelombang sine
+// (fungsi trig, murah buat GPU) + sedikit highlight di pinggir (fresnel
+// murah pake dot product) biar kelihatan "berkilau". Semua pola dihitung
+// dari posisi dunia (world position) soalnya mesh air hasil export gak
+// punya UV.
+const WATER_VERTEX_SHADER = /* glsl */ `
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+  void main() {
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPos = worldPos.xyz;
+    vNormal = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * worldPos;
+  }
+`
+
+const WATER_FRAGMENT_SHADER = /* glsl */ `
+  uniform float uTime;
+  uniform vec3 uColorDeep;
+  uniform vec3 uColorShallow;
+  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+
+  void main() {
+    float wave1 = sin(vWorldPos.x * 0.35 + uTime * 1.1) * 0.5 + 0.5;
+    float wave2 = sin(vWorldPos.z * 0.4 - uTime * 0.9 + vWorldPos.x * 0.15) * 0.5 + 0.5;
+    float shimmer = wave1 * 0.6 + wave2 * 0.4;
+    vec3 color = mix(uColorDeep, uColorShallow, shimmer);
+
+    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+    float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 3.0);
+    color += fresnel * 0.25;
+
+    gl_FragColor = vec4(color, 0.88);
+  }
+`
+
 function TownModel({
   modelUrl,
   assignedByKey,
@@ -39,6 +81,40 @@ function TownModel({
   focusedKey,
 }) {
   const { scene } = useGLTF(modelUrl)
+
+  // Satu material air per model, dipakai bareng-bareng sama semua mesh
+  // laut/sungai yang ngelilingin pulau (biar hemat — gak bikin material baru
+  // per mesh). useMemo di sini supaya gak ke-recreate tiap render, cuma pas
+  // model-nya ganti.
+  const waterMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uColorDeep: { value: new THREE.Color('#1c6fa8') },
+          uColorShallow: { value: new THREE.Color('#79d6f2') },
+        },
+        vertexShader: WATER_VERTEX_SHADER,
+        fragmentShader: WATER_FRAGMENT_SHADER,
+        transparent: true,
+        side: THREE.DoubleSide,
+      }),
+    []
+  )
+
+  useEffect(() => {
+    scene.traverse((obj) => {
+      if (obj.isMesh && obj.name.startsWith(WATER_PREFIX)) {
+        obj.material = waterMaterial
+      }
+    })
+  }, [scene, waterMaterial])
+
+  // Jalanin animasi gelombangnya tiap frame (cuma nambahin delta ke waktu,
+  // hitungan pola gelombangnya sendiri kejadian di GPU lewat fragment shader).
+  useFrame((_, delta) => {
+    waterMaterial.uniforms.uTime.value += delta
+  })
 
   // Tiap mesh bangunan dikasih material sendiri-sendiri (clone),
   // soalnya aslinya beberapa bangunan berbagi 1 material yang sama —
