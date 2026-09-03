@@ -13,6 +13,11 @@ export const MAPS = [
     name: 'LPM',
     modelUrl: '/models/lpm.glb',
   },
+  {
+    key: 'rp-town-city',
+    name: 'RP Town City',
+    modelUrl: '/models/rp-town-city.glb',
+  },
 ]
 
 export const DEFAULT_MAP_KEY = MAPS[0].key
