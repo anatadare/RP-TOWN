@@ -53,18 +53,31 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
   uniform float uTime;
   uniform vec3 uColorDeep;
   uniform vec3 uColorShallow;
+  uniform vec3 uColorFoam;
   varying vec3 vWorldPos;
   varying vec3 vNormal;
 
   void main() {
-    float wave1 = sin(vWorldPos.x * 0.35 + uTime * 1.1) * 0.5 + 0.5;
-    float wave2 = sin(vWorldPos.z * 0.4 - uTime * 0.9 + vWorldPos.x * 0.15) * 0.5 + 0.5;
-    float shimmer = wave1 * 0.6 + wave2 * 0.4;
+    // 3 gelombang sine beda arah & kecepatan digabung jadi satu pola choppy
+    // (terinspirasi dari referensi Ocean Modifier Blender-nya), masih cuma
+    // beberapa fungsi trig doang jadi tetep murah di GPU.
+    float w1 = sin(vWorldPos.x * 0.35 + uTime * 1.3);
+    float w2 = sin(vWorldPos.z * 0.42 - uTime * 1.05 + vWorldPos.x * 0.18);
+    float w3 = sin((vWorldPos.x + vWorldPos.z) * 0.6 + uTime * 1.8);
+    float waves = w1 * 0.45 + w2 * 0.35 + w3 * 0.2;
+    float shimmer = waves * 0.5 + 0.5;
+
     vec3 color = mix(uColorDeep, uColorShallow, shimmer);
+
+    // Semburat busa putih tipis di puncak gelombang paling tinggi, niru
+    // whitecap foam dari referensinya — dipersempit pake pow() biar gak
+    // nutupin seluruh permukaan air.
+    float crest = pow(max(waves, 0.0), 6.0);
+    color = mix(color, uColorFoam, crest * 0.5);
 
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
     float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 3.0);
-    color += fresnel * 0.25;
+    color += fresnel * 0.22;
 
     gl_FragColor = vec4(color, 0.88);
   }
@@ -93,6 +106,7 @@ function TownModel({
           uTime: { value: 0 },
           uColorDeep: { value: new THREE.Color('#1c6fa8') },
           uColorShallow: { value: new THREE.Color('#79d6f2') },
+          uColorFoam: { value: new THREE.Color('#eafcff') },
         },
         vertexShader: WATER_VERTEX_SHADER,
         fragmentShader: WATER_FRAGMENT_SHADER,
