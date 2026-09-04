@@ -28,76 +28,65 @@ const DEFAULT_TILT = THREE.MathUtils.degToRad(28)
 const MIN_POLAR_ANGLE = THREE.MathUtils.degToRad(0.1) // nyaris lurus dari atas
 const MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(89.5) // nyaris sejajar horizon, gak sampe kebalik
 
-// Prefix nama node laut/sungai yang ngelilingin pulau di tiap file .glb
-// (bawaan dari export topografi, sama kayak TPX_Buildings_ dkk).
+// Prefix nama node laut/sungai kecil di dalam peta (kanal/sungai hasil
+// export topografi). Mesh-mesh ini disembunyiin — laut utamanya sekarang
+// dipasok dari aset Ocean_by_Poly_by_Google (lihat OceanSurface di bawah),
+// bukan dari shader custom lagi.
 const WATER_PREFIX = 'TPX_Waterways'
 
-// Shader air stylized low-poly: sekarang geometrinya BENERAN digerakin naik
-// turun (bukan cuma warna doang kayak versi sebelumnya), terus tiap segitiga
-// dikasih satu normal yang rata (dihitung dari turunan posisi lewat
-// dFdx/dFdy) biar kelihatan "berfaset" — efek klasik gaya low-poly, bukan
-// permukaan mulus. Tetap ringan: cuma beberapa fungsi trig + 1x cross
-// product per pixel, gak ada tekstur/reflection/refraction.
-const WATER_VERTEX_SHADER = /* glsl */ `
-  uniform float uTime;
-  uniform float uWaveHeight;
-  varying vec3 vWorldPos;
-  varying float vWaveHeight;
+// Aset laut stylized low-poly (Google Poly, sudah Y-up standar glTF — beda
+// dari model peta yang Z-up, makanya dipasang TERPISAH, di luar
+// <group rotation={AXIS_FIX_ROTATION}>, langsung di world space).
+const OCEAN_SURFACE_URL = '/models/ocean-surface.glb'
 
-  // Pola gelombang yang sama dipakai buat gerakin geometri sekarang, bukan
-  // cuma buat warna. position.xy di sini itu bidang datar mesh air (sumbu
-  // "atas"-nya ada di Z, lihat AXIS_FIX_ROTATION di file induk).
-  float waveAt(vec2 p, float t) {
-    float w1 = sin(p.x * 0.35 + t * 1.3);
-    float w2 = sin(p.y * 0.42 - t * 1.05 + p.x * 0.18);
-    float w3 = sin((p.x + p.y) * 0.6 + t * 1.8);
-    return w1 * 0.45 + w2 * 0.35 + w3 * 0.2;
-  }
+// Skala & posisi buat nyesuain aset laut (ukuran aslinya ~2000x2000 unit,
+// jauh lebih gede dari peta manapun di sini — sengaja, biar lautnya nutup
+// sampai ke arah horizon) ke ukuran dunia RP Town (bangunan tingginya
+// cuma sekitar 0-15 unit). uWaveScaleY dikecilin banget biar ombak yang
+// aslinya sampai ~110 unit tinggi jadi cuma riak halus beberapa unit aja.
+const OCEAN_SCALE_XZ = 1.1
+const OCEAN_SCALE_Y = 0.05
+const OCEAN_BASE_Y = -0.92 // nyeimbangin biar permukaan air pas di sekitar Y=0 (level laut)
 
-  void main() {
-    float h = waveAt(position.xy, uTime);
-    vec3 displaced = position + vec3(0.0, 0.0, h * uWaveHeight);
-    vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
-    vWorldPos = worldPos.xyz;
-    vWaveHeight = h;
-    gl_Position = projectionMatrix * viewMatrix * worldPos;
-  }
-`
+// Laut utamanya sekarang dari sini: aset low-poly siap pakai (bukan hasil
+// generate shader lagi), jadi cukup dipasang dan dikasih material
+// flat-shaded biar kelihatan "berfaset" khas low-poly. Geometrinya sendiri
+// sudah "dipahat" statis (gak dianimasiin per-vertex) — dianggap cukup
+// hidup dengan cuma di-ayun naik-turun pelan-pelan tiap frame (jauh lebih
+// murah daripada animasi per-vertex kayak versi shader sebelumnya).
+function OceanSurface() {
+  const { scene } = useGLTF(OCEAN_SURFACE_URL)
+  const groupRef = useRef()
 
-const WATER_FRAGMENT_SHADER = /* glsl */ `
-  uniform vec3 uColorDeep;
-  uniform vec3 uColorShallow;
-  uniform vec3 uColorFoam;
-  varying vec3 vWorldPos;
-  varying float vWaveHeight;
+  const clonedScene = useMemo(() => {
+    const cloned = scene.clone(true)
+    cloned.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.material = new THREE.MeshLambertMaterial({
+          color: '#2f8fd1',
+          flatShading: true,
+          transparent: true,
+          opacity: 0.92,
+        })
+        obj.castShadow = false
+        obj.receiveShadow = false
+      }
+    })
+    return cloned
+  }, [scene])
 
-  void main() {
-    // Normal per-segitiga (bukan per-vertex/interpolasi halus) dihitung dari
-    // turunan posisi dunia lintas layar. Ini kunci efek "low-poly" -nya:
-    // tiap segitiga jadi punya satu warna rata sendiri, bukan gradasi mulus.
-    vec3 fdx = dFdx(vWorldPos);
-    vec3 fdy = dFdy(vWorldPos);
-    vec3 facetNormal = normalize(cross(fdx, fdy));
+  useFrame(({ clock }) => {
+    if (groupRef.current) {
+      groupRef.current.position.y = OCEAN_BASE_Y + Math.sin(clock.elapsedTime * 0.6) * 0.15
+    }
+  })
 
-    // Cahaya "matahari" tetap arahnya, dibagi jadi beberapa pita (bukan
-    // gradasi halus) biar kesannya flat-shaded / toon.
-    vec3 lightDir = normalize(vec3(0.4, 1.0, 0.3));
-    float lightAmt = dot(facetNormal, lightDir) * 0.5 + 0.5;
-    float banded = floor(lightAmt * 4.0) / 4.0;
-
-    vec3 color = mix(uColorDeep, uColorShallow, banded);
-
-    // Puncak gelombang paling tinggi dikasih semburat busa putih tipis.
-    float crest = smoothstep(0.35, 0.65, vWaveHeight);
-    color = mix(color, uColorFoam, crest * 0.45);
-
-    vec3 viewDir = normalize(cameraPosition - vWorldPos);
-    float fresnel = pow(1.0 - max(dot(facetNormal, viewDir), 0.0), 3.0);
-    color += fresnel * 0.18;
-
-    gl_FragColor = vec4(color, 0.92);
-  }
-`
+  return (
+    <group ref={groupRef} position={[0, OCEAN_BASE_Y, 0]} scale={[OCEAN_SCALE_XZ, OCEAN_SCALE_Y, OCEAN_SCALE_XZ]}>
+      <primitive object={clonedScene} />
+    </group>
+  )
+}
 
 function TownModel({
   modelUrl,
@@ -111,53 +100,16 @@ function TownModel({
 }) {
   const { scene } = useGLTF(modelUrl)
 
-  // Satu material air per model, dipakai bareng-bareng sama semua mesh
-  // laut/sungai yang ngelilingin pulau (biar hemat — gak bikin material baru
-  // per mesh). useMemo di sini supaya gak ke-recreate tiap render, cuma pas
-  // model-nya ganti.
-  const waterMaterial = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        uniforms: {
-          uTime: { value: 0 },
-          uWaveHeight: { value: 0.6 },
-          uColorDeep: { value: new THREE.Color('#1c6fa8') },
-          uColorShallow: { value: new THREE.Color('#79d6f2') },
-          uColorFoam: { value: new THREE.Color('#eafcff') },
-        },
-        vertexShader: WATER_VERTEX_SHADER,
-        fragmentShader: WATER_FRAGMENT_SHADER,
-        transparent: true,
-        side: THREE.DoubleSide,
-        // dFdx/dFdy di fragment shader butuh ekstensi ini biar jalan di WebGL1
-        // (three.js otomatis skip kalau environment-nya udah WebGL2, jadi aman
-        // ditulis selalu true).
-        extensions: { derivatives: true },
-        // Wajib highp: di banyak GPU HP (Adreno/Mali) default precision fragment
-        // shader itu mediump, dan sin() dengan argumen yang terus membesar
-        // (uTime numpuk seiring waktu) pecah presisinya di situ — keliatannya
-        // jadi pola titik-titik/moire kayak yang dilaporin, bukan gelombang
-        // halus. Di desktop biasanya gak kelihatan karena defaultnya udah highp.
-        precision: 'highp',
-      }),
-    []
-  )
-
+  // Sungai/kanal kecil bawaan tiap peta disembunyiin — laut utamanya sekarang
+  // dari OceanSurface (aset Google Poly), jadi mesh air lama ini gak perlu
+  // dirender lagi (biar gak dobel/tabrakan sama laut yang baru).
   useEffect(() => {
     scene.traverse((obj) => {
       if (obj.isMesh && obj.name.startsWith(WATER_PREFIX)) {
-        obj.material = waterMaterial
+        obj.visible = false
       }
     })
-  }, [scene, waterMaterial])
-
-  // Jalanin animasi gelombangnya tiap frame. uTime di-mod (dibungkus ulang)
-  // biar angkanya gak numpuk tanpa batas kalau aplikasinya dibuka lama —
-  // jaga-jaga tambahan di luar fix precision highp di atas, soalnya sin()
-  // dengan argumen sangat besar tetap berisiko pecah presisinya di sebagian GPU.
-  useFrame((_, delta) => {
-    waterMaterial.uniforms.uTime.value = (waterMaterial.uniforms.uTime.value + delta) % 10000.0
-  })
+  }, [scene])
 
   // Tiap mesh bangunan dikasih material sendiri-sendiri (clone),
   // soalnya aslinya beberapa bangunan berbagi 1 material yang sama —
@@ -242,6 +194,7 @@ function TownModel({
 // Preload semua peta yang terdaftar (bukan cuma yang lagi aktif), biar pas
 // user pindah peta modelnya sudah kebaca duluan di background dan gak nunggu.
 MAPS.forEach((map) => useGLTF.preload(map.modelUrl))
+useGLTF.preload(OCEAN_SURFACE_URL)
 
 // Naro posisi kamera SEKALI aja pas model pertama kali kebaca, fokus ke area
 // bangunan aja (bukan ke seluruh peta termasuk jalan yang jauh di pinggir).
@@ -487,6 +440,7 @@ export default function TownMap3D({
         <directionalLight position={[60, 100, 40]} intensity={1.15} castShadow />
         <hemisphereLight args={['#6b7fd9', '#232a45', 0.4]} />
         <Suspense fallback={null}>
+          <OceanSurface />
           <group ref={modelGroupRef}>
             <TownModel
               modelUrl={modelUrl}
