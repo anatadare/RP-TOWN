@@ -32,54 +32,70 @@ const MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(89.5) // nyaris sejajar horizon
 // (bawaan dari export topografi, sama kayak TPX_Buildings_ dkk).
 const WATER_PREFIX = 'TPX_Waterways'
 
-// Shader air super ringan: gak pake tekstur/reflection/refraction sama
-// sekali, cuma dua warna biru yang di-blend pake beberapa gelombang sine
-// (fungsi trig, murah buat GPU) + sedikit highlight di pinggir (fresnel
-// murah pake dot product) biar kelihatan "berkilau". Semua pola dihitung
-// dari posisi dunia (world position) soalnya mesh air hasil export gak
-// punya UV.
+// Shader air stylized low-poly: sekarang geometrinya BENERAN digerakin naik
+// turun (bukan cuma warna doang kayak versi sebelumnya), terus tiap segitiga
+// dikasih satu normal yang rata (dihitung dari turunan posisi lewat
+// dFdx/dFdy) biar kelihatan "berfaset" — efek klasik gaya low-poly, bukan
+// permukaan mulus. Tetap ringan: cuma beberapa fungsi trig + 1x cross
+// product per pixel, gak ada tekstur/reflection/refraction.
 const WATER_VERTEX_SHADER = /* glsl */ `
+  uniform float uTime;
+  uniform float uWaveHeight;
   varying vec3 vWorldPos;
-  varying vec3 vNormal;
+  varying float vWaveHeight;
+
+  // Pola gelombang yang sama dipakai buat gerakin geometri sekarang, bukan
+  // cuma buat warna. position.xy di sini itu bidang datar mesh air (sumbu
+  // "atas"-nya ada di Z, lihat AXIS_FIX_ROTATION di file induk).
+  float waveAt(vec2 p, float t) {
+    float w1 = sin(p.x * 0.35 + t * 1.3);
+    float w2 = sin(p.y * 0.42 - t * 1.05 + p.x * 0.18);
+    float w3 = sin((p.x + p.y) * 0.6 + t * 1.8);
+    return w1 * 0.45 + w2 * 0.35 + w3 * 0.2;
+  }
+
   void main() {
-    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    float h = waveAt(position.xy, uTime);
+    vec3 displaced = position + vec3(0.0, 0.0, h * uWaveHeight);
+    vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
     vWorldPos = worldPos.xyz;
-    vNormal = normalize(mat3(modelMatrix) * normal);
+    vWaveHeight = h;
     gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
 `
 
 const WATER_FRAGMENT_SHADER = /* glsl */ `
-  uniform float uTime;
   uniform vec3 uColorDeep;
   uniform vec3 uColorShallow;
   uniform vec3 uColorFoam;
   varying vec3 vWorldPos;
-  varying vec3 vNormal;
+  varying float vWaveHeight;
 
   void main() {
-    // 3 gelombang sine beda arah & kecepatan digabung jadi satu pola choppy
-    // (terinspirasi dari referensi Ocean Modifier Blender-nya), masih cuma
-    // beberapa fungsi trig doang jadi tetep murah di GPU.
-    float w1 = sin(vWorldPos.x * 0.35 + uTime * 1.3);
-    float w2 = sin(vWorldPos.z * 0.42 - uTime * 1.05 + vWorldPos.x * 0.18);
-    float w3 = sin((vWorldPos.x + vWorldPos.z) * 0.6 + uTime * 1.8);
-    float waves = w1 * 0.45 + w2 * 0.35 + w3 * 0.2;
-    float shimmer = waves * 0.5 + 0.5;
+    // Normal per-segitiga (bukan per-vertex/interpolasi halus) dihitung dari
+    // turunan posisi dunia lintas layar. Ini kunci efek "low-poly" -nya:
+    // tiap segitiga jadi punya satu warna rata sendiri, bukan gradasi mulus.
+    vec3 fdx = dFdx(vWorldPos);
+    vec3 fdy = dFdy(vWorldPos);
+    vec3 facetNormal = normalize(cross(fdx, fdy));
 
-    vec3 color = mix(uColorDeep, uColorShallow, shimmer);
+    // Cahaya "matahari" tetap arahnya, dibagi jadi beberapa pita (bukan
+    // gradasi halus) biar kesannya flat-shaded / toon.
+    vec3 lightDir = normalize(vec3(0.4, 1.0, 0.3));
+    float lightAmt = dot(facetNormal, lightDir) * 0.5 + 0.5;
+    float banded = floor(lightAmt * 4.0) / 4.0;
 
-    // Semburat busa putih tipis di puncak gelombang paling tinggi, niru
-    // whitecap foam dari referensinya — dipersempit pake pow() biar gak
-    // nutupin seluruh permukaan air.
-    float crest = pow(max(waves, 0.0), 6.0);
-    color = mix(color, uColorFoam, crest * 0.5);
+    vec3 color = mix(uColorDeep, uColorShallow, banded);
+
+    // Puncak gelombang paling tinggi dikasih semburat busa putih tipis.
+    float crest = smoothstep(0.35, 0.65, vWaveHeight);
+    color = mix(color, uColorFoam, crest * 0.45);
 
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
-    float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 3.0);
-    color += fresnel * 0.22;
+    float fresnel = pow(1.0 - max(dot(facetNormal, viewDir), 0.0), 3.0);
+    color += fresnel * 0.18;
 
-    gl_FragColor = vec4(color, 0.88);
+    gl_FragColor = vec4(color, 0.92);
   }
 `
 
@@ -104,6 +120,7 @@ function TownModel({
       new THREE.ShaderMaterial({
         uniforms: {
           uTime: { value: 0 },
+          uWaveHeight: { value: 0.6 },
           uColorDeep: { value: new THREE.Color('#1c6fa8') },
           uColorShallow: { value: new THREE.Color('#79d6f2') },
           uColorFoam: { value: new THREE.Color('#eafcff') },
@@ -112,6 +129,16 @@ function TownModel({
         fragmentShader: WATER_FRAGMENT_SHADER,
         transparent: true,
         side: THREE.DoubleSide,
+        // dFdx/dFdy di fragment shader butuh ekstensi ini biar jalan di WebGL1
+        // (three.js otomatis skip kalau environment-nya udah WebGL2, jadi aman
+        // ditulis selalu true).
+        extensions: { derivatives: true },
+        // Wajib highp: di banyak GPU HP (Adreno/Mali) default precision fragment
+        // shader itu mediump, dan sin() dengan argumen yang terus membesar
+        // (uTime numpuk seiring waktu) pecah presisinya di situ — keliatannya
+        // jadi pola titik-titik/moire kayak yang dilaporin, bukan gelombang
+        // halus. Di desktop biasanya gak kelihatan karena defaultnya udah highp.
+        precision: 'highp',
       }),
     []
   )
@@ -124,10 +151,12 @@ function TownModel({
     })
   }, [scene, waterMaterial])
 
-  // Jalanin animasi gelombangnya tiap frame (cuma nambahin delta ke waktu,
-  // hitungan pola gelombangnya sendiri kejadian di GPU lewat fragment shader).
+  // Jalanin animasi gelombangnya tiap frame. uTime di-mod (dibungkus ulang)
+  // biar angkanya gak numpuk tanpa batas kalau aplikasinya dibuka lama —
+  // jaga-jaga tambahan di luar fix precision highp di atas, soalnya sin()
+  // dengan argumen sangat besar tetap berisiko pecah presisinya di sebagian GPU.
   useFrame((_, delta) => {
-    waterMaterial.uniforms.uTime.value += delta
+    waterMaterial.uniforms.uTime.value = (waterMaterial.uniforms.uTime.value + delta) % 10000.0
   })
 
   // Tiap mesh bangunan dikasih material sendiri-sendiri (clone),
