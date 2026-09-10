@@ -39,12 +39,18 @@ const WATER_PREFIX = 'TPX_Waterways'
 // <group rotation={AXIS_FIX_ROTATION}>, langsung di world space).
 const OCEAN_SURFACE_URL = '/models/ocean-surface.glb'
 
-// Skala & posisi buat nyesuain aset laut (ukuran aslinya ~2000x2000 unit,
-// jauh lebih gede dari peta manapun di sini — sengaja, biar lautnya nutup
-// sampai ke arah horizon) ke ukuran dunia RP Town (bangunan tingginya
-// cuma sekitar 0-15 unit). uWaveScaleY dikecilin banget biar ombak yang
-// aslinya sampai ~110 unit tinggi jadi cuma riak halus beberapa unit aja.
-const OCEAN_SCALE_XZ = 1.1
+// Laut di-scale & di-posisiin OTOMATIS ngikutin ukuran pulau yang lagi aktif
+// (bukan angka tetap), soalnya tiap peta beda ukuran & pusatnya beda-beda:
+// - diagonal laut dibikin = diagonal bounding-box pulau × OCEAN_COVERAGE_MARGIN,
+//   jadi airnya selalu cuma "20% lebih gede" dari pulaunya, gak lagi nutup
+//   sampai horizon kayak sebelumnya.
+// - laut digeser ke titik tengah bounding-box pulau (bukan dibiarin di world
+//   origin), soalnya originnya beda-beda per model — kalau lautnya tetap di
+//   (0,0) pas dikecilin, pulaunya jadi ke-geser keluar dari lautnya.
+// uWaveScaleY tetap dikecilin manual: ombak aslinya sampai ~110 unit tinggi,
+// dibikin cuma riak halus beberapa unit aja.
+const OCEAN_COVERAGE_MARGIN = 1.2
+const OCEAN_SCALE_XZ_FALLBACK = 0.3 // dipakai sebentar sebelum footprint pulau kehitung
 const OCEAN_SCALE_Y = 0.05
 const OCEAN_BASE_Y = -0.92 // nyeimbangin biar permukaan air pas di sekitar Y=0 (level laut)
 
@@ -54,7 +60,7 @@ const OCEAN_BASE_Y = -0.92 // nyeimbangin biar permukaan air pas di sekitar Y=0 
 // sudah "dipahat" statis (gak dianimasiin per-vertex) — dianggap cukup
 // hidup dengan cuma di-ayun naik-turun pelan-pelan tiap frame (jauh lebih
 // murah daripada animasi per-vertex kayak versi shader sebelumnya).
-function OceanSurface() {
+function OceanSurface({ footprint }) {
   const { scene } = useGLTF(OCEAN_SURFACE_URL)
   const groupRef = useRef()
 
@@ -75,6 +81,27 @@ function OceanSurface() {
     return cloned
   }, [scene])
 
+  // Diagonal asli aset laut (dihitung sekali dari geometrinya, bukan di-hardcode),
+  // dipakai sebagai acuan buat nentuin faktor scale di bawah.
+  const oceanRawDiagonal = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(scene)
+    const size = new THREE.Vector3()
+    box.getSize(size)
+    return Math.hypot(size.x, size.z)
+  }, [scene])
+
+  const { scaleXZ, centerX, centerZ } = useMemo(() => {
+    if (!footprint) {
+      return { scaleXZ: OCEAN_SCALE_XZ_FALLBACK, centerX: 0, centerZ: 0 }
+    }
+    const islandDiagonal = Math.hypot(footprint.size.x, footprint.size.z)
+    return {
+      scaleXZ: (islandDiagonal * OCEAN_COVERAGE_MARGIN) / oceanRawDiagonal,
+      centerX: footprint.center.x,
+      centerZ: footprint.center.z,
+    }
+  }, [footprint, oceanRawDiagonal])
+
   useFrame(({ clock }) => {
     if (groupRef.current) {
       groupRef.current.position.y = OCEAN_BASE_Y + Math.sin(clock.elapsedTime * 0.6) * 0.15
@@ -82,7 +109,7 @@ function OceanSurface() {
   })
 
   return (
-    <group ref={groupRef} position={[0, OCEAN_BASE_Y, 0]} scale={[OCEAN_SCALE_XZ, OCEAN_SCALE_Y, OCEAN_SCALE_XZ]}>
+    <group ref={groupRef} position={[centerX, OCEAN_BASE_Y, centerZ]} scale={[scaleXZ, OCEAN_SCALE_Y, scaleXZ]}>
       <primitive object={clonedScene} />
     </group>
   )
@@ -96,9 +123,25 @@ function TownModel({
   onHover,
   onBuildingClick,
   onBuildingsLoaded,
+  onFootprintComputed,
   focusedKey,
 }) {
   const { scene } = useGLTF(modelUrl)
+  const rotatedGroupRef = useRef()
+
+  // Ukur bounding-box seluruh pulau (bukan cuma bangunan) sekali tiap peta
+  // kebaca, lalu lapor ke atas — dipakai OceanSurface buat nentuin seberapa
+  // besar & di mana laut harus digambar (lihat komentar OCEAN_COVERAGE_MARGIN).
+  useEffect(() => {
+    if (!rotatedGroupRef.current || !onFootprintComputed) return
+    rotatedGroupRef.current.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(rotatedGroupRef.current)
+    const size = new THREE.Vector3()
+    const center = new THREE.Vector3()
+    box.getSize(size)
+    box.getCenter(center)
+    onFootprintComputed({ size, center })
+  }, [scene, onFootprintComputed])
 
   // Sungai/kanal kecil bawaan tiap peta disembunyiin — laut utamanya sekarang
   // dari OceanSurface (aset Google Poly), jadi mesh air lama ini gak perlu
@@ -180,7 +223,7 @@ function TownModel({
   }
 
   return (
-    <group rotation={AXIS_FIX_ROTATION}>
+    <group ref={rotatedGroupRef} rotation={AXIS_FIX_ROTATION}>
       <primitive
         object={scene}
         onClick={handleClick}
@@ -403,6 +446,7 @@ export default function TownMap3D({
 }) {
   const [hoveredKey, setHoveredKey] = useState(null)
   const [pickerBuilding, setPickerBuilding] = useState(null)
+  const [islandFootprint, setIslandFootprint] = useState(null)
   const modelGroupRef = useRef()
 
   const assignedByKey = useMemo(() => {
@@ -418,6 +462,10 @@ export default function TownMap3D({
   useEffect(() => {
     setHoveredKey(null)
     setPickerBuilding(null)
+    // Reset footprint pulau lama juga — dipakai OceanSurface, kalau gak
+    // di-reset lautnya bakal sempet "nyangkut" pake ukuran peta sebelumnya
+    // sepersekian detik sebelum footprint peta baru kehitung ulang.
+    setIslandFootprint(null)
   }, [mapKey])
 
   function handleBuildingClick(buildingKey) {
@@ -440,7 +488,7 @@ export default function TownMap3D({
         <directionalLight position={[60, 100, 40]} intensity={1.15} castShadow />
         <hemisphereLight args={['#6b7fd9', '#232a45', 0.4]} />
         <Suspense fallback={null}>
-          <OceanSurface />
+          <OceanSurface footprint={islandFootprint} />
           <group ref={modelGroupRef}>
             <TownModel
               modelUrl={modelUrl}
@@ -450,6 +498,7 @@ export default function TownMap3D({
               onHover={setHoveredKey}
               onBuildingClick={handleBuildingClick}
               onBuildingsLoaded={onBuildingsLoaded}
+              onFootprintComputed={setIslandFootprint}
               focusedKey={focusRequest?.buildingKey || null}
             />
           </group>
