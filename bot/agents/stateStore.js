@@ -13,7 +13,7 @@ const UNIQUE_VIOLATION = '23505'
 
 // ---- Wedding sessions (1 sesi = 1 pernikahan yang lagi berjalan di 1 thread) ----
 
-async function getWeddingSession(supabaseAdmin, { chatId, threadId }) {
+export async function getWeddingSession(supabaseAdmin, { chatId, threadId }) {
   const { data, error } = await supabaseAdmin
     .from('wedding_sessions')
     .select('*')
@@ -31,7 +31,7 @@ async function getWeddingSession(supabaseAdmin, { chatId, threadId }) {
 // `sessionType`: 'marriage' (default, alur nikah) atau 'family' (alur
 // ekspansi silsilah). `relationType` cuma diisi kalau sessionType='family'
 // (lihat FAMILY_KEYWORDS di personas/penghulu.js).
-async function claimWeddingSession(
+export async function claimWeddingSession(
   supabaseAdmin,
   { chatId, threadId, agentKey, sessionType = 'marriage', relationType = null }
 ) {
@@ -54,7 +54,7 @@ async function claimWeddingSession(
   return data
 }
 
-async function updateWeddingSession(supabaseAdmin, id, patch) {
+export async function updateWeddingSession(supabaseAdmin, id, patch) {
   const { data, error } = await supabaseAdmin
     .from('wedding_sessions')
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -70,7 +70,7 @@ async function updateWeddingSession(supabaseAdmin, id, patch) {
 // atau family udah dijawab "selesai" di stage 'selesai_tanya') — biar
 // room-nya kosong lagi dan bisa dipakai pasangan/warga BERIKUTNYA, bukan
 // cuma sekali pakai selamanya per thread.
-async function releaseWeddingSession(supabaseAdmin, id) {
+export async function releaseWeddingSession(supabaseAdmin, id) {
   const { error } = await supabaseAdmin.from('wedding_sessions').delete().eq('id', id)
   if (error) throw error
 }
@@ -79,7 +79,7 @@ async function releaseWeddingSession(supabaseAdmin, id) {
 
 // Coba klaim 1 pesan spesifik buat salah satu dari 3 bot asisten, biar
 // cuma 1 yang jawab tiap pertanyaan (bukan bertiga sekaligus).
-async function claimAssistantMessage(supabaseAdmin, { chatId, messageId, agentKey }) {
+export async function claimAssistantMessage(supabaseAdmin, { chatId, messageId, agentKey }) {
   const scopeKey = `assist:${chatId}:${messageId}`
 
   const { error } = await supabaseAdmin
@@ -111,7 +111,7 @@ const PEGAWAI_IDLE_SECONDS = 180 // 3 menit
 //
 // Return: row sesi (ada agent_key-nya) kalau berhasil/udah ada, atau
 // `null` kalau semua pegawai lagi sibuk pegang warga lain.
-async function claimPegawaiSession(
+export async function claimPegawaiSession(
   supabaseAdmin,
   { chatId, telegramUserId, priorityAgentKeys, priorityAgentNames, idleSeconds = PEGAWAI_IDLE_SECONDS }
 ) {
@@ -129,18 +129,7 @@ async function claimPegawaiSession(
 
 // Lepas sesi (dipanggil begitu pegawai berhasil arahkan warga ke Penghulu
 // yang nganggur -> tugas pegawai ke warga ini dianggap selesai).
-async function releasePegawaiSession(supabaseAdmin, sessionId) {
+export async function releasePegawaiSession(supabaseAdmin, sessionId) {
   const { error } = await supabaseAdmin.rpc('release_pegawai_session', { p_session_id: sessionId })
   if (error) throw error
-}
-
-module.exports = {
-  getWeddingSession,
-  claimWeddingSession,
-  updateWeddingSession,
-  releaseWeddingSession,
-  claimAssistantMessage,
-  PEGAWAI_IDLE_SECONDS,
-  claimPegawaiSession,
-  releasePegawaiSession,
 }
