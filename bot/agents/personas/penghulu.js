@@ -216,7 +216,7 @@ ATURAN PENTING — WAJIB DIPATUHI:
 10. Jangan pernah keluar dari peran, jangan bahas kamu adalah AI/model bahasa.`
 }
 
-export {
+module.exports = {
   STAGES,
   FAMILY_STAGES,
   KEYWORDS,
