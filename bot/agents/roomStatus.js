@@ -4,7 +4,7 @@
 // nggak pernah menebak angka sendiri (konsisten sama prinsip project:
 // data nyata selalu lewat kode, AI cuma buat konten fleksibel).
 
-export async function getRoomAvailabilitySummary(supabaseAdmin) {
+async function getRoomAvailabilitySummary(supabaseAdmin) {
   const { data: rooms, error: roomsError } = await supabaseAdmin
     .from('rooms')
     .select('id, slug, name, emoji')
@@ -39,9 +39,11 @@ export async function getRoomAvailabilitySummary(supabaseAdmin) {
 
 // Ubah hasil query di atas jadi teks ringkas buat disisipkan ke system
 // instruction Pegawai (lihat personas/pegawai.js).
-export function formatRoomAvailabilityContext(summaryRows) {
+function formatRoomAvailabilityContext(summaryRows) {
   if (!summaryRows || summaryRows.length === 0) return null
   return summaryRows
     .map((r) => `- ${r.emoji} ${r.name}: ${r.count} warga lagi di sana`)
     .join('\n')
 }
+
+module.exports = { getRoomAvailabilitySummary, formatRoomAvailabilityContext }
