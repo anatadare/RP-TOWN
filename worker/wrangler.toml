@@ -1,0 +1,18 @@
+name = "rp-town-bot"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Semua nilai di bawah ini CONTOH/placeholder, bukan yang beneran dipakai --
+# di dashboard Cloudflare (Workers & Pages > rp-town-bot > Settings >
+# Variables and Secrets) isi manual, atau lewat `wrangler secret put NAMA`.
+# Yang sifatnya rahasia (token bot, API key, service role key) WAJIB lewat
+# `wrangler secret put`, JANGAN ditulis langsung di file ini (file ini ikut
+# masuk ke git).
+#
+# Daftar env yang dibutuhkan (sama persis nama-namanya kayak versi Railway):
+#   BOT_TOKEN, MINIAPP_URL, HOUSING_GROUP_CHAT_ID, HOUSING_GROUP_USERNAME,
+#   WEBHOOK_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+#   GEMINI_API_KEY, GEMINI_MODEL, KUA_GROUP_CHAT_ID,
+#   PENGHULU_1_TOKEN..PENGHULU_5_TOKEN (+ _NAME/_GROUP_IDS/_THREAD_IDS/_GEMINI_API_KEY opsional per agent),
+#   ASSISTANT_1_TOKEN..ASSISTANT_3_TOKEN (+ opsional yang sama)
