@@ -1,0 +1,17 @@
+{
+  "name": "rp-town-bot-worker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.111.0",
+    "grammy": "^1.30.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
