@@ -1,145 +1,103 @@
-// RP Town — Bot Telegram (Telegraf) + webhook server
-// Bot ini punya 2 tugas:
-// 1. Buka pintu ke Mini App lewat command /start
-// 2. Terima webhook dari Supabase tiap ada rumah baru disewa,
-//    lalu otomatis bikin Forum Topic baru di grup Perumahan
+// RP Town — bot Telegram + agent NPC + webhook, versi Cloudflare Workers.
+//
+// Beda paling mendasar dari versi Railway (bot/index.js + bot/agents/runner.js):
+// - Dulu: 9 proses Telegraf (1 bot utama + 8 NPC agent) polling terus-terusan
+//   di 1 container Node yang nyala 24 jam.
+// - Sekarang: SEMUANYA lewat 1 Worker, mode webhook. Tiap bot (termasuk
+//   tiap NPC agent) punya URL webhook sendiri (lihat routing di bawah),
+//   Telegram yang manggil kita tiap ada pesan baru — bukan kita yang
+//   nanya-nanya terus (polling). Gak ada proses yang "nyala" pas nganggur.
+//
+// Routing:
+//   POST /webhook/main              -> bot utama (/start, /town)
+//   POST /webhook/agent/:agentKey   -> 1 NPC agent (contoh: penghulu-1, assistant-2)
+//   POST /webhooks/house-rented     -> webhook dari Supabase Database Webhooks
+//   GET  /                          -> health check
 
-require('dotenv').config()
-const express = require('express')
-const { Telegraf, Markup } = require('telegraf')
-const { createClient } = require('@supabase/supabase-js')
+import { Bot, webhookCallback } from 'grammy'
+import { createClient } from '@supabase/supabase-js'
+import { loadAgents } from './config.js'
+import { handlePenghuluMessage, handlePegawaiMessage, sortAgentsByPegawaiPriority } from './agentLogic.js'
+import { handleHouseRentedWebhook } from './houseWebhook.js'
+import { registerMainBotHandlers } from './mainBot.js'
 
-const BOT_TOKEN = process.env.BOT_TOKEN
-const MINIAPP_URL = process.env.MINIAPP_URL
-const HOUSING_GROUP_CHAT_ID = process.env.HOUSING_GROUP_CHAT_ID // contoh: -1001234567890
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET // token rahasia biar endpoint tidak bisa dipanggil sembarang orang
-const SUPABASE_URL = process.env.SUPABASE_URL
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY // WAJIB service_role, bukan anon key
-const PORT = process.env.PORT || 3000
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url)
 
-for (const [key, value] of Object.entries({
-  BOT_TOKEN,
-  MINIAPP_URL,
-  HOUSING_GROUP_CHAT_ID,
-  WEBHOOK_SECRET,
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
-})) {
-  if (!value) {
-    console.error(`${key} belum diisi di .env`)
-    process.exit(1)
-  }
+    if (url.pathname === '/' && request.method === 'GET') {
+      return new Response('RP Town bot & webhook server aktif (Cloudflare Workers)')
+    }
+
+    if (url.pathname === '/webhooks/house-rented' && request.method === 'POST') {
+      return handleHouseRentedWebhook(request, env)
+    }
+
+    if (url.pathname === '/webhook/main' && request.method === 'POST') {
+      return handleMainBotWebhook(request, env)
+    }
+
+    const agentMatch = url.pathname.match(/^\/webhook\/agent\/([a-z]+-\d+)$/)
+    if (agentMatch && request.method === 'POST') {
+      return handleAgentWebhook(request, env, agentMatch[1])
+    }
+
+    return new Response('not found', { status: 404 })
+  },
 }
 
-const bot = new Telegraf(BOT_TOKEN)
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+async function handleMainBotWebhook(request, env) {
+  const bot = new Bot(env.BOT_TOKEN)
+  registerMainBotHandlers(bot, env)
+  return webhookCallback(bot, 'cloudflare-mod')(request)
+}
 
-bot.start((ctx) => {
-  ctx.reply(
-    `Selamat datang di RP Town, ${ctx.from.first_name}! 🏘️\n\n` +
-      `Ini adalah kota kecil untuk komunitas roleplay kita. Buka peta kota untuk mulai jalan-jalan, kerja, atau ngobrol di lokasi favoritmu.`,
-    Markup.inlineKeyboard([
-      Markup.button.webApp('🗺️ Buka Peta Kota', MINIAPP_URL),
-    ])
-  )
-})
+async function handleAgentWebhook(request, env, agentKey) {
+  const { allAgents, penghuluAgents, assistantAgents, geminiModel } = loadAgents(env)
+  const agent = allAgents.find((a) => a.key === agentKey)
 
-bot.command('town', (ctx) => {
-  ctx.reply(
-    'Klik tombol di bawah buat balik ke peta kota:',
-    Markup.inlineKeyboard([Markup.button.webApp('🗺️ Buka Peta Kota', MINIAPP_URL)])
-  )
-})
-
-bot.launch({ dropPendingUpdates: true }).catch((err) => {
-  console.error('Bot utama gagal launch:', err.message)
-})
-console.log('RP Town bot jalan...')
-
-// NPC agents (Penghulu & Asisten) — proses terpisah secara logika, tapi
-// dijalankan di 1 service Node yang sama biar gak perlu setup deploy baru.
-// Lihat bot/agents/ untuk detailnya. Aman dipanggil walau .env agent belum
-// diisi lengkap — agent yang tokennya kosong otomatis di-skip.
-const { startAgents } = require('./agents/runner')
-startAgents()
-
-// ============================================
-// Webhook server — dipanggil Supabase Database Webhooks
-// tiap ada baris di tabel `houses` yang ter-update (owner_citizen_id keisi)
-// ============================================
-const app = express()
-app.use(express.json())
-
-app.post('/webhooks/house-rented', async (req, res) => {
-  // Verifikasi secret, biar endpoint ini tidak bisa dipanggil orang luar sembarangan
-  const secret = req.headers['x-webhook-secret']
-  if (secret !== WEBHOOK_SECRET) {
-    return res.status(401).json({ error: 'unauthorized' })
+  if (!agent) {
+    // Agent ini belum dikonfigurasi lengkap (token/grup/API key kosong di
+    // env) -- balikin 200 kosong (bukan error) biar Telegram gak nganggep
+    // webhook-nya gagal & terus nyoba ulang.
+    return new Response('agent not configured, skipped', { status: 200 })
   }
 
-  try {
-    const record = req.body?.record
-    const oldRecord = req.body?.old_record
+  const supabaseAdmin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
+  const pegawaiPriorityAgents = sortAgentsByPegawaiPriority(assistantAgents)
 
-    // Cuma proses kalau ini transisi "baru disewa" (owner sebelumnya kosong, sekarang keisi)
-    // dan belum pernah dibikinin topic sebelumnya
-    const justRented = oldRecord?.owner_citizen_id == null && record?.owner_citizen_id != null
-    const alreadyHasTopic = Boolean(record?.telegram_topic_id)
+  const bot = new Bot(agent.token)
+  const groupIdSet = new Set(agent.groupIds.map(String))
+  const threadIdSet = agent.threadIds ? new Set(agent.threadIds.map(String)) : null
 
-    if (!justRented || alreadyHasTopic) {
-      return res.json({ skipped: true })
+  bot.on('message', async (botCtx) => {
+    try {
+      // Jangan pernah balas pesan dari bot lain (termasuk sesama bot RP Town)
+      // -- tanpa ini gampang kejadian bot saling balas pesan bot lain terus
+      // (loop tak berujung). Sama kayak versi Railway.
+      if (botCtx.from?.is_bot) return
+      if (!groupIdSet.has(String(botCtx.chat.id))) return
+
+      const threadId = botCtx.message.message_thread_id ?? null
+      if (threadIdSet && !threadIdSet.has(String(threadId))) return
+
+      const text = botCtx.message.text || botCtx.message.caption
+      if (!text) return
+
+      if (agent.kind === 'penghulu') {
+        await handlePenghuluMessage(supabaseAdmin, agent, botCtx, text, threadId, { penghuluAgents, geminiModel })
+      } else {
+        await handlePegawaiMessage(supabaseAdmin, agent, botCtx, text, threadId, {
+          penghuluAgents,
+          pegawaiPriorityKeys: pegawaiPriorityAgents.map((a) => a.key),
+          pegawaiPriorityNames: pegawaiPriorityAgents.map((a) => a.name),
+          geminiModel,
+        })
+      }
+    } catch (err) {
+      console.error(`[${agent.key}] error:`, err)
     }
+  })
 
-    // Ambil nama pemilik buat judul topic
-    const { data: owner, error: ownerError } = await supabaseAdmin
-      .from('citizens')
-      .select('display_name, username')
-      .eq('id', record.owner_citizen_id)
-      .single()
-
-    if (ownerError) throw ownerError
-
-    const ownerName = owner.display_name || owner.username || 'Warga'
-    const topicTitle = `🏡 Petak ${record.plot_number} — ${ownerName}`
-
-    // Bikin Forum Topic baru di grup Perumahan
-    const topic = await bot.telegram.createForumTopic(HOUSING_GROUP_CHAT_ID, topicTitle)
-
-    // Susun link topic. Kalau grup punya username publik, pakai format t.me/username/threadId.
-    // Kalau grup private, pakai format t.me/c/<chatId tanpa awalan -100>/threadId
-    let topicUrl
-    const groupUsername = process.env.HOUSING_GROUP_USERNAME // opsional, isi kalau grup publik
-    if (groupUsername) {
-      topicUrl = `https://t.me/${groupUsername}/${topic.message_thread_id}`
-    } else {
-      const numericId = String(HOUSING_GROUP_CHAT_ID).replace('-100', '')
-      topicUrl = `https://t.me/c/${numericId}/${topic.message_thread_id}`
-    }
-
-    // Simpan balik ke database pakai service_role key (bypass RLS)
-    const { error: updateError } = await supabaseAdmin
-      .from('houses')
-      .update({
-        telegram_topic_id: topic.message_thread_id,
-        telegram_topic_url: topicUrl,
-      })
-      .eq('id', record.id)
-
-    if (updateError) throw updateError
-
-    console.log(`Topic dibuat untuk Petak ${record.plot_number}: ${topicUrl}`)
-    res.json({ success: true, topicUrl })
-  } catch (err) {
-    console.error('Gagal membuat forum topic:', err)
-    res.status(500).json({ error: err.message })
-  }
-})
-
-app.get('/', (_req, res) => res.send('RP Town bot & webhook server aktif'))
-
-app.listen(PORT, () => {
-  console.log(`Webhook server jalan di port ${PORT}`)
-})
-
-process.once('SIGINT', () => bot.stop('SIGINT'))
-process.once('SIGTERM', () => bot.stop('SIGTERM'))
+  return webhookCallback(bot, 'cloudflare-mod')(request)
+}
