@@ -1,58 +1,50 @@
-// Wrapper tipis buat Gemini API (pakai @google/generative-ai).
+// Wrapper tipis buat Gemini API — versi Workers, pakai fetch() langsung ke
+// REST API Gemini (BUKAN pakai SDK @google/generative-ai lagi), soalnya SDK
+// itu ngandelin beberapa API Node yang gak selalu kebaca penuh di Cloudflare
+// Workers. fetch() itu native di Workers, jadi ini pilihan paling aman.
 //
-// Desain hemat biaya (sesuai rencana):
+// Desain hemat biaya tetap sama kayak versi Railway:
 // - `systemInstruction` per persona itu STATIS -> taruh di system instruction,
-//   bukan di-embed ulang di tiap pesan user. Ini yang bikin Gemini bisa
-//   nge-cache/reuse bagian ini di request-request berikutnya.
-// - Data dinamis (nama mempelai, tahap acara, dst) dikirim pendek di pesan
-//   user tiap turn, JANGAN kirim ulang seluruh history mentah-mentah.
+//   bukan di-embed ulang di tiap pesan user.
 // - History percakapan yang dikirim ke model cuma beberapa turn terakhir
-//   (lihat runner.js: `trimHistory`), bukan seluruh chat dari awal.
+//   (lihat chatHistory.js), bukan seluruh chat dari awal.
 
-const { GoogleGenerativeAI } = require('@google/generative-ai')
-const { GEMINI_API_KEY, GEMINI_MODEL } = require('./config')
-
-if (!GEMINI_API_KEY) {
-  console.warn('[agents] GEMINI_API_KEY (default/shared) belum diisi. Agent yang gak punya API key sendiri tidak akan bisa membalas.')
-}
-
-// Cache 1 instance GoogleGenerativeAI per API key, biar kalau ada 8 bot
-// dengan 8 API key beda-beda, tiap key cuma di-init sekali (bukan bikin
-// instance baru tiap kirim pesan).
-const clientCache = new Map() // apiKey -> GoogleGenerativeAI instance
-
-function getClient(apiKey) {
-  if (!clientCache.has(apiKey)) {
-    clientCache.set(apiKey, new GoogleGenerativeAI(apiKey))
-  }
-  return clientCache.get(apiKey)
-}
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 // Jalanin 1 giliran chat: system instruction (statis, persona) + history
 // pendek + pesan user terbaru. Kalau model minta function call, jalankan
 // `onFunctionCall`, kirim hasilnya balik ke model, lalu ambil balasan teks
-// finalnya.
-// `apiKey` opsional — kalau gak dikasih, fallback ke GEMINI_API_KEY (share).
-async function runTurn({ systemInstruction, history = [], userMessage, tools, onFunctionCall, apiKey }) {
-  const key = apiKey || GEMINI_API_KEY
-  if (!key) throw new Error('GEMINI_API_KEY belum dikonfigurasi')
+// finalnya. Meniru perilaku SDK `startChat().sendMessage()` yang lama,
+// tapi manual lewat endpoint `generateContent`.
+export async function runTurn({
+  systemInstruction,
+  model = 'gemini-2.0-flash',
+  history = [],
+  userMessage,
+  tools,
+  onFunctionCall,
+  apiKey,
+}) {
+  if (!apiKey) throw new Error('GEMINI_API_KEY belum dikonfigurasi')
 
-  const genAI = getClient(key)
-  const model = genAI.getGenerativeModel({
-    model: GEMINI_MODEL,
-    systemInstruction,
-    tools,
-  })
+  const contents = [...history, { role: 'user', parts: [{ text: userMessage }] }]
 
-  const chat = model.startChat({ history })
-  let result = await chat.sendMessage(userMessage)
-  let response = result.response
+  const body = {
+    contents,
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+  }
+  if (tools) body.tools = tools
 
-  const functionCalls = response.functionCalls?.() || []
+  let response = await callGemini(model, apiKey, body)
+  let candidate = response.candidates?.[0]
+  let functionCalls = extractFunctionCalls(candidate)
 
   if (functionCalls.length > 0 && onFunctionCall) {
-    // Bisa aja model minta lebih dari 1 tool call, proses satu-satu berurutan
-    const functionResponses = []
+    // Tambahin balasan model (yang isinya function call) ke contents,
+    // lalu tambahin function response-nya, sama kayak alur SDK yang lama.
+    contents.push(candidate.content)
+
+    const functionResponseParts = []
     for (const call of functionCalls) {
       let toolResult
       try {
@@ -60,19 +52,48 @@ async function runTurn({ systemInstruction, history = [], userMessage, tools, on
       } catch (err) {
         toolResult = { error: err.message }
       }
-      functionResponses.push({
+      functionResponseParts.push({
         functionResponse: { name: call.name, response: toolResult },
       })
     }
+    contents.push({ role: 'function', parts: functionResponseParts })
 
-    result = await chat.sendMessage(functionResponses)
-    response = result.response
+    response = await callGemini(model, apiKey, { contents, systemInstruction: body.systemInstruction, tools })
+    candidate = response.candidates?.[0]
   }
 
   return {
-    text: response.text(),
+    text: extractText(candidate),
     functionCalls,
   }
 }
 
-module.exports = { runTurn }
+async function callGemini(model, apiKey, body) {
+  const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`Gemini API error ${res.status}: ${errText}`)
+  }
+  return res.json()
+}
+
+function extractText(candidate) {
+  if (!candidate?.content?.parts) return ''
+  return candidate.content.parts
+    .map((p) => p.text || '')
+    .join('')
+    .trim()
+}
+
+function extractFunctionCalls(candidate) {
+  if (!candidate?.content?.parts) return []
+  return candidate.content.parts
+    .filter((p) => p.functionCall)
+    .map((p) => ({ name: p.functionCall.name, args: p.functionCall.args || {} }))
+}
