@@ -1,17 +1,19 @@
 {
-  "name": "rp-town-bot-worker",
-  "private": true,
+  "name": "rp-town-bot",
   "version": "1.0.0",
-  "type": "module",
+  "description": "Bot Telegram untuk RP Town",
+  "main": "index.js",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "start": "node index.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "@supabase/supabase-js": "^2.111.0",
-    "grammy": "^1.30.0"
-  },
-  "devDependencies": {
-    "wrangler": "^4.0.0"
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "telegraf": "^4.16.3"
   }
 }
