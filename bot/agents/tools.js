@@ -1,29 +1,27 @@
 // Tool yang boleh dipanggil AI penghulu. AI CUMA boleh manggil tool ini —
 // yang beneran nulis ke database adalah fungsi `handleUpdateMarriageStatus`
-// di bawah, lewat RPC Postgres `update_marriage_status`. Ini sengaja dipisah
-// biar AI nggak pernah "langsung nulis" data, cuma minta backend yang eksekusi.
-//
-// Versi Workers: schema-nya ditulis pakai string literal langsung ("OBJECT",
-// "STRING", dst) soalnya gak pakai SDK @google/generative-ai lagi (lihat
-// geminiClient.js) — nilainya sama persis kayak enum SchemaType yang lama,
-// cuma gak butuh import package-nya.
+// di bawah, lewat RPC Postgres `update_marriage_status` (atomik, di
+// database/migration-005-marriage-agents.sql). Ini sengaja dipisah biar
+// AI nggak pernah "langsung nulis" data, cuma minta backend yang eksekusi.
 
-export const updateMarriageStatusDeclaration = {
+const { SchemaType } = require('@google/generative-ai')
+
+const updateMarriageStatusDeclaration = {
   name: 'update_marriage_status',
   description:
     'Tandai dua warga sebagai resmi menikah (status berubah jadi "Taken" & saling ke-link sebagai pasangan). ' +
     'HANYA panggil ini kalau ijab-kabul sudah benar-benar dinyatakan sah oleh sistem (bukan tebakan kamu sendiri).',
   parameters: {
-    type: 'OBJECT',
+    type: SchemaType.OBJECT,
     properties: {
-      citizenAId: { type: 'STRING', description: 'UUID warga mempelai A (dari tabel citizens)' },
-      citizenBId: { type: 'STRING', description: 'UUID warga mempelai B (dari tabel citizens)' },
+      citizenAId: { type: SchemaType.STRING, description: 'UUID warga mempelai A (dari tabel citizens)' },
+      citizenBId: { type: SchemaType.STRING, description: 'UUID warga mempelai B (dari tabel citizens)' },
     },
     required: ['citizenAId', 'citizenBId'],
   },
 }
 
-export async function handleUpdateMarriageStatus(supabaseAdmin, { citizenAId, citizenBId }) {
+async function handleUpdateMarriageStatus(supabaseAdmin, { citizenAId, citizenBId }) {
   if (!citizenAId || !citizenBId) {
     throw new Error('citizenAId dan citizenBId wajib diisi')
   }
@@ -39,22 +37,25 @@ export async function handleUpdateMarriageStatus(supabaseAdmin, { citizenAId, ci
 
 // ------------------------------------------------------------------
 // Ekspansi silsilah keluarga (mommy/daddy/kaka/abang/nenek/kakek/paman/tante)
+// Sama kayak update_marriage_status: HANYA dipanggil oleh kode di stage
+// 'konfirmasi' -> 'selesai' (deterministik, bukan hasil keputusan AI).
+// Tabel & RPC-nya ada di database/migration-006-family-tree.sql.
 // ------------------------------------------------------------------
 
-export const FAMILY_RELATION_TYPES = ['mommy', 'daddy', 'kaka', 'abang', 'nenek', 'kakek', 'paman', 'tante']
+const FAMILY_RELATION_TYPES = ['mommy', 'daddy', 'kaka', 'abang', 'nenek', 'kakek', 'paman', 'tante']
 
-export const addFamilyRelationDeclaration = {
+const addFamilyRelationDeclaration = {
   name: 'add_family_relation',
   description:
     'Catat relasi keluarga non-pasangan (mommy/daddy/kaka/abang/nenek/kakek/paman/tante) antara dua warga. ' +
     'HANYA panggil ini kalau tahap konfirmasi sudah benar-benar dinyatakan sah oleh sistem (bukan tebakan kamu sendiri).',
   parameters: {
-    type: 'OBJECT',
+    type: SchemaType.OBJECT,
     properties: {
-      citizenId: { type: 'STRING', description: 'UUID warga yang mendaftarkan (subjek), dari tabel citizens' },
-      relatedCitizenId: { type: 'STRING', description: 'UUID warga yang didaftarkan sebagai relasi, dari tabel citizens' },
+      citizenId: { type: SchemaType.STRING, description: 'UUID warga yang mendaftarkan (subjek), dari tabel citizens' },
+      relatedCitizenId: { type: SchemaType.STRING, description: 'UUID warga yang didaftarkan sebagai relasi, dari tabel citizens' },
       relationType: {
-        type: 'STRING',
+        type: SchemaType.STRING,
         description: `Jenis relasi, salah satu dari: ${FAMILY_RELATION_TYPES.join(', ')}`,
       },
     },
@@ -62,7 +63,7 @@ export const addFamilyRelationDeclaration = {
   },
 }
 
-export async function handleAddFamilyRelation(supabaseAdmin, { citizenId, relatedCitizenId, relationType, agentKey }) {
+async function handleAddFamilyRelation(supabaseAdmin, { citizenId, relatedCitizenId, relationType, agentKey }) {
   if (!citizenId || !relatedCitizenId || !relationType) {
     throw new Error('citizenId, relatedCitizenId, dan relationType wajib diisi')
   }
@@ -79,4 +80,12 @@ export async function handleAddFamilyRelation(supabaseAdmin, { citizenId, relate
 
   if (error) throw error
   return { success: true, row: data }
+}
+
+module.exports = {
+  updateMarriageStatusDeclaration,
+  handleUpdateMarriageStatus,
+  FAMILY_RELATION_TYPES,
+  addFamilyRelationDeclaration,
+  handleAddFamilyRelation,
 }
