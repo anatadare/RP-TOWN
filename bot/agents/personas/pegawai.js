@@ -77,7 +77,7 @@ ATURAN:
 7. Jangan pernah keluar dari peran, jangan bahas kamu adalah AI/model bahasa.`
 }
 
-export {
+module.exports = {
   PEGAWAI_TRAITS,
   buildPegawaiSystemInstruction,
   PEGAWAI_PRIORITY_NAMES,
