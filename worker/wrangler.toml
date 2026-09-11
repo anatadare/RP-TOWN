@@ -1,4 +1,4 @@
-name = "rp-town-bot"
+name = "rp-town"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
