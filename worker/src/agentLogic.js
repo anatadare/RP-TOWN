@@ -9,7 +9,7 @@
 //    (Supabase), bukan in-memory Map lagi.
 // 3. `ctx` di sini datang dari grammY (bukan Telegraf), tapi bentuknya
 //    sengaja dibikin mirip (ctx.chat.id, ctx.from.id, ctx.message.text,
-//    ctx.reply(...)) jadi sebagian besar logic aslinya gak berubah.
+//    sendPersonaMessage(ctx, ...)) jadi sebagian besar logic aslinya gak berubah.
 
 import { runTurn } from './aiClient.js'
 import { getHistory, pushHistory } from './chatHistory.js'
@@ -56,6 +56,35 @@ export function sortAgentsByPegawaiPriority(assistantAgents) {
     if (bi === -1) return -1
     return ai - bi
   })
+}
+
+// ------------------------------------------------------------------
+// Pengganti ctx.reply biasa buat SEMUA balasan NPC (scripted maupun AI).
+// Sama persis alasannya kayak versi bot/agents/runner.js (Railway):
+// 1. Tanpa `parse_mode`, format `_gestur_` yang dipakai semua persona
+//    tampil literal (underscore mentah), bukan ke-render miring.
+// 2. Gestur & dialog (dipisah baris kosong, `_gestur_\n\ndialog`) dipecah
+//    jadi beberapa bubble berurutan + jeda "mengetik..." kecil, biar
+//    kerasa kayak NPC beneran lagi ngetik, bukan bot nembak 1 blok teks.
+async function sendPersonaMessage(ctx, text, extra = {}) {
+  const chunks = String(text)
+    .split(/\n\s*\n/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+
+  if (chunks.length === 0) return
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0) {
+      try {
+        await ctx.replyWithChatAction('typing')
+      } catch (err) {
+        // status "mengetik" gagal bukan hal fatal, lanjut aja kirim pesannya
+      }
+      await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 500))
+    }
+    await ctx.reply(chunks[i], { parse_mode: 'Markdown', ...extra })
+  }
 }
 
 async function getIdlePenghuluNames(supabaseAdmin, penghuluAgents) {
@@ -177,7 +206,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
         await startFamilyRegistration(supabaseAdmin, agent, ctx, threadId, familySession, parties, familyRelationType)
       } else {
         const relationLabel = FAMILY_RELATION_LABELS[familyRelationType]
-        await ctx.reply(FAMILY_SCRIPTED_LINES.askForTarget(agent.name, relationLabel), { message_thread_id: threadId })
+        await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.askForTarget(agent.name, relationLabel), { message_thread_id: threadId })
       }
       return
     }
@@ -190,21 +219,21 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
       if (couple.citizenA && couple.citizenB) {
         await startCeremony(supabaseAdmin, agent, ctx, threadId, session, couple)
       } else {
-        await ctx.reply(SCRIPTED_LINES.couldNotResolve(`@${couple.usernameA}`, `@${couple.usernameB}`), {
+        await sendPersonaMessage(ctx, SCRIPTED_LINES.couldNotResolve(`@${couple.usernameA}`, `@${couple.usernameB}`), {
           message_thread_id: threadId,
         })
       }
       return
     }
 
-    await ctx.reply(SCRIPTED_LINES.greeting(agent.name), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, SCRIPTED_LINES.greeting(agent.name), { message_thread_id: threadId })
     return
   }
 
   if (session.agent_key !== agent.key) return
 
   if (!(await isSessionParty(supabaseAdmin, session, ctx.from.id))) {
-    await ctx.reply(SCRIPTED_LINES.duduk(agent.name), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, SCRIPTED_LINES.duduk(agent.name), { message_thread_id: threadId })
     return
   }
 
@@ -214,18 +243,18 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
   }
 
   if (session.stage === 'selesai') {
-    await ctx.reply(SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
     return
   }
 
   if (session.stage === 'pembukaan' && !session.partner_a_id) {
     const couple = await resolveCoupleFromText(supabaseAdmin, text)
     if (!couple) {
-      await ctx.reply(SCRIPTED_LINES.needCouple(), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.needCouple(), { message_thread_id: threadId })
       return
     }
     if (!couple.citizenA || !couple.citizenB) {
-      await ctx.reply(SCRIPTED_LINES.couldNotResolve(`@${couple.usernameA}`, `@${couple.usernameB}`), {
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.couldNotResolve(`@${couple.usernameA}`, `@${couple.usernameB}`), {
         message_thread_id: threadId,
       })
       return
@@ -239,7 +268,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
 
   if (session.stage === 'ijab_kabul' && textContainsAny(text, KEYWORDS.confirmIjab)) {
     const updated = await updateWeddingSession(supabaseAdmin, session.id, { stage: nextStage(session.stage) })
-    await ctx.reply(SCRIPTED_LINES.doa(nameA, nameB), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, SCRIPTED_LINES.doa(nameA, nameB), { message_thread_id: threadId })
 
     try {
       await handleUpdateMarriageStatus(supabaseAdmin, {
@@ -254,8 +283,8 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
 
   if (session.stage === 'doa') {
     if (textContainsAny(text, KEYWORDS.closeCeremony)) {
-      await ctx.reply(SCRIPTED_LINES.penutup(nameA, nameB), { message_thread_id: threadId })
-      await ctx.reply(SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.penutup(nameA, nameB), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
       try {
         await releaseWeddingSession(supabaseAdmin, session.id)
       } catch (err) {
@@ -274,7 +303,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
       userMessage: `[Konteks: prosesi pernikahan ${nameA} & ${nameB}, tahap saat ini: doa/setelah ijab-kabul]\nPesan tamu: ${text}`,
     })
     await pushHistory(supabaseAdmin, historyKey, 'model', reply)
-    await ctx.reply(reply, { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, reply, { message_thread_id: threadId })
     return
   }
 
@@ -288,7 +317,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
     userMessage: `[Konteks: prosesi pernikahan ${nameA || '(mempelai A)'} & ${nameB || '(mempelai B)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
   })
   await pushHistory(supabaseAdmin, historyKey, 'model', reply)
-  await ctx.reply(reply, { message_thread_id: threadId })
+  await sendPersonaMessage(ctx, reply, { message_thread_id: threadId })
 }
 
 async function startCeremony(supabaseAdmin, agent, ctx, threadId, session, couple) {
@@ -303,8 +332,8 @@ async function startCeremony(supabaseAdmin, agent, ctx, threadId, session, coupl
     stage: 'ijab_kabul',
   })
 
-  await ctx.reply(SCRIPTED_LINES.pembukaan(nameA, nameB), { message_thread_id: threadId })
-  await ctx.reply(SCRIPTED_LINES.ijab_kabul(nameA, nameB), { message_thread_id: threadId })
+  await sendPersonaMessage(ctx, SCRIPTED_LINES.pembukaan(nameA, nameB), { message_thread_id: threadId })
+  await sendPersonaMessage(ctx, SCRIPTED_LINES.ijab_kabul(nameA, nameB), { message_thread_id: threadId })
 }
 
 async function startFamilyRegistration(supabaseAdmin, agent, ctx, threadId, session, parties, relationType) {
@@ -321,7 +350,7 @@ async function startFamilyRegistration(supabaseAdmin, agent, ctx, threadId, sess
     stage: 'konfirmasi',
   })
 
-  await ctx.reply(FAMILY_SCRIPTED_LINES.pembukaan(subjectLabel, relatedLabel, relationLabel), {
+  await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.pembukaan(subjectLabel, relatedLabel, relationLabel), {
     message_thread_id: threadId,
   })
 }
@@ -334,7 +363,7 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
 
   if (session.stage === 'selesai_tanya') {
     if (textContainsAny(text, KEYWORDS.closeCeremony)) {
-      await ctx.reply(SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
       try {
         await releaseWeddingSession(supabaseAdmin, session.id)
       } catch (err) {
@@ -350,28 +379,28 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
         await startFamilyRegistration(supabaseAdmin, agent, ctx, threadId, session, parties, nextRelationType)
       } else {
         const nextRelationLabel = FAMILY_RELATION_LABELS[nextRelationType]
-        await ctx.reply(FAMILY_SCRIPTED_LINES.needTarget(nextRelationLabel), { message_thread_id: threadId })
+        await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.needTarget(nextRelationLabel), { message_thread_id: threadId })
       }
       return
     }
 
-    await ctx.reply(FAMILY_SCRIPTED_LINES.tanyaLanjut(session.partner_a_label), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.tanyaLanjut(session.partner_a_label), { message_thread_id: threadId })
     return
   }
 
   if (session.stage === 'selesai') {
-    await ctx.reply(FAMILY_SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
     return
   }
 
   if (session.stage === 'pembukaan' && !session.partner_b_id) {
     const parties = await resolveFamilyPartiesFromText(supabaseAdmin, text, ctx)
     if (!parties) {
-      await ctx.reply(FAMILY_SCRIPTED_LINES.needTarget(relationLabel), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.needTarget(relationLabel), { message_thread_id: threadId })
       return
     }
     if (!parties.citizenRelated || !parties.citizenSubject) {
-      await ctx.reply(FAMILY_SCRIPTED_LINES.couldNotResolve(`@${parties.usernameRelated}`), {
+      await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.couldNotResolve(`@${parties.usernameRelated}`), {
         message_thread_id: threadId,
       })
       return
@@ -385,8 +414,8 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
 
   if (session.stage === 'konfirmasi' && textContainsAny(text, FAMILY_CONFIRM_KEYWORDS)) {
     await updateWeddingSession(supabaseAdmin, session.id, { stage: 'selesai_tanya' })
-    await ctx.reply(FAMILY_SCRIPTED_LINES.selesai(subjectLabel, relatedLabel, relationLabel), { message_thread_id: threadId })
-    await ctx.reply(FAMILY_SCRIPTED_LINES.tanyaLanjut(subjectLabel), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.selesai(subjectLabel, relatedLabel, relationLabel), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.tanyaLanjut(subjectLabel), { message_thread_id: threadId })
 
     try {
       await handleAddFamilyRelation(supabaseAdmin, {
@@ -413,7 +442,7 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
       `dari ${subjectLabel || '(subjek)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
   })
   await pushHistory(supabaseAdmin, historyKey, 'model', reply)
-  await ctx.reply(reply, { message_thread_id: threadId })
+  await sendPersonaMessage(ctx, reply, { message_thread_id: threadId })
 }
 
 // ------------------------------------------------------------------
@@ -475,7 +504,7 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   })
   await pushHistory(supabaseAdmin, historyKey, 'model', reply)
 
-  await ctx.reply(reply, threadId != null ? { message_thread_id: threadId } : undefined)
+  await sendPersonaMessage(ctx, reply, threadId != null ? { message_thread_id: threadId } : undefined)
 
   if (directingToPenghulu) {
     try {
