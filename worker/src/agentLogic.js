@@ -226,7 +226,30 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
       return
     }
 
-    await sendPersonaMessage(ctx, SCRIPTED_LINES.greeting(agent.name), { message_thread_id: threadId })
+    // Gak ada sinyal mulai sesi (bukan permintaan nikah/keluarga):
+    // - Kalau ini PESAN PERTAMA di room ini (histori masih kosong), kasih
+    //   pembukaan baku "mau ngapain?" (DETERMINISTIK) sekali aja.
+    // - Selain itu, jawab lewat AI. Sebelumnya di sini SELALU ngirim ulang
+    //   SCRIPTED_LINES.greeting() berapa kali pun warganya chat — makanya
+    //   kerasa kayak bot yang gak ngerti isi chat.
+    const priorHistory = await getHistory(supabaseAdmin, historyKey)
+    if (priorHistory.length === 0) {
+      await pushHistory(supabaseAdmin, historyKey, 'user', text)
+      await pushHistory(supabaseAdmin, historyKey, 'model', SCRIPTED_LINES.greeting(agent.name))
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.greeting(agent.name), { message_thread_id: threadId })
+      return
+    }
+
+    await pushHistory(supabaseAdmin, historyKey, 'user', text)
+    const { text: freeReply } = await runTurn({
+      systemInstruction: buildPenghuluSystemInstruction(agent.name),
+      model: aiModel,
+      apiKey: agent.aiApiKey,
+      history: priorHistory,
+      userMessage: text,
+    })
+    await pushHistory(supabaseAdmin, historyKey, 'model', freeReply)
+    await sendPersonaMessage(ctx, freeReply, { message_thread_id: threadId })
     return
   }
 
