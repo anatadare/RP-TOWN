@@ -81,7 +81,7 @@ async function handleMainBotWebhook(request, env) {
 }
 
 async function handleAgentWebhook(request, env, agentKey) {
-  const { allAgents, penghuluAgents, assistantAgents, aiModel } = loadAgents(env)
+  const { allAgents, penghuluAgents, assistantAgents } = loadAgents(env)
   const agent = allAgents.find((a) => a.key === agentKey)
 
   if (!agent) {
@@ -113,13 +113,12 @@ async function handleAgentWebhook(request, env, agentKey) {
       if (!text) return
 
       if (agent.kind === 'penghulu') {
-        await handlePenghuluMessage(supabaseAdmin, agent, botCtx, text, threadId, { penghuluAgents, aiModel })
+        await handlePenghuluMessage(supabaseAdmin, agent, botCtx, text, threadId, { penghuluAgents })
       } else {
         await handlePegawaiMessage(supabaseAdmin, agent, botCtx, text, threadId, {
           penghuluAgents,
           pegawaiPriorityKeys: pegawaiPriorityAgents.map((a) => a.key),
           pegawaiPriorityNames: pegawaiPriorityAgents.map((a) => a.name),
-          aiModel,
         })
       }
     } catch (err) {
