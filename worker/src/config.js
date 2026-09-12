@@ -56,6 +56,6 @@ export function loadAgents(env) {
     penghuluAgents,
     assistantAgents,
     allAgents: [...penghuluAgents, ...assistantAgents],
-    aiModel: env.AI_MODEL || 'f/qwen3.8-flash',
+    aiModel: env.AI_MODEL || 'qwen3.8-flash',
   }
 }
