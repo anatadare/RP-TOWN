@@ -13,6 +13,11 @@
 //   POST /webhook/agent/:agentKey   -> 1 NPC agent (contoh: penghulu-1, assistant-2)
 //   POST /webhooks/house-rented     -> webhook dari Supabase Database Webhooks
 //   GET  /                          -> health check
+//   GET  /debug/models              -> HAPUS SETELAH SELESAI DIPAKAI. Nampilin
+//                                       daftar model ID persis dari Jerouter
+//                                       (proxy ke GET /v1/models mereka),
+//                                       biar bisa dicek langsung dari browser
+//                                       tanpa perlu Postman/terminal.
 
 import { Bot, webhookCallback } from 'grammy'
 import { createClient } from '@supabase/supabase-js'
@@ -27,6 +32,10 @@ export default {
 
     if (url.pathname === '/' && request.method === 'GET') {
       return new Response('RP Town bot & webhook server aktif (Cloudflare Workers)')
+    }
+
+    if (url.pathname === '/debug/models' && request.method === 'GET') {
+      return handleDebugModels(env)
     }
 
     if (url.pathname === '/webhooks/house-rented' && request.method === 'POST') {
@@ -44,6 +53,25 @@ export default {
 
     return new Response('not found', { status: 404 })
   },
+}
+
+// SEMENTARA -- hapus fungsi ini (dan route-nya di atas) begitu udah gak
+// butuh ngecek nama model lagi. Cuma proxy tipis ke GET /v1/models Jerouter
+// pakai AI_API_KEY yang udah ada di env, biar hasilnya bisa dilihat langsung
+// dari browser tanpa expose apa pun selain daftar model.
+async function handleDebugModels(env) {
+  try {
+    const res = await fetch('https://je.jerouter.web.id/v1/models', {
+      headers: { Authorization: `Bearer ${env.AI_API_KEY}` },
+    })
+    const text = await res.text()
+    return new Response(text, {
+      status: res.status,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  } catch (err) {
+    return new Response(`Gagal fetch: ${err.message}`, { status: 500 })
+  }
 }
 
 async function handleMainBotWebhook(request, env) {
