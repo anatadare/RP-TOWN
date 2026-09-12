@@ -132,6 +132,7 @@ async function handleAgentWebhook(request, env, agentKey) {
       try {
         await botCtx.reply('_(sinyal lagi kurang bagus, coba kirim pesannya sekali lagi ya)_', {
           message_thread_id: fallbackThreadId,
+          parse_mode: 'Markdown',
         })
       } catch (replyErr) {
         console.error(`[${agent.key}] gagal kirim fallback reply:`, replyErr)
