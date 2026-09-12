@@ -119,6 +119,47 @@ function getHistory(key) {
 }
 
 // ------------------------------------------------------------------
+// Pengganti ctx.reply biasa buat SEMUA balasan NPC (scripted maupun AI).
+//
+// Kenapa perlu ini (bukan ctx.reply langsung):
+// 1. Semua teks NPC nulis gestur pakai format `_gestur_\n\ndialog` (lihat
+//    personas/penghulu.js & personas/pegawai.js). Tanpa `parse_mode`,
+//    Telegram nampilin garis bawahnya APA ADANYA (literal "_..._"), bukan
+//    di-render miring — makanya kelihatan kaku kayak output bot mentah.
+// 2. Gestur & dialog dikirim sebagai 1 blok teks raksasa dalam 1 bubble,
+//    padahal orang beneran chat biasanya mecah jadi beberapa bubble
+//    (ngetik aksi dulu, jeda, baru lanjut ngomong) — itu yang bikin kesan
+//    "kayak agent beneran", bukan bot yang nembak 1 balasan panjang.
+//
+// Solusinya: pecah teks per PARAGRAF (dipisah baris kosong — sesuai
+// konvensi `_gestur_\n\ndialog` yang sudah dipakai di semua persona),
+// kirim tiap paragraf jadi bubble sendiri berurutan, kasih jeda kecil +
+// status "mengetik..." di antaranya, dan aktifkan parse_mode biar
+// _underscore_ beneran ke-render italic.
+async function sendPersonaMessage(ctx, text, extra = {}) {
+  const chunks = String(text)
+    .split(/\n\s*\n/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+
+  if (chunks.length === 0) return
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0) {
+      try {
+        await ctx.sendChatAction('typing')
+      } catch (err) {
+        // status "mengetik" gagal bukan hal fatal, lanjut aja kirim pesannya
+      }
+      // Jeda acak pendek biar kerasa natural, bukan nembak beruntun
+      // secepat mungkin kayak bot (yang justru bikin kesan kaku).
+      await new Promise((resolve) => setTimeout(resolve, 600 + Math.random() * 500))
+    }
+    await ctx.reply(chunks[i], { parse_mode: 'Markdown', ...extra })
+  }
+}
+
+// ------------------------------------------------------------------
 // Helper: cari "nikahin @a dan @b" (atau variasi "dan"/"&"/",") di teks,
 // lalu resolve ke citizen id lewat kolom `username` di tabel citizens.
 // ------------------------------------------------------------------
@@ -262,7 +303,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
         await startFamilyRegistration(agent, ctx, threadId, familySession, parties, familyRelationType)
       } else {
         const relationLabel = FAMILY_RELATION_LABELS[familyRelationType]
-        await ctx.reply(FAMILY_SCRIPTED_LINES.askForTarget(agent.name, relationLabel), {
+        await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.askForTarget(agent.name, relationLabel), {
           message_thread_id: threadId,
         })
       }
@@ -277,7 +318,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
       if (couple.citizenA && couple.citizenB) {
         await startCeremony(agent, ctx, threadId, session, couple)
       } else {
-        await ctx.reply(SCRIPTED_LINES.couldNotResolve(`@${couple.usernameA}`, `@${couple.usernameB}`), {
+        await sendPersonaMessage(ctx, SCRIPTED_LINES.couldNotResolve(`@${couple.usernameA}`, `@${couple.usernameB}`), {
           message_thread_id: threadId,
         })
       }
@@ -287,7 +328,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
     // Gak ada sinyal mulai sesi (bukan permintaan nikah/keluarga) -> kasih
     // pembukaan baku nanyain "mau ngapain?" (DETERMINISTIK, bukan AI) biar
     // jadi pintu masuk yang konsisten tiap room Penghulu.
-    await ctx.reply(SCRIPTED_LINES.greeting(agent.name), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, SCRIPTED_LINES.greeting(agent.name), { message_thread_id: threadId })
     return
   }
 
@@ -299,7 +340,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
   //      sama diminta duduk & nunggu giliran, chat mereka diabaikan sama
   //      sekali (nggak diproses jadi bagian prosesi siapa pun). ----
   if (!(await isSessionParty(session, ctx.from.id))) {
-    await ctx.reply(SCRIPTED_LINES.duduk(agent.name), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, SCRIPTED_LINES.duduk(agent.name), { message_thread_id: threadId })
     return
   }
 
@@ -311,7 +352,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
   }
 
   if (session.stage === 'selesai') {
-    await ctx.reply(SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
     return
   }
 
@@ -319,11 +360,11 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
   if (session.stage === 'pembukaan' && !session.partner_a_id) {
     const couple = await resolveCoupleFromText(text)
     if (!couple) {
-      await ctx.reply(SCRIPTED_LINES.needCouple(), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.needCouple(), { message_thread_id: threadId })
       return
     }
     if (!couple.citizenA || !couple.citizenB) {
-      await ctx.reply(SCRIPTED_LINES.couldNotResolve(`@${couple.usernameA}`, `@${couple.usernameB}`), {
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.couldNotResolve(`@${couple.usernameA}`, `@${couple.usernameB}`), {
         message_thread_id: threadId,
       })
       return
@@ -338,7 +379,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
   // ---- Tahap ijab_kabul: nunggu kata kunci "sah" (deterministik, bukan AI) ----
   if (session.stage === 'ijab_kabul' && textContainsAny(text, KEYWORDS.confirmIjab)) {
     const updated = await updateWeddingSession(supabaseAdmin, session.id, { stage: nextStage(session.stage) })
-    await ctx.reply(SCRIPTED_LINES.doa(nameA, nameB), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, SCRIPTED_LINES.doa(nameA, nameB), { message_thread_id: threadId })
 
     // Tool call beneran ke database, dipicu KODE (bukan AI) begitu tahap
     // ijab-kabul dinyatakan sah — sesuai rencana "backend yang nyimpen &
@@ -357,8 +398,8 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
   // ---- Tahap doa: nunggu "nasihat" (AI) atau "selesai" (scripted) ----
   if (session.stage === 'doa') {
     if (textContainsAny(text, KEYWORDS.closeCeremony)) {
-      await ctx.reply(SCRIPTED_LINES.penutup(nameA, nameB), { message_thread_id: threadId })
-      await ctx.reply(SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.penutup(nameA, nameB), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
 
       // Room-nya dikosongin lagi (bukan cuma di-mark 'selesai') biar bisa
       // langsung dipakai pasangan/warga BERIKUTNYA di thread yang sama.
@@ -381,7 +422,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
       userMessage: `[Konteks: prosesi pernikahan ${nameA} & ${nameB}, tahap saat ini: doa/setelah ijab-kabul]\nPesan tamu: ${text}`,
     })
     pushHistory(historyKey, 'model', reply)
-    await ctx.reply(reply, { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, reply, { message_thread_id: threadId })
     return
   }
 
@@ -394,7 +435,7 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
     userMessage: `[Konteks: prosesi pernikahan ${nameA || '(mempelai A)'} & ${nameB || '(mempelai B)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
   })
   pushHistory(historyKey, 'model', reply)
-  await ctx.reply(reply, { message_thread_id: threadId })
+  await sendPersonaMessage(ctx, reply, { message_thread_id: threadId })
 }
 
 async function startCeremony(agent, ctx, threadId, session, couple) {
@@ -409,8 +450,8 @@ async function startCeremony(agent, ctx, threadId, session, couple) {
     stage: 'ijab_kabul',
   })
 
-  await ctx.reply(SCRIPTED_LINES.pembukaan(nameA, nameB), { message_thread_id: threadId })
-  await ctx.reply(SCRIPTED_LINES.ijab_kabul(nameA, nameB), { message_thread_id: threadId })
+  await sendPersonaMessage(ctx, SCRIPTED_LINES.pembukaan(nameA, nameB), { message_thread_id: threadId })
+  await sendPersonaMessage(ctx, SCRIPTED_LINES.ijab_kabul(nameA, nameB), { message_thread_id: threadId })
 }
 
 // ------------------------------------------------------------------
@@ -438,7 +479,7 @@ async function startFamilyRegistration(agent, ctx, threadId, session, parties, r
     stage: 'konfirmasi',
   })
 
-  await ctx.reply(FAMILY_SCRIPTED_LINES.pembukaan(subjectLabel, relatedLabel, relationLabel), {
+  await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.pembukaan(subjectLabel, relatedLabel, relationLabel), {
     message_thread_id: threadId,
   })
 }
@@ -455,7 +496,7 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
   //      1x kunjungan sebelum bener-bener diminta keluar ruangan. ----
   if (session.stage === 'selesai_tanya') {
     if (textContainsAny(text, KEYWORDS.closeCeremony)) {
-      await ctx.reply(SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
       try {
         await releaseWeddingSession(supabaseAdmin, session.id) // room kosong lagi buat warga berikutnya
       } catch (err) {
@@ -471,13 +512,13 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
         await startFamilyRegistration(agent, ctx, threadId, session, parties, nextRelationType)
       } else {
         const nextRelationLabel = FAMILY_RELATION_LABELS[nextRelationType]
-        await ctx.reply(FAMILY_SCRIPTED_LINES.needTarget(nextRelationLabel), { message_thread_id: threadId })
+        await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.needTarget(nextRelationLabel), { message_thread_id: threadId })
       }
       return
     }
 
     // Pesan gak jelas maksudnya nambah atau udahan -> ulangi pertanyaannya
-    await ctx.reply(FAMILY_SCRIPTED_LINES.tanyaLanjut(session.partner_a_label), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.tanyaLanjut(session.partner_a_label), { message_thread_id: threadId })
     return
   }
 
@@ -485,7 +526,7 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
     // Fallback aman kalau somehow masih ada row lama stage 'selesai' —
     // normalnya row langsung dihapus (releaseWeddingSession) begitu warga
     // jawab "selesai" di atas, jadi baris ini praktis gak akan kena lagi.
-    await ctx.reply(FAMILY_SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.alreadyDone(), { message_thread_id: threadId })
     return
   }
 
@@ -493,11 +534,11 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
   if (session.stage === 'pembukaan' && !session.partner_b_id) {
     const parties = await resolveFamilyPartiesFromText(text, ctx)
     if (!parties) {
-      await ctx.reply(FAMILY_SCRIPTED_LINES.needTarget(relationLabel), { message_thread_id: threadId })
+      await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.needTarget(relationLabel), { message_thread_id: threadId })
       return
     }
     if (!parties.citizenRelated || !parties.citizenSubject) {
-      await ctx.reply(FAMILY_SCRIPTED_LINES.couldNotResolve(`@${parties.usernameRelated}`), {
+      await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.couldNotResolve(`@${parties.usernameRelated}`), {
         message_thread_id: threadId,
       })
       return
@@ -512,10 +553,10 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
   // ---- Tahap konfirmasi: nunggu kata kunci "sah" (deterministik, bukan AI) ----
   if (session.stage === 'konfirmasi' && textContainsAny(text, FAMILY_CONFIRM_KEYWORDS)) {
     await updateWeddingSession(supabaseAdmin, session.id, { stage: 'selesai_tanya' })
-    await ctx.reply(FAMILY_SCRIPTED_LINES.selesai(subjectLabel, relatedLabel, relationLabel), {
+    await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.selesai(subjectLabel, relatedLabel, relationLabel), {
       message_thread_id: threadId,
     })
-    await ctx.reply(FAMILY_SCRIPTED_LINES.tanyaLanjut(subjectLabel), { message_thread_id: threadId })
+    await sendPersonaMessage(ctx, FAMILY_SCRIPTED_LINES.tanyaLanjut(subjectLabel), { message_thread_id: threadId })
 
     // Tool call beneran ke database, dipicu KODE (bukan AI) begitu tahap
     // konfirmasi dinyatakan sah — sama prinsipnya kayak alur nikah. Ini
@@ -545,7 +586,7 @@ async function handleFamilyMessage(agent, ctx, text, threadId, session) {
       `dari ${subjectLabel || '(subjek)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
   })
   pushHistory(historyKey, 'model', reply)
-  await ctx.reply(reply, { message_thread_id: threadId })
+  await sendPersonaMessage(ctx, reply, { message_thread_id: threadId })
 }
 
 // ------------------------------------------------------------------
@@ -610,7 +651,7 @@ async function handlePegawaiMessage(agent, ctx, text, threadId) {
     userMessage: text,
   })
 
-  await ctx.reply(reply, threadId != null ? { message_thread_id: threadId } : undefined)
+  await sendPersonaMessage(ctx, reply, threadId != null ? { message_thread_id: threadId } : undefined)
 
   if (directingToPenghulu) {
     try {
