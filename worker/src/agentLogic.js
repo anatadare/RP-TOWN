@@ -434,6 +434,13 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   if (!session) return
   if (session.agent_key !== agent.key) return
 
+  // History dipisah per (chat, thread, user) + suffix ':pegawai' -- SENGAJA
+  // beda dari historyKey Penghulu (yang cuma `${chatId}:${threadId}`) biar
+  // gak numpuk/campur sama histori sesi prosesi nikah. Ikut telegramUserId
+  // juga karena beda tamu di grup yang sama harus dapet histori sendiri-
+  // sendiri (satu Pegawai bisa dipanggil banyak orang berbeda).
+  const historyKey = `${chatId}:${threadId}:pegawai:${telegramUserId}`
+
   let penghuluStatusContext = null
   let directingToPenghulu = false
   if (PENGHULU_INTENT_KEYWORDS.some((kw) => lower.includes(kw))) {
@@ -456,13 +463,17 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
     }
   }
 
+  await pushHistory(supabaseAdmin, historyKey, 'user', text)
+  const history = await getHistory(supabaseAdmin, historyKey)
+
   const { text: reply } = await runTurn({
     systemInstruction: buildPegawaiSystemInstruction(agent.name, roomStatusContext, penghuluStatusContext),
     model: aiModel,
     apiKey: agent.aiApiKey,
-    history: [],
+    history,
     userMessage: text,
   })
+  await pushHistory(supabaseAdmin, historyKey, 'model', reply)
 
   await ctx.reply(reply, threadId != null ? { message_thread_id: threadId } : undefined)
 
