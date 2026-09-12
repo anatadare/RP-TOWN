@@ -325,10 +325,31 @@ async function handlePenghuluMessage(agent, ctx, text, threadId) {
       return
     }
 
-    // Gak ada sinyal mulai sesi (bukan permintaan nikah/keluarga) -> kasih
-    // pembukaan baku nanyain "mau ngapain?" (DETERMINISTIK, bukan AI) biar
-    // jadi pintu masuk yang konsisten tiap room Penghulu.
-    await sendPersonaMessage(ctx, SCRIPTED_LINES.greeting(agent.name), { message_thread_id: threadId })
+    // Gak ada sinyal mulai sesi (bukan permintaan nikah/keluarga):
+    // - Kalau ini PESAN PERTAMA di room ini (histori masih kosong), kasih
+    //   pembukaan baku "mau ngapain?" (DETERMINISTIK) sekali aja, biar jadi
+    //   pintu masuk yang konsisten.
+    // - Selain itu (warga masih lanjut ngobrol/nimpalin basa-basi), jawab
+    //   lewat AI. Sebelumnya di sini SELALU ngirim ulang SCRIPTED_LINES.greeting()
+    //   berapa kali pun warganya chat — makanya kerasa kayak bot yang gak
+    //   ngerti isi chat (contoh: warga bales "okeu menarik", tetep dibales
+    //   naskah pembukaan yang sama persis dari awal lagi).
+    if (getHistory(historyKey).length === 0) {
+      pushHistory(historyKey, 'user', text)
+      pushHistory(historyKey, 'model', SCRIPTED_LINES.greeting(agent.name))
+      await sendPersonaMessage(ctx, SCRIPTED_LINES.greeting(agent.name), { message_thread_id: threadId })
+      return
+    }
+
+    pushHistory(historyKey, 'user', text)
+    const { text: freeReply } = await runTurn({
+      systemInstruction: buildPenghuluSystemInstruction(agent.name),
+      apiKey: agent.geminiApiKey,
+      history: getHistory(historyKey),
+      userMessage: text,
+    })
+    pushHistory(historyKey, 'model', freeReply)
+    await sendPersonaMessage(ctx, freeReply, { message_thread_id: threadId })
     return
   }
 
