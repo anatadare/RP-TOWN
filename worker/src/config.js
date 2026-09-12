@@ -30,6 +30,14 @@ export function buildAgentList(env, prefix, kind, count, defaultNames) {
     const aiApiKey = env[`${prefix}_${i}_AI_API_KEY`] || env.AI_API_KEY
     if (!aiApiKey) continue // gak ada API key -> skip
 
+    // Override model per-bot (opsional). Berguna buat sebar beban ke model
+    // beda-beda kalau 1 model lagi lambat/kena limit di provider upstream
+    // Jerouter (lihat FAQ mereka: "provider yang lambat/limit bisa
+    // menyebabkan jeda, coba model lain dari menu Model") -- daripada semua
+    // 8 bot mukul 1 model yang sama terus. Fallback ke AI_MODEL global kalau
+    // env per-agent ini kosong.
+    const aiModel = env[`${prefix}_${i}_AI_MODEL`] || env.AI_MODEL || 'qwen3.8-flash'
+
     list.push({
       key: `${kind}-${i}`,
       kind, // 'penghulu' | 'assistant'
@@ -38,6 +46,7 @@ export function buildAgentList(env, prefix, kind, count, defaultNames) {
       groupIds,
       threadIds,
       aiApiKey,
+      aiModel,
     })
   }
   return list
