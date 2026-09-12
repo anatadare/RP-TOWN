@@ -1,7 +1,15 @@
-name = "rp-town"
+name = "rp-town-bot"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
+
+# PENTING: tanpa baris ini, tiap kali Cloudflare auto-deploy dari GitHub
+# (push ke branch yang terhubung), Wrangler bakal nimpa/ngosongin env var
+# yang kamu isi manual lewat dashboard (Settings > Variables and Secrets) --
+# ini kenapa AI_API_KEY dkk kelihatan "kehapus" tiap kali ada push baru.
+# `keep_vars = true` bikin Wrangler biarin apa yang udah ada di dashboard,
+# gak ditimpa ulang.
+keep_vars = true
 
 # Semua nilai di bawah ini CONTOH/placeholder, bukan yang beneran dipakai --
 # di dashboard Cloudflare (Workers & Pages > rp-town-bot > Settings >
@@ -10,9 +18,18 @@ compatibility_flags = ["nodejs_compat"]
 # `wrangler secret put`, JANGAN ditulis langsung di file ini (file ini ikut
 # masuk ke git).
 #
-# Daftar env yang dibutuhkan (sama persis nama-namanya kayak versi Railway):
+# Daftar env yang dibutuhkan:
 #   BOT_TOKEN, MINIAPP_URL, HOUSING_GROUP_CHAT_ID, HOUSING_GROUP_USERNAME,
 #   WEBHOOK_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
-#   GEMINI_API_KEY, GEMINI_MODEL, KUA_GROUP_CHAT_ID,
-#   PENGHULU_1_TOKEN..PENGHULU_5_TOKEN (+ _NAME/_GROUP_IDS/_THREAD_IDS/_GEMINI_API_KEY opsional per agent),
+#   AI_API_KEY, AI_MODEL, KUA_GROUP_CHAT_ID,
+#   PENGHULU_1_TOKEN..PENGHULU_5_TOKEN (+ _NAME/_GROUP_IDS/_THREAD_IDS/_AI_API_KEY opsional per agent),
 #   ASSISTANT_1_TOKEN..ASSISTANT_3_TOKEN (+ opsional yang sama)
+#
+# NOTE (per switch ke Jerouter):
+# - AI_API_KEY = API key dari Jerouter (yang muncul di mini app, contoh:
+#   jr_cup_avy0yad9x7somwjffjav11n4fr5). Kalau tiap bot mau pakai key
+#   sendiri-sendiri, isi PENGHULU_i_AI_API_KEY / ASSISTANT_i_AI_API_KEY.
+# - AI_MODEL = "f/qwen3.8-flash" (WAJIB pakai prefix "f/" sesuai dokumentasi
+#   Jerouter). Kalau env ini dikosongkan, aiClient.js sudah fallback ke nilai
+#   ini secara default, tapi lebih aman diisi eksplisit.
+# - GEMINI_API_KEY / GEMINI_MODEL SUDAH TIDAK DIPAKAI LAGI, boleh dihapus.
