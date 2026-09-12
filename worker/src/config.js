@@ -27,8 +27,8 @@ export function buildAgentList(env, prefix, kind, count, defaultNames) {
       ? threadIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
       : null
 
-    const geminiApiKey = env[`${prefix}_${i}_GEMINI_API_KEY`] || env.GEMINI_API_KEY
-    if (!geminiApiKey) continue // gak ada API key -> skip
+    const aiApiKey = env[`${prefix}_${i}_AI_API_KEY`] || env.AI_API_KEY
+    if (!aiApiKey) continue // gak ada API key -> skip
 
     list.push({
       key: `${kind}-${i}`,
@@ -37,7 +37,7 @@ export function buildAgentList(env, prefix, kind, count, defaultNames) {
       name,
       groupIds,
       threadIds,
-      geminiApiKey,
+      aiApiKey,
     })
   }
   return list
@@ -56,6 +56,6 @@ export function loadAgents(env) {
     penghuluAgents,
     assistantAgents,
     allAgents: [...penghuluAgents, ...assistantAgents],
-    geminiModel: env.GEMINI_MODEL || 'gemini-2.0-flash',
+    aiModel: env.AI_MODEL || 'f/qwen3.8-flash',
   }
 }
