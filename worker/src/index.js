@@ -124,6 +124,18 @@ async function handleAgentWebhook(request, env, agentKey) {
       }
     } catch (err) {
       console.error(`[${agent.key}] error:`, err)
+      // Jangan biarin warga nunggu tanpa kepastian -- kasih tau ada gangguan,
+      // minta coba lagi, daripada bot keliatan "gak ngerespon sama sekali".
+      // (ambil ulang threadId di sini karena yang di dalam try itu
+      // block-scoped, gak kebaca dari catch)
+      const fallbackThreadId = botCtx.message?.message_thread_id ?? null
+      try {
+        await botCtx.reply('_(sinyal lagi kurang bagus, coba kirim pesannya sekali lagi ya)_', {
+          message_thread_id: fallbackThreadId,
+        })
+      } catch (replyErr) {
+        console.error(`[${agent.key}] gagal kirim fallback reply:`, replyErr)
+      }
     }
   })
 
