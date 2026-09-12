@@ -185,7 +185,7 @@ async function resolveFamilyPartiesFromText(supabaseAdmin, text, ctx) {
 // ------------------------------------------------------------------
 // Penghulu
 // ------------------------------------------------------------------
-export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents, aiModel }) {
+export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents }) {
   if (threadId == null) return
 
   const chatId = ctx.chat.id
@@ -243,7 +243,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
     await pushHistory(supabaseAdmin, historyKey, 'user', text)
     const { text: freeReply } = await runTurn({
       systemInstruction: buildPenghuluSystemInstruction(agent.name),
-      model: aiModel,
+      model: agent.aiModel,
       apiKey: agent.aiApiKey,
       history: priorHistory,
       userMessage: text,
@@ -261,7 +261,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
   }
 
   if (session.session_type === 'family') {
-    await handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, session, aiModel)
+    await handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, session)
     return
   }
 
@@ -320,7 +320,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
     const history = await getHistory(supabaseAdmin, historyKey)
     const { text: reply } = await runTurn({
       systemInstruction: buildPenghuluSystemInstruction(agent.name),
-      model: aiModel,
+      model: agent.aiModel,
       apiKey: agent.aiApiKey,
       history,
       userMessage: `[Konteks: prosesi pernikahan ${nameA} & ${nameB}, tahap saat ini: doa/setelah ijab-kabul]\nPesan tamu: ${text}`,
@@ -334,7 +334,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
   const history = await getHistory(supabaseAdmin, historyKey)
   const { text: reply } = await runTurn({
     systemInstruction: buildPenghuluSystemInstruction(agent.name),
-    model: aiModel,
+    model: agent.aiModel,
     apiKey: agent.aiApiKey,
     history,
     userMessage: `[Konteks: prosesi pernikahan ${nameA || '(mempelai A)'} & ${nameB || '(mempelai B)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
@@ -378,7 +378,7 @@ async function startFamilyRegistration(supabaseAdmin, agent, ctx, threadId, sess
   })
 }
 
-async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, session, aiModel) {
+async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, session) {
   const chatId = ctx.chat.id
   const historyKey = `${chatId}:${threadId}:family`
   const relationType = session.relation_type
@@ -457,7 +457,7 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
   const history = await getHistory(supabaseAdmin, historyKey)
   const { text: reply } = await runTurn({
     systemInstruction: buildPenghuluSystemInstruction(agent.name),
-    model: aiModel,
+    model: agent.aiModel,
     apiKey: agent.aiApiKey,
     history,
     userMessage:
@@ -471,7 +471,7 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
 // ------------------------------------------------------------------
 // Pegawai (Naya, Mimi, Cika)
 // ------------------------------------------------------------------
-export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents, pegawaiPriorityKeys, pegawaiPriorityNames, aiModel }) {
+export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents, pegawaiPriorityKeys, pegawaiPriorityNames }) {
   const lower = text.toLowerCase()
   const chatId = String(ctx.chat.id)
   const telegramUserId = ctx.from.id
@@ -520,7 +520,7 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
 
   const { text: reply } = await runTurn({
     systemInstruction: buildPegawaiSystemInstruction(agent.name, roomStatusContext, penghuluStatusContext),
-    model: aiModel,
+    model: agent.aiModel,
     apiKey: agent.aiApiKey,
     history,
     userMessage: text,
