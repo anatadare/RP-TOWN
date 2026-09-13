@@ -74,10 +74,21 @@ async function handleDebugModels(env) {
   }
 }
 
+// grammY punya timeout bawaan 10 detik di webhookCallback (default
+// onTimeout: "throw") -- itu penyebab asli error "Request timed out after
+// 10000 ms", BUKAN Cloudflare yang motong paksa (Workers gratisan gak
+// punya batas durasi, cuma batas CPU time, dan CPU time gak ngitung waktu
+// nunggu fetch ke API luar). Jadi cukup dinaikin di sini, gak perlu
+// infrastruktur tambahan apa pun.
+const WEBHOOK_OPTIONS = {
+  onTimeout: 'return', // kalau toh masih kena limit ini, balikin 200 diem-diem (bukan throw -> 500)
+  timeoutMilliseconds: 20000, // > total budget di aiClient.js (15s), kasih ruang buat sisanya (fetch history, dsb)
+}
+
 async function handleMainBotWebhook(request, env) {
   const bot = new Bot(env.BOT_TOKEN)
   registerMainBotHandlers(bot, env)
-  return webhookCallback(bot, 'cloudflare-mod')(request)
+  return webhookCallback(bot, 'cloudflare-mod', WEBHOOK_OPTIONS)(request)
 }
 
 async function handleAgentWebhook(request, env, agentKey) {
@@ -139,5 +150,5 @@ async function handleAgentWebhook(request, env, agentKey) {
     }
   })
 
-  return webhookCallback(bot, 'cloudflare-mod')(request)
+  return webhookCallback(bot, 'cloudflare-mod', WEBHOOK_OPTIONS)(request)
 }
