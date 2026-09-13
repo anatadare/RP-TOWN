@@ -17,17 +17,22 @@
 
 const JEROUTER_BASE_URL = 'https://je.jerouter.web.id/v1'
 
-// Semua 8 bot (5 Penghulu + 3 Pegawai) berbagi 1 AI_API_KEY yang sama kalau
-// per-agent key gak diisi. Jerouter (layanan personal/kecil) kadang gak
-// sanggup nanganin banyak request bersamaan dari 1 key -> muncul sebagai
-// timeout/500 walau nama model & key-nya benar. Daripada bikin bot diem
-// total pas ini kejadian, kita retry otomatis sekali dengan jeda pendek.
-const MAX_ATTEMPTS = 2
-const RETRY_DELAY_MS = 400
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+// Jerouter (layanan personal/kecil) kadang gak sanggup nanganin banyak
+// request bersamaan dari 1 key -> alih-alih balikin error cepat, dia
+// nge-hang. Kalau dibiarin, Cloudflare yang motong eksekusinya di ~10 detik
+// (platform-level timeout) SEBELUM kode kita sempat kirim fallback reply ke
+// user -- makanya bot keliatan diem total.
+//
+// Fix: kasih fetch ini timeout sendiri yang LEBIH PENDEK dari limit
+// platform, pake AbortSignal.timeout(). Jadi kalau Jerouter lelet, kode
+// kita yang nyerah duluan (throw error biasa yang bisa ke-catch), bukan
+// Cloudflare yang motong paksa.
+//
+// Catatan: retry otomatis yang dulu ada (2x attempt) sengaja dibuang --
+// kalau attempt pertama aja udah ngabisin ~7 detik, attempt kedua gampang
+// kebentur limit 10 detik juga. Lebih aman gagal cepat & kasih tau user
+// buat coba lagi, daripada diem tanpa balasan.
+const REQUEST_TIMEOUT_MS = 7000
 
 // Jalanin 1 giliran chat: system instruction (statis, persona) + history
 // pendek + pesan user terbaru -> balasan teks dari model.
@@ -46,38 +51,30 @@ export async function runTurn({
     { role: 'user', content: userMessage },
   ]
 
-  let lastError
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    try {
-      const res = await fetch(`${JEROUTER_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({ model, messages }),
-      })
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '')
-        // 4xx (model salah, key salah, dst) gak akan membaik kalau di-retry
-        // -- langsung lempar tanpa buang-buang attempt kedua.
-        if (res.status < 500) {
-          throw new Error(`Jerouter API error ${res.status}: ${errText}`)
-        }
-        throw new Error(`Jerouter API error ${res.status} (retryable): ${errText}`)
-      }
-
-      const data = await res.json()
-      const text = (data.choices?.[0]?.message?.content || '').trim()
-      return { text }
-    } catch (err) {
-      lastError = err
-      const isLastAttempt = attempt === MAX_ATTEMPTS
-      if (isLastAttempt) break
-      await sleep(RETRY_DELAY_MS)
+  let res
+  try {
+    res = await fetch(`${JEROUTER_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model, messages }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      throw new Error(`Jerouter timeout setelah ${REQUEST_TIMEOUT_MS}ms (model lelet/overload)`)
     }
+    throw err
   }
 
-  throw lastError
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`Jerouter API error ${res.status}: ${errText}`)
+  }
+
+  const data = await res.json()
+  const text = (data.choices?.[0]?.message?.content || '').trim()
+  return { text }
 }
