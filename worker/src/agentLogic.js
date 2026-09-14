@@ -246,6 +246,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
     const { text: freeReply } = await runTurn({
       systemInstruction: buildPenghuluSystemInstruction(agent.name),
       model: agent.aiModel,
+      supabaseAdmin,
       apiKey: agent.aiApiKey,
       history: priorHistory,
       userMessage: text,
@@ -323,6 +324,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
     const { text: reply } = await runTurn({
       systemInstruction: buildPenghuluSystemInstruction(agent.name),
       model: agent.aiModel,
+      supabaseAdmin,
       apiKey: agent.aiApiKey,
       history,
       userMessage: `[Konteks: prosesi pernikahan ${nameA} & ${nameB}, tahap saat ini: doa/setelah ijab-kabul]\nPesan tamu: ${text}`,
@@ -337,6 +339,7 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
   const { text: reply } = await runTurn({
     systemInstruction: buildPenghuluSystemInstruction(agent.name),
     model: agent.aiModel,
+    supabaseAdmin,
     apiKey: agent.aiApiKey,
     history,
     userMessage: `[Konteks: prosesi pernikahan ${nameA || '(mempelai A)'} & ${nameB || '(mempelai B)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
@@ -460,6 +463,7 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
   const { text: reply } = await runTurn({
     systemInstruction: buildPenghuluSystemInstruction(agent.name),
     model: agent.aiModel,
+    supabaseAdmin,
     apiKey: agent.aiApiKey,
     history,
     userMessage:
@@ -540,6 +544,7 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   const { text: reply } = await runTurn({
     systemInstruction: buildPegawaiSystemInstruction(agent.name, roomStatusContext, penghuluStatusContext),
     model: agent.aiModel,
+    supabaseAdmin,
     apiKey: agent.aiApiKey,
     history,
     userMessage: text,
