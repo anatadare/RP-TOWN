@@ -22,7 +22,12 @@
 import { Bot, webhookCallback } from 'grammy'
 import { createClient } from '@supabase/supabase-js'
 import { loadAgents } from './config.js'
-import { handlePenghuluMessage, handlePegawaiMessage, sortAgentsByPegawaiPriority } from './agentLogic.js'
+import {
+  handlePenghuluMessage,
+  handlePegawaiMessage,
+  handlePegawaiTimeout,
+  sortAgentsByPegawaiPriority,
+} from './agentLogic.js'
 import { handleHouseRentedWebhook } from './houseWebhook.js'
 import { registerMainBotHandlers } from './mainBot.js'
 
@@ -135,10 +140,25 @@ async function handleAgentWebhook(request, env, agentKey) {
     } catch (err) {
       console.error(`[${agent.key}] error:`, err)
       // Jangan biarin warga nunggu tanpa kepastian -- kasih tau ada gangguan,
-      // minta coba lagi, daripada bot keliatan "gak ngerespon sama sekali".
+      // daripada bot keliatan "gak ngerespon sama sekali".
       // (ambil ulang threadId di sini karena yang di dalam try itu
       // block-scoped, gak kebaca dari catch)
       const fallbackThreadId = botCtx.message?.message_thread_id ?? null
+
+      if (agent.kind !== 'penghulu') {
+        // Pegawai (Naya/Mimi/Cika): ganti fallback generik dengan template
+        // "pergi sebentar" -- trigger cuma sekali per episode timeout, sisanya
+        // diemin aja (lihat handlePegawaiTimeout + awayState.js). Pesan warga
+        // yang bikin ini ke-trigger tetap kesimpen normal, gak hilang.
+        try {
+          await handlePegawaiTimeout(supabaseAdmin, agent, botCtx, fallbackThreadId)
+        } catch (timeoutErr) {
+          console.error(`[${agent.key}] gagal jalanin handlePegawaiTimeout:`, timeoutErr)
+        }
+        return
+      }
+
+      // Penghulu tetap pakai fallback generik lama (di luar scope perubahan ini).
       try {
         await botCtx.reply('_(sinyal lagi kurang bagus, coba kirim pesannya sekali lagi ya)_', {
           message_thread_id: fallbackThreadId,
