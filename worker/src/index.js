@@ -125,6 +125,16 @@ async function handleAgentWebhook(request, env, agentKey) {
       const threadId = botCtx.message.message_thread_id ?? null
       if (threadIdSet && !threadIdSet.has(String(threadId))) return
 
+      // SEMENTARA -- buat debug "kenapa kelihatan ke-call semua agent".
+      // Setiap agent yang LOLOS filter grup+thread bakal muncul di sini.
+      // Kirim 1 pesan test di 1 thread, terus cek Cloudflare Logs/Observability:
+      // kalau ada agent.key yang gak semestinya proses thread itu, berarti
+      // THREAD_IDS-nya salah isi (bukan cuma soal kosong/gak, tapi isinya
+      // typo/nomor keliru). HAPUS baris console.log ini setelah selesai dicek.
+      console.log(
+        `[DEBUG-THREAD] agent=${agent.key} kind=${agent.kind} chatId=${botCtx.chat.id} threadId=${threadId} configuredThreadIds=${agent.threadIds ? agent.threadIds.join(',') : '(SEMUA THREAD, gak dibatasi!)'}`
+      )
+
       const text = botCtx.message.text || botCtx.message.caption
       if (!text) return
 
