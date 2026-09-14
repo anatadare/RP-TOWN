@@ -13,6 +13,8 @@
 
 import { runTurn } from './aiClient.js'
 import { getHistory, pushHistory } from './chatHistory.js'
+import { getAwayState, startAwayState, clearAwayState, mentionFor } from './awayState.js'
+import { getAwayTemplateByIndex, fillAwayTemplate, pickRandomAwayTemplate } from './personas/awayTemplates.js'
 import {
   SCRIPTED_LINES,
   FAMILY_SCRIPTED_LINES,
@@ -493,6 +495,14 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   // sendiri (satu Pegawai bisa dipanggil banyak orang berbeda).
   const historyKey = `${chatId}:${threadId}:pegawai:${telegramUserId}`
 
+  // Cek dulu apakah pegawai ini lagi "away" (timeout sebelumnya) buat warga
+  // ini -- kalau iya, nanti setelah AI BERHASIL jawab (di bawah), kita kirim
+  // pesan "balik" yang nyambung sama alasan yang sama sebelum jawaban asli.
+  // Sengaja dicek di sini (SEBELUM runTurn) tapi baru di-clear/dipakai
+  // SETELAH runTurn sukses -- kalau runTurn gagal lagi, state away tetap
+  // ada (index.js catch block bakal liat dia masih away & diem aja).
+  const awayRowAtStart = await getAwayState(supabaseAdmin, historyKey)
+
   let penghuluStatusContext = null
   let directingToPenghulu = false
   if (PENGHULU_INTENT_KEYWORDS.some((kw) => lower.includes(kw))) {
@@ -527,6 +537,19 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   })
   await pushHistory(supabaseAdmin, historyKey, 'model', reply)
 
+  // AI berhasil jawab -> kalau tadinya lagi "away", kirim gestur "balik" dulu
+  // (nyambung ke excuse yang sama pas dia "pergi"), baru jawaban aslinya.
+  if (awayRowAtStart) {
+    try {
+      const template = getAwayTemplateByIndex(awayRowAtStart.excuse_index)
+      const backLine = fillAwayTemplate(template.back, { name: agent.name, mention: awayRowAtStart.mention })
+      await sendPersonaMessage(ctx, backLine, threadId != null ? { message_thread_id: threadId } : undefined)
+      await clearAwayState(supabaseAdmin, historyKey)
+    } catch (err) {
+      console.error(`[${agent.key}] gagal kirim/clear pesan 'balik' dari away state:`, err)
+    }
+  }
+
   await sendPersonaMessage(ctx, reply, threadId != null ? { message_thread_id: threadId } : undefined)
 
   if (directingToPenghulu) {
@@ -536,4 +559,42 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
       console.error(`[${agent.key}] gagal lepas sesi pegawai:`, err)
     }
   }
+}
+
+// Dipanggil dari index.js SETIAP kali handlePegawaiMessage di atas gagal
+// total (AI beneran timeout, lihat aiClient.js) -- gantiin fallback generik
+// "(sinyal lagi kurang bagus...)" yang keliatan robotic kalau muncul
+// berkali-kali. Cuma ngirim template "pergi" SEKALI per episode timeout;
+// kalau warganya masih spam chat selama masih "away", fungsi ini gak
+// ngirim apa-apa lagi (lihat startAwayState -> null kalau udah ada).
+//
+// Pesan si warga yang bikin ini ke-trigger TETAP kesimpen normal (lewat
+// pushHistory di handlePegawaiMessage, yang jalan SEBELUM runTurn) --
+// makanya fungsi ini gak perlu terima/nyimpen teks pesannya sendiri.
+export async function handlePegawaiTimeout(supabaseAdmin, agent, ctx, threadId) {
+  const telegramUserId = ctx.from?.id
+  if (telegramUserId == null) return // gak ada info user Telegram, gak bisa di-track
+
+  const chatId = String(ctx.chat.id)
+  const historyKey = `${chatId}:${threadId}:pegawai:${telegramUserId}`
+
+  const { index, template } = pickRandomAwayTemplate()
+  const mention = mentionFor(ctx.from)
+
+  const started = await startAwayState(supabaseAdmin, {
+    scopeKey: historyKey,
+    excuseIndex: index,
+    agentName: agent.name,
+    mention,
+  })
+
+  // `null` artinya warga ini UDAH "away" duluan (masih diproses timeout
+  // sebelumnya) -- diemin aja, jangan double-kirim template "pergi".
+  if (!started) return
+
+  const leaveText = [template.enter, template.say, template.exit]
+    .map((line) => fillAwayTemplate(line, { name: agent.name, mention }))
+    .join('\n\n')
+
+  await sendPersonaMessage(ctx, leaveText, threadId != null ? { message_thread_id: threadId } : undefined)
 }
