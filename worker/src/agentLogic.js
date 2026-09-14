@@ -16,6 +16,14 @@ import { getHistory, pushHistory } from './chatHistory.js'
 import { getAwayState, startAwayState, clearAwayState, mentionFor } from './awayState.js'
 import { getAwayTemplateByIndex, fillAwayTemplate, pickRandomAwayTemplate } from './personas/awayTemplates.js'
 import {
+  markPenghuluTimeout,
+  consumePenghuluTimeout,
+  buildTimeoutBackLine,
+} from './penghuluTimeoutState.js'
+import { hasCapacity, enqueueCitizen, popNextWaiting } from './kuaQueue.js'
+import { kickFromGroupTemporarily, buildRoomLink } from './groupMembership.js'
+import { callTelegramApi } from './telegramApi.js'
+import {
   SCRIPTED_LINES,
   FAMILY_SCRIPTED_LINES,
   FAMILY_RELATION_LABELS,
@@ -98,6 +106,152 @@ async function getIdlePenghuluNames(supabaseAdmin, penghuluAgents) {
   if (error) throw error
   const busyKeys = new Set((data || []).map((r) => r.agent_key))
   return penghuluAgents.filter((p) => !busyKeys.has(p.key)).map((p) => p.name)
+}
+
+// Versi "lengkap" dari getIdlePenghuluNames -- ikut balikin threadId biar
+// bisa dipakai bikin deep-link langsung ke ruangan yang kosong (lihat
+// handleBusyRoomIntent). `threadId` bisa `null` kalau agent itu dikonfig
+// tanpa THREAD_IDS spesifik (jarang -- biasanya 1 Penghulu = 1 thread).
+async function getIdlePenghuluRooms(supabaseAdmin, penghuluAgents) {
+  const { data, error } = await supabaseAdmin
+    .from('wedding_sessions')
+    .select('agent_key')
+    .neq('stage', 'selesai')
+
+  if (error) throw error
+  const busyKeys = new Set((data || []).map((r) => r.agent_key))
+  return penghuluAgents
+    .filter((p) => !busyKeys.has(p.key))
+    .map((p) => ({ key: p.key, name: p.name, threadId: p.threadIds ? p.threadIds[0] : null }))
+}
+
+// ------------------------------------------------------------------
+// Kapasitas ruang KUA penuh -- dipanggil dari titik "duduk" (warga lain
+// nyelonong ke ruangan yang lagi dipake) SAAT niatnya jelas (mau
+// nikah/daftar keluarga), bukan buat basa-basi biasa. Dua kemungkinan:
+// 1. Masih ada ruang Penghulu LAIN yang kosong -> langsung kasih link ke
+//    sana, gak perlu nunggu.
+// 2. Beneran semua penuh -> masuk antrian (kua_queue), Asisten yang bakal
+//    kirim link begitu ada slot kebuka (lihat finishSessionAndFreeSlot).
+// ------------------------------------------------------------------
+async function handleBusyRoomIntent(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents, requestType, env }) {
+  const chatId = ctx.chat.id
+  const mention = mentionFor(ctx.from)
+
+  let idleRooms = []
+  try {
+    idleRooms = await getIdlePenghuluRooms(supabaseAdmin, penghuluAgents)
+  } catch (err) {
+    console.error(`[${agent.key}] gagal ambil daftar ruang KUA kosong:`, err)
+  }
+
+  const idleElsewhere = idleRooms.filter((r) => r.key !== agent.key && r.threadId != null)
+
+  if (idleElsewhere.length > 0) {
+    const room = idleElsewhere[0]
+    const link = buildRoomLink(env, chatId, room.threadId)
+    await sendPersonaMessage(
+      ctx,
+      `_menunjuk ke arah pintu sebelah_\n\nMaaf ya, ruangan saya lagi dipakai warga lain. Tapi ruang KUA-nya ${room.name} lagi kosong nih, langsung ke sana aja ya: ${link}`,
+      { message_thread_id: threadId }
+    )
+    return
+  }
+
+  let enqueued = null
+  try {
+    enqueued = await enqueueCitizen(supabaseAdmin, {
+      chatId,
+      telegramUserId: ctx.from.id,
+      mention,
+      requestType,
+      requestText: text,
+    })
+  } catch (err) {
+    console.error(`[${agent.key}] gagal masukin antrian KUA:`, err)
+    await sendPersonaMessage(ctx, SCRIPTED_LINES.duduk(agent.name), { message_thread_id: threadId })
+    return
+  }
+
+  if (enqueued === null) {
+    // Warga ini UDAH punya antrian aktif -- gak usah spam pesan lagi,
+    // dia udah pernah dikasih tau lagi nunggu.
+    return
+  }
+
+  await sendPersonaMessage(
+    ctx,
+    `_menunjuk kursi tunggu di sudut ruangan_\n\nMaaf, semua ruang KUA lagi penuh ya. Udah saya catat antrian kamu -- nanti Asisten bakal kirim link ruangan langsung ke sini begitu ada yang kosong 🙏`,
+    { message_thread_id: threadId }
+  )
+}
+
+// Dipanggil begitu 1 ruangan (threadId) BARU AJA kosong -- abis sesi
+// 'selesai' & kedua warganya di-kick (lihat finishSessionAndFreeSlot).
+// Ambil antrian paling depan buat grup ini (kalau ada) dan kirim link ke
+// ruangan yang baru kosong itu, lewat bot ASISTEN (bukan bot Penghulu --
+// sesuai concept "Asisten yang ngarahin", biar berasa kayak resepsionis).
+async function notifyQueueSlotOpen(env, assistantAgents, chatId, freedThreadId, penghuluAgent, queueEntry) {
+  const messenger = assistantAgents && assistantAgents[0]
+  if (!messenger) {
+    console.error('[kuaQueue] gak ada assistant agent buat kirim notif antrian, skip')
+    return
+  }
+
+  const link = buildRoomLink(env, chatId, freedThreadId)
+  const text =
+    `${queueEntry.mention}, ruang KUA-nya ${penghuluAgent.name} baru aja kosong nih! 🎉\n\n` +
+    `Langsung meluncur ke sana buat lanjutin urusan kamu ya (kemarin kamu bilang: "${queueEntry.request_text}"):\n${link}`
+
+  try {
+    await callTelegramApi(messenger.token, 'sendMessage', {
+      chat_id: chatId,
+      text,
+      message_thread_id: messenger.threadIds ? messenger.threadIds[0] : undefined,
+    })
+  } catch (err) {
+    console.error(`[kuaQueue] gagal kirim notif antrian lewat ${messenger.key}:`, err.message)
+  }
+}
+
+// Dipanggil SETELAH releaseWeddingSession berhasil (nikah 'penutup' atau
+// keluarga 'selesai_tanya' -> tutup) -- 2 tugas:
+// 1. Kick SEMENTARA kedua warga yang terlibat (bukan hukuman, cuma
+//    "serah-terima ruangan", lihat groupMembership.js).
+// 2. Kasih tau antrian paling depan (kalau ada) bahwa ruangan ini kosong.
+//
+// `session` di sini WAJIB versi SEBELUM di-release (masih ada
+// partner_a_id/partner_b_id-nya) -- panggil fungsi ini SEBELUM baris
+// session-nya keluar dari scope.
+async function finishSessionAndFreeSlot(supabaseAdmin, env, agent, chatId, threadId, session, assistantAgents) {
+  try {
+    const citizenIds = [session.partner_a_id, session.partner_b_id].filter(Boolean)
+    if (citizenIds.length > 0) {
+      const { data: citizensData, error } = await supabaseAdmin
+        .from('citizens')
+        .select('id, telegram_id')
+        .in('id', citizenIds)
+      if (error) throw error
+
+      for (const citizen of citizensData || []) {
+        if (!citizen.telegram_id) continue
+        await kickFromGroupTemporarily(env, chatId, citizen.telegram_id, {
+          reason: `sesi ${agent.key} (${session.session_type || 'marriage'}) selesai`,
+        })
+      }
+    }
+  } catch (err) {
+    console.error(`[${agent.key}] gagal kick warga abis sesi selesai (sesi TETAP resmi selesai, cuma bagian keluar ruangan yang gak jalan):`, err)
+  }
+
+  try {
+    const nextInLine = await popNextWaiting(supabaseAdmin, chatId)
+    if (nextInLine) {
+      await notifyQueueSlotOpen(env, assistantAgents, chatId, threadId, agent, nextInLine)
+    }
+  } catch (err) {
+    console.error(`[${agent.key}] gagal proses antrian KUA abis sesi selesai:`, err)
+  }
 }
 
 function formatPenghuluStatusContext(idleNames) {
@@ -187,11 +341,25 @@ async function resolveFamilyPartiesFromText(supabaseAdmin, text, ctx) {
 // ------------------------------------------------------------------
 // Penghulu
 // ------------------------------------------------------------------
-export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents }) {
+export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents, assistantAgents, env }) {
   if (threadId == null) return
 
   const chatId = ctx.chat.id
   const historyKey = `${chatId}:${threadId}`
+
+  // Recovery konteks abis timeout (lihat penghuluTimeoutState.js) -- SELALU
+  // dicek paling awal, sebelum apa pun lain diproses. Ini CUMA soal
+  // sapaan/kontinuitas, sama sekali gak menyentuh stage sesi atau logic
+  // kick di bawah -- dibungkus try/catch biar gak pernah ngeblok pesan
+  // warga cuma gara-gara tabel ini bermasalah.
+  try {
+    const pendingTimeout = await consumePenghuluTimeout(supabaseAdmin, historyKey)
+    if (pendingTimeout) {
+      await sendPersonaMessage(ctx, buildTimeoutBackLine(agent.name), { message_thread_id: threadId })
+    }
+  } catch (err) {
+    console.error(`[${agent.key}] gagal cek/consume penghulu timeout state (lanjut aja):`, err)
+  }
 
   let session = await getWeddingSession(supabaseAdmin, { chatId, threadId })
 
@@ -259,12 +427,34 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
   if (session.agent_key !== agent.key) return
 
   if (!(await isSessionParty(supabaseAdmin, session, ctx.from.id))) {
+    // Cek dulu apa niatnya jelas (mau nikah/daftar keluarga) -- kalau cuma
+    // basa-basi/nyelonong biasa, tetap pakai baris "duduk" seperti biasa,
+    // gak usah dianggap antrian.
+    const familyRelationType = detectFamilyRelationType(text)
+    let couple = null
+    if (!familyRelationType) {
+      try {
+        couple = await resolveCoupleFromText(supabaseAdmin, text)
+      } catch (err) {
+        console.error(`[${agent.key}] gagal cek niat nikah warga yang nyelonong:`, err)
+      }
+    }
+
+    if (familyRelationType || couple) {
+      await handleBusyRoomIntent(supabaseAdmin, agent, ctx, text, threadId, {
+        penghuluAgents,
+        requestType: familyRelationType ? 'family' : 'marriage',
+        env,
+      })
+      return
+    }
+
     await sendPersonaMessage(ctx, SCRIPTED_LINES.duduk(agent.name), { message_thread_id: threadId })
     return
   }
 
   if (session.session_type === 'family') {
-    await handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, session)
+    await handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, session, { env, assistantAgents })
     return
   }
 
@@ -313,6 +503,10 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
       await sendPersonaMessage(ctx, SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
       try {
         await releaseWeddingSession(supabaseAdmin, session.id)
+        // BARU panggil ini SETELAH release sukses -- session di sini masih
+        // versi lengkap (partner_a_id/b_id) dari SEBELUM baris di atas
+        // dieksekusi, aman dipakai walau baris DB-nya udah kehapus.
+        await finishSessionAndFreeSlot(supabaseAdmin, env, agent, chatId, threadId, session, assistantAgents)
       } catch (err) {
         console.error(`[${agent.key}] gagal lepas sesi penghulu:`, err)
       }
@@ -383,7 +577,7 @@ async function startFamilyRegistration(supabaseAdmin, agent, ctx, threadId, sess
   })
 }
 
-async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, session) {
+async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, session, { env, assistantAgents } = {}) {
   const chatId = ctx.chat.id
   const historyKey = `${chatId}:${threadId}:family`
   const relationType = session.relation_type
@@ -394,6 +588,7 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
       await sendPersonaMessage(ctx, SCRIPTED_LINES.silakanKeluar(), { message_thread_id: threadId })
       try {
         await releaseWeddingSession(supabaseAdmin, session.id)
+        await finishSessionAndFreeSlot(supabaseAdmin, env, agent, chatId, threadId, session, assistantAgents)
       } catch (err) {
         console.error(`[${agent.key}] gagal lepas sesi penghulu:`, err)
       }
@@ -611,4 +806,46 @@ export async function handlePegawaiTimeout(supabaseAdmin, agent, ctx, threadId) 
     .join('\n\n')
 
   await sendPersonaMessage(ctx, leaveText, threadId != null ? { message_thread_id: threadId } : undefined)
+}
+
+// ------------------------------------------------------------------
+// Dipanggil dari index.js SETIAP kali handlePenghuluMessage gagal total
+// (AI beneran timeout). BEDA PENTING sama handlePegawaiTimeout: ini CUMA
+// nyimpen marker recovery (lihat penghuluTimeoutState.js) buat di-
+// acknowledge pas Penghulu-nya berhasil jawab lagi -- TIDAK PERNAH
+// ngubah/mutusin stage sesi, TIDAK PERNAH memicu kick. Kick di project
+// ini murni dari finishSessionAndFreeSlot, yang cuma jalan kalau stage
+// beneran nyampe 'penutup'/'selesai_tanya'->tutup secara deterministik
+// (lihat komentar panjang di penghuluTimeoutState.js).
+//
+// Kalau threadId null (bot Penghulu kepanggil di luar thread yang
+// dia-manage), gak ada yang bisa di-track -- skip diam-diam, biar fallback
+// generik lama di index.js yang jalan.
+export async function handlePenghuluTimeout(supabaseAdmin, agent, ctx, threadId) {
+  if (threadId == null) return
+
+  const chatId = ctx.chat.id
+  const scopeKey = `${chatId}:${threadId}`
+
+  let stageSnapshot = null
+  try {
+    const session = await getWeddingSession(supabaseAdmin, { chatId, threadId })
+    stageSnapshot = session?.stage || null
+  } catch (err) {
+    console.error(`[${agent.key}] gagal ambil stage sesi buat snapshot timeout (lanjut tanpa snapshot):`, err)
+  }
+
+  try {
+    await markPenghuluTimeout(supabaseAdmin, { scopeKey, agentName: agent.name, stageSnapshot })
+  } catch (err) {
+    // Kalau tabel penghulu_timeout_state belum ada / gak keakses, biarin
+    // index.js jatuh ke fallback generik lama -- jangan sampai warga sama
+    // sekali gak dapet balasan.
+    console.error(`[${agent.key}] gagal simpen penghulu timeout state:`, err)
+    throw err
+  }
+
+  // Sengaja GAK ngirim pesan apa pun di sini (beda dari Pegawai) -- fallback
+  // generik "sinyal lagi kurang bagus" di index.js udah cukup buat momen
+  // ini. Pesan "balik"-nya baru muncul nanti pas dia BERHASIL jawab lagi.
 }
