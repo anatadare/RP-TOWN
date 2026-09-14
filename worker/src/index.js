@@ -152,13 +152,19 @@ async function handleAgentWebhook(request, env, agentKey) {
         // yang bikin ini ke-trigger tetap kesimpen normal, gak hilang.
         try {
           await handlePegawaiTimeout(supabaseAdmin, agent, botCtx, fallbackThreadId)
+          return
         } catch (timeoutErr) {
-          console.error(`[${agent.key}] gagal jalanin handlePegawaiTimeout:`, timeoutErr)
+          // handlePegawaiTimeout SENDIRI gagal (bukan cuma "udah away duluan"
+          // -- itu return null biasa, bukan throw) -- kemungkinan besar
+          // tabel pegawai_away_state belum ada / gak keakses. JANGAN diemin
+          // warga total, jatuh ke fallback generik lama di bawah biar tetap
+          // ada balasan.
+          console.error(`[${agent.key}] gagal jalanin handlePegawaiTimeout, jatuh ke fallback lama:`, timeoutErr)
         }
-        return
       }
 
-      // Penghulu tetap pakai fallback generik lama (di luar scope perubahan ini).
+      // Fallback generik lama -- dipakai buat Penghulu, ATAU buat Pegawai
+      // kalau handlePegawaiTimeout di atas sendiri gagal total.
       try {
         await botCtx.reply('_(sinyal lagi kurang bagus, coba kirim pesannya sekali lagi ya)_', {
           message_thread_id: fallbackThreadId,
