@@ -19,6 +19,22 @@
 
 import { callTelegramApi } from './telegramApi.js'
 
+// Daftar Telegram user ID admin yang DIKECUALIKAN dari kick otomatis --
+// mereka boleh nyangkut di ruang KUA selama apa pun tanpa ke-kick pas
+// sesi 'selesai'. Default-nya hardcode 3 ID di bawah (diminta langsung),
+// tapi bisa di-override/ditambah dari dashboard Cloudflare lewat env var
+// KUA_ADMIN_EXEMPT_IDS (isi ID dipisah koma, contoh: "111,222,333") tanpa
+// perlu ubah kode/redeploy kalau daftar admin berubah.
+const DEFAULT_ADMIN_EXEMPT_IDS = ['5911246341', '5839217045', '8118123582']
+
+function getExemptAdminIds(env) {
+  const raw = env.KUA_ADMIN_EXEMPT_IDS
+  const fromEnv = raw
+    ? raw.split(',').map((s) => s.trim()).filter(Boolean)
+    : []
+  return new Set([...DEFAULT_ADMIN_EXEMPT_IDS, ...fromEnv])
+}
+
 // Return `true` kalau kick (ban lalu unban) berhasil dua-duanya, `false`
 // kalau gagal di salah satu langkah -- TIDAK PERNAH throw ke pemanggil,
 // biar alur penutupan sesi di agentLogic.js tetap jalan mulus.
@@ -34,6 +50,11 @@ export async function kickFromGroupTemporarily(env, chatId, telegramUserId, { re
   if (!telegramUserId) {
     console.error('[groupMembership] telegramUserId kosong, skip kick')
     return false
+  }
+
+  if (getExemptAdminIds(env).has(String(telegramUserId))) {
+    console.log(`[groupMembership] ${telegramUserId} ada di daftar admin exempt, skip kick (${reason || '-'})`)
+    return true
   }
 
   try {
