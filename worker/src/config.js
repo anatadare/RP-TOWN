@@ -52,14 +52,24 @@ export function buildAgentList(env, prefix, kind, count, defaultNames) {
   return list
 }
 
-const PENGHULU_DEFAULT_NAMES = ['Zavier', 'Axel', 'Valdez', 'Gavin', 'Baron']
+// Bumped dari 5 -> 10 (10 ruang KUA) buat dukung fitur kapasitas +
+// antrian ruang KUA (lihat kuaQueue.js) -- kapasitas total dihitung dari
+// PANJANG array ini (penghuluAgents.length), jadi ini SATU-SATUNYA tempat
+// yang perlu diubah kalau jumlah ruang KUA berubah lagi nanti. Agent yang
+// token/grup/API key-nya belum diisi di env otomatis di-skip (lihat
+// buildAgentList di atas), jadi aman nambah nama default lebih banyak dari
+// yang dipakai sekarang -- gak ada efek sebelum env PENGHULU_6..10 diisi.
+const PENGHULU_DEFAULT_NAMES = [
+  'Zavier', 'Axel', 'Valdez', 'Gavin', 'Baron',
+  'Raka', 'Bagas', 'Teguh', 'Wira', 'Surya',
+]
 const ASSISTANT_DEFAULT_NAMES = ['Mimi', 'Naya', 'Cika']
 
 // Bangun seluruh daftar agent sekali per request, dari `env` yang dikirim
 // Workers. Dipanggil dari src/index.js tiap ada request masuk (bukan
 // sekali pas cold start global scope, biar selalu baca env yang terbaru).
 export function loadAgents(env) {
-  const penghuluAgents = buildAgentList(env, 'PENGHULU', 'penghulu', 5, PENGHULU_DEFAULT_NAMES)
+  const penghuluAgents = buildAgentList(env, 'PENGHULU', 'penghulu', 10, PENGHULU_DEFAULT_NAMES)
   const assistantAgents = buildAgentList(env, 'ASSISTANT', 'assistant', 3, ASSISTANT_DEFAULT_NAMES)
   return {
     penghuluAgents,
