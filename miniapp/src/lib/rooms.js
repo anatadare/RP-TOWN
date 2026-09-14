@@ -30,9 +30,12 @@ export async function getRoomsWithPresence() {
 
   if (roomsError) throw roomsError
 
+  // telegram_id ikut di-select (walau gak dipakai buat tampilan) supaya
+  // App.jsx bisa nyaring admin (KUA_ADMIN_EXEMPT_IDS) keluar dari
+  // occupantCount/occupants ruang KUA -- lihat isKuaRoom() di App.jsx.
   const { data: presence, error: presenceError } = await supabase
     .from('room_presence')
-    .select('room_id, citizen_id, citizens(display_name, avatar_url)')
+    .select('room_id, citizen_id, citizens(display_name, avatar_url, telegram_id)')
 
   if (presenceError) throw presenceError
 
