@@ -26,6 +26,7 @@ import {
   handlePenghuluMessage,
   handlePegawaiMessage,
   handlePegawaiTimeout,
+  handlePenghuluTimeout,
   sortAgentsByPegawaiPriority,
 } from './agentLogic.js'
 import { handleHouseRentedWebhook } from './houseWebhook.js'
@@ -129,7 +130,7 @@ async function handleAgentWebhook(request, env, agentKey) {
       if (!text) return
 
       if (agent.kind === 'penghulu') {
-        await handlePenghuluMessage(supabaseAdmin, agent, botCtx, text, threadId, { penghuluAgents })
+        await handlePenghuluMessage(supabaseAdmin, agent, botCtx, text, threadId, { penghuluAgents, assistantAgents, env })
       } else {
         await handlePegawaiMessage(supabaseAdmin, agent, botCtx, text, threadId, {
           penghuluAgents,
@@ -144,6 +145,19 @@ async function handleAgentWebhook(request, env, agentKey) {
       // (ambil ulang threadId di sini karena yang di dalam try itu
       // block-scoped, gak kebaca dari catch)
       const fallbackThreadId = botCtx.message?.message_thread_id ?? null
+
+      if (agent.kind === 'penghulu') {
+        // Cuma nyimpen marker recovery konteks (lihat penghuluTimeoutState.js
+        // + handlePenghuluTimeout) -- TIDAK menggantikan fallback generik di
+        // bawah, cuma nambahin "jejak" biar Penghulu bisa nyapa balik pas dia
+        // berhasil jawab lagi. Sengaja gak `return` di sini (beda dari cabang
+        // Pegawai di bawah) karena warga tetap butuh fallback reply SEKARANG.
+        try {
+          await handlePenghuluTimeout(supabaseAdmin, agent, botCtx, fallbackThreadId)
+        } catch (timeoutErr) {
+          console.error(`[${agent.key}] gagal simpen penghulu timeout state (lanjut ke fallback reply biasa):`, timeoutErr)
+        }
+      }
 
       if (agent.kind !== 'penghulu') {
         // Pegawai (Naya/Mimi/Cika): ganti fallback generik dengan template
