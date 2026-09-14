@@ -19,6 +19,18 @@ const STATUS_LABELS = {
 
 const POLL_INTERVAL_MS = 5000 // fetch ulang data tiap 5 detik
 
+// Kapasitas ruang KUA -- cuma dipakai buat tampilan penjelasan singkat +
+// badge "Penuh" di modal konfirmasi masuk. Room lain gak dibatasi (belum
+// ada kolom `capacity` di tabel `rooms`, jadi sengaja hardcode di sini dulu
+// biar gak perlu migration cuma buat 1 room).
+const KUA_CAPACITY = 11
+
+function isKuaRoom(room) {
+  if (!room) return false
+  const haystack = `${room.slug || ''} ${room.name || ''}`.toLowerCase()
+  return haystack.includes('kua')
+}
+
 function getWorldPhase() {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 11) return { label: 'Pagi di RP Town', dot: '#ffd699' }
@@ -397,6 +409,41 @@ export default function App() {
             <p className="modal-desc">
               Kamu akan diarahkan ke ruang chat {selectedRoom.name} untuk mulai roleplay bareng warga lain.
             </p>
+
+            {isKuaRoom(selectedRoom) && (
+              <div className="modal-capacity">
+                <div className="modal-capacity-row">
+                  <span className="modal-capacity-count">
+                    {selectedRoom.occupantCount}/{KUA_CAPACITY} warga di dalam
+                  </span>
+                  {selectedRoom.occupantCount >= KUA_CAPACITY && (
+                    <span className="modal-capacity-badge">Penuh</span>
+                  )}
+                </div>
+                <p className="modal-capacity-note">
+                  Ruang KUA cuma muat maksimal {KUA_CAPACITY} warga sekaligus. Kalau lagi penuh, tetap masuk aja --
+                  kamu bakal otomatis diantrekan dan dikasih tau begitu ada slot kosong.
+                </p>
+
+                {selectedRoom.occupants?.length > 0 && (
+                  <div className="modal-occupant-list">
+                    {selectedRoom.occupants.map((occupant, idx) => (
+                      <div className="modal-occupant" key={occupant?.display_name ? `${occupant.display_name}-${idx}` : idx}>
+                        <div className="modal-occupant-avatar">
+                          {occupant?.avatar_url ? (
+                            <img src={occupant.avatar_url} alt="" />
+                          ) : (
+                            initials(occupant?.display_name)
+                          )}
+                        </div>
+                        <span className="modal-occupant-name">{occupant?.display_name || 'Warga'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <button className="modal-btn modal-btn-primary" onClick={handleConfirmEnter} disabled={entering}>
               {entering ? 'Membuka pintu...' : 'Masuk Sekarang'}
             </button>
