@@ -31,6 +31,22 @@ function isKuaRoom(room) {
   return haystack.includes('kua')
 }
 
+// Sama persis dengan DEFAULT_ADMIN_EXEMPT_IDS di worker/src/groupMembership.js --
+// admin-admin ini dikecualikan dari kick otomatis di backend, jadi di
+// frontend juga gak usah ikut kehitung/ditampilin sebagai "warga" yang
+// makan slot kapasitas ruang KUA. Kalau daftar admin berubah, update di
+// DUA tempat ini (backend & frontend) biar tetap sinkron.
+const KUA_ADMIN_EXEMPT_IDS = new Set(['5911246341', '5839217045', '8118123582'])
+
+// Buang occupant yang telegram_id-nya ada di daftar admin exempt, khusus
+// buat ruang KUA. Room lain gak difilter (KUA_ADMIN_EXEMPT_IDS cuma
+// relevan buat kapasitas 11 orang di KUA).
+function visibleOccupants(room) {
+  const occupants = room?.occupants || []
+  if (!isKuaRoom(room)) return occupants
+  return occupants.filter((o) => !KUA_ADMIN_EXEMPT_IDS.has(String(o?.telegram_id)))
+}
+
 function getWorldPhase() {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 11) return { label: 'Pagi di RP Town', dot: '#ffd699' }
@@ -414,9 +430,9 @@ export default function App() {
               <div className="modal-capacity">
                 <div className="modal-capacity-row">
                   <span className="modal-capacity-count">
-                    {selectedRoom.occupantCount}/{KUA_CAPACITY} warga di dalam
+                    {visibleOccupants(selectedRoom).length}/{KUA_CAPACITY} warga di dalam
                   </span>
-                  {selectedRoom.occupantCount >= KUA_CAPACITY && (
+                  {visibleOccupants(selectedRoom).length >= KUA_CAPACITY && (
                     <span className="modal-capacity-badge">Penuh</span>
                   )}
                 </div>
@@ -425,9 +441,9 @@ export default function App() {
                   kamu bakal otomatis diantrekan dan dikasih tau begitu ada slot kosong.
                 </p>
 
-                {selectedRoom.occupants?.length > 0 && (
+                {visibleOccupants(selectedRoom).length > 0 && (
                   <div className="modal-occupant-list">
-                    {selectedRoom.occupants.map((occupant, idx) => (
+                    {visibleOccupants(selectedRoom).map((occupant, idx) => (
                       <div className="modal-occupant" key={occupant?.display_name ? `${occupant.display_name}-${idx}` : idx}>
                         <div className="modal-occupant-avatar">
                           {occupant?.avatar_url ? (
