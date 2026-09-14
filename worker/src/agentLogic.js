@@ -501,7 +501,16 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   // Sengaja dicek di sini (SEBELUM runTurn) tapi baru di-clear/dipakai
   // SETELAH runTurn sukses -- kalau runTurn gagal lagi, state away tetap
   // ada (index.js catch block bakal liat dia masih away & diem aja).
-  const awayRowAtStart = await getAwayState(supabaseAdmin, historyKey)
+  //
+  // DIBUNGKUS try/catch: kalau query ke tabel away-state ini gagal (DB
+  // hiccup, dll), JANGAN sampai itu ngeblok warga dapet jawaban sama
+  // sekali -- anggap aja "gak away" dan lanjut proses normal.
+  let awayRowAtStart = null
+  try {
+    awayRowAtStart = await getAwayState(supabaseAdmin, historyKey)
+  } catch (err) {
+    console.error(`[${agent.key}] gagal cek away state (lanjut anggap gak away):`, err)
+  }
 
   let penghuluStatusContext = null
   let directingToPenghulu = false
