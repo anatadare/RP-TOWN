@@ -273,14 +273,18 @@ function FrameBuildingsOnce({ groupRef }) {
     const mapCenter = mapBox.getCenter(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.z) || 1
 
+    // Kamera tetap memakai jarak framing bangunan seperti sebelumnya,
+    // tetapi pusat orbit dan posisi awal kamera sama-sama memakai pusat map.
+    // Ini mencegah map terasa bertumpu pada sisi/area bangunan tertentu.
+    //
     // Kamera diposisikan miring sedikit dari atas (tampak atas ala papan) saat
     // pertama kali dibuka. Setelah ini, user boleh muter & miringin sendiri
     // lewat OrbitControls (dibatasi MIN/MAX_POLAR_ANGLE di bawah).
     const height = maxDim * 1.4
     camera.position.set(
-      center.x,
-      center.y + height * Math.cos(DEFAULT_TILT),
-      center.z + height * Math.sin(DEFAULT_TILT)
+      mapCenter.x,
+      mapCenter.y + height * Math.cos(DEFAULT_TILT),
+      mapCenter.z + height * Math.sin(DEFAULT_TILT)
     )
     camera.near = Math.max(maxDim / 200, 0.1)
     camera.far = maxDim * 20
