@@ -269,6 +269,8 @@ function FrameBuildingsOnce({ groupRef }) {
 
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
+    const mapBox = new THREE.Box3().setFromObject(groupRef.current)
+    const mapCenter = mapBox.getCenter(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.z) || 1
 
     // Kamera diposisikan miring sedikit dari atas (tampak atas ala papan) saat
@@ -285,12 +287,12 @@ function FrameBuildingsOnce({ groupRef }) {
     camera.updateProjectionMatrix()
 
     if (controls) {
-      controls.target.copy(center)
+      controls.target.copy(mapCenter)
       controls.minDistance = maxDim * 0.3
       controls.maxDistance = maxDim * 3
       controls.update()
     } else {
-      camera.lookAt(center)
+      camera.lookAt(mapCenter)
     }
   })
 
