@@ -52,7 +52,7 @@ const OCEAN_SURFACE_URL = '/models/ocean-surface.glb'
 const OCEAN_COVERAGE_MARGIN = 1.2
 const OCEAN_SCALE_XZ_FALLBACK = 0.3 // dipakai sebentar sebelum footprint pulau kehitung
 const OCEAN_SCALE_Y = 0.05
-const OCEAN_BASE_Y = -1.45 // air diturunkan tanpa mengubah lebar, posisi X/Z, atau pivot rotasi map
+const OCEAN_BASE_Y = -4 // air diturunkan tanpa mengubah lebar, posisi X/Z, atau pivot rotasi map
 
 // Laut utamanya sekarang dari sini: aset low-poly siap pakai (bukan hasil
 // generate shader lagi), jadi cukup dipasang dan dikasih material
