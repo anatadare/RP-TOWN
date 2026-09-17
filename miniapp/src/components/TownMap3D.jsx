@@ -52,7 +52,13 @@ const OCEAN_SURFACE_URL = '/models/ocean-surface.glb'
 const OCEAN_COVERAGE_MARGIN = 1.2
 const OCEAN_SCALE_XZ_FALLBACK = 0.3 // dipakai sebentar sebelum footprint pulau kehitung
 const OCEAN_SCALE_Y = 0.05
-const OCEAN_BASE_Y = -4 // air diturunkan tanpa mengubah lebar, posisi X/Z, atau pivot rotasi map
+// Posisi air SEKARANG dihitung otomatis dari tinggi pulau (footprint.size.y),
+// bukan angka tetap lagi — soalnya angka tetap kelihatan gak ngaruh kalau
+// skala modelnya beda-beda tiap peta. Air ditaruh di dasar bounding-box
+// pulau (titik terendah), lalu digeser dikit ke atas oleh OCEAN_BASE_OFFSET
+// biar masih "nyentuh" pantai, bukan ngambang jauh di bawah tanah.
+const OCEAN_BASE_Y_FALLBACK = -1.45 // dipakai sebentar sebelum footprint pulau kehitung
+const OCEAN_BASE_OFFSET = 0.5 // jarak air di atas titik terendah pulau
 
 // Laut utamanya sekarang dari sini: aset low-poly siap pakai (bukan hasil
 // generate shader lagi), jadi cukup dipasang dan dikasih material
@@ -90,26 +96,28 @@ function OceanSurface({ footprint }) {
     return Math.hypot(size.x, size.z)
   }, [scene])
 
-  const { scaleXZ, centerX, centerZ } = useMemo(() => {
+  const { scaleXZ, centerX, centerZ, baseY } = useMemo(() => {
     if (!footprint) {
-      return { scaleXZ: OCEAN_SCALE_XZ_FALLBACK, centerX: 0, centerZ: 0 }
+      return { scaleXZ: OCEAN_SCALE_XZ_FALLBACK, centerX: 0, centerZ: 0, baseY: OCEAN_BASE_Y_FALLBACK }
     }
     const islandDiagonal = Math.hypot(footprint.size.x, footprint.size.z)
     return {
       scaleXZ: (islandDiagonal * OCEAN_COVERAGE_MARGIN) / oceanRawDiagonal,
       centerX: footprint.center.x,
       centerZ: footprint.center.z,
+      // Titik terendah pulau = pusat bounding-box dikurangi setengah tingginya.
+      baseY: footprint.center.y - footprint.size.y / 2 + OCEAN_BASE_OFFSET,
     }
   }, [footprint, oceanRawDiagonal])
 
   useFrame(({ clock }) => {
     if (groupRef.current) {
-      groupRef.current.position.y = OCEAN_BASE_Y + Math.sin(clock.elapsedTime * 0.6) * 0.15
+      groupRef.current.position.y = baseY + Math.sin(clock.elapsedTime * 0.6) * 0.15
     }
   })
 
   return (
-    <group ref={groupRef} position={[centerX, OCEAN_BASE_Y, centerZ]} scale={[scaleXZ, OCEAN_SCALE_Y, scaleXZ]}>
+    <group ref={groupRef} position={[centerX, baseY, centerZ]} scale={[scaleXZ, OCEAN_SCALE_Y, scaleXZ]}>
       <primitive object={clonedScene} />
     </group>
   )
