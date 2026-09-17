@@ -133,14 +133,37 @@ function TownModel({
   // kebaca, lalu lapor ke atas — dipakai OceanSurface buat nentuin seberapa
   // besar & di mana laut harus digambar (lihat komentar OCEAN_COVERAGE_MARGIN).
   useEffect(() => {
-    if (!rotatedGroupRef.current || !onFootprintComputed) return
+    if (!rotatedGroupRef.current) return
+
+    // Jadikan pusat geometris seluruh pulau sebagai pivot nyata model.
+    // GLB ini punya origin di salah satu sisi, jadi hanya mengubah
+    // OrbitControls.target tidak cukup: kamera bisa mengorbit titik tengah,
+    // tetapi geometry-nya sendiri tetap terasa bertumpu pada sisi.
+    //
+    // Hitung bounding-box setelah AXIS_FIX_ROTATION diterapkan, lalu geser
+    // group sebesar kebalikan center-nya. Dengan begitu pusat map berada tepat
+    // di origin world (0, 0, 0), dan origin tersebut menjadi pivot rotasi.
     rotatedGroupRef.current.updateMatrixWorld(true)
     const box = new THREE.Box3().setFromObject(rotatedGroupRef.current)
     const size = new THREE.Vector3()
     const center = new THREE.Vector3()
     box.getSize(size)
     box.getCenter(center)
-    onFootprintComputed({ size, center })
+
+    rotatedGroupRef.current.position.set(-center.x, -center.y, -center.z)
+    rotatedGroupRef.current.updateMatrixWorld(true)
+
+    // Laporkan footprint setelah pivot diterapkan supaya laut yang terpisah
+    // juga otomatis memakai pusat map yang sama.
+    const centeredBox = new THREE.Box3().setFromObject(rotatedGroupRef.current)
+    const centeredSize = new THREE.Vector3()
+    const centeredCenter = new THREE.Vector3()
+    centeredBox.getSize(centeredSize)
+    centeredBox.getCenter(centeredCenter)
+
+    if (onFootprintComputed) {
+      onFootprintComputed({ size: centeredSize, center: centeredCenter })
+    }
   }, [scene, onFootprintComputed])
 
   // Sungai/kanal kecil bawaan tiap peta disembunyiin — laut utamanya sekarang
@@ -269,28 +292,33 @@ function FrameBuildingsOnce({ groupRef }) {
 
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
+    const mapBox = new THREE.Box3().setFromObject(groupRef.current)
+    const mapCenter = mapBox.getCenter(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.z) || 1
 
+    // Model sudah dipusatkan secara nyata di origin world, jadi pusat map
+    // sekarang menjadi pusat kamera sekaligus pivot OrbitControls.
+    // Jarak framing tetap dihitung dari ukuran bangunan seperti sebelumnya.
     // Kamera diposisikan miring sedikit dari atas (tampak atas ala papan) saat
     // pertama kali dibuka. Setelah ini, user boleh muter & miringin sendiri
     // lewat OrbitControls (dibatasi MIN/MAX_POLAR_ANGLE di bawah).
     const height = maxDim * 1.4
     camera.position.set(
-      center.x,
-      center.y + height * Math.cos(DEFAULT_TILT),
-      center.z + height * Math.sin(DEFAULT_TILT)
+      mapCenter.x,
+      mapCenter.y + height * Math.cos(DEFAULT_TILT),
+      mapCenter.z + height * Math.sin(DEFAULT_TILT)
     )
     camera.near = Math.max(maxDim / 200, 0.1)
     camera.far = maxDim * 20
     camera.updateProjectionMatrix()
 
     if (controls) {
-      controls.target.copy(center)
+      controls.target.copy(mapCenter)
       controls.minDistance = maxDim * 0.3
       controls.maxDistance = maxDim * 3
       controls.update()
     } else {
-      camera.lookAt(center)
+      camera.lookAt(mapCenter)
     }
   })
 
