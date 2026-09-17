@@ -87,28 +87,38 @@ function OceanSurface({ footprint }) {
     return cloned
   }, [scene])
 
-  // Diagonal asli aset laut (dihitung sekali dari geometrinya, bukan di-hardcode),
-  // dipakai sebagai acuan buat nentuin faktor scale di bawah.
-  const oceanRawDiagonal = useMemo(() => {
+  // Lebar (X) & kedalaman (Z) asli aset laut (dihitung sekali dari
+  // geometrinya, bukan di-hardcode), dipakai sebagai acuan buat nentuin
+  // faktor scale di bawah. Dulu dipakai diagonal (garis lurus pojok-ke-pojok)
+  // buat nentuin scale, tapi itu cuma ngejamin pojok diagonal laut nyampe —
+  // kalau bentuk lautnya gak persis kotak (asetnya low-poly, agak "gerigi")
+  // atau pulaunya memanjang (lebar jauh beda sama kedalaman), sisi
+  // kiri-kanan/depan-belakang laut bisa gak nyampe sampai tanah, jadi ada
+  // tanah yang "kepotong" tanpa air di bawahnya.
+  const oceanRawSize = useMemo(() => {
     const box = new THREE.Box3().setFromObject(scene)
     const size = new THREE.Vector3()
     box.getSize(size)
-    return Math.hypot(size.x, size.z)
+    return { x: size.x, z: size.z }
   }, [scene])
 
   const { scaleXZ, centerX, centerZ, baseY } = useMemo(() => {
     if (!footprint) {
       return { scaleXZ: OCEAN_SCALE_XZ_FALLBACK, centerX: 0, centerZ: 0, baseY: OCEAN_BASE_Y_FALLBACK }
     }
-    const islandDiagonal = Math.hypot(footprint.size.x, footprint.size.z)
+    // Hitung scale yang dibutuhkan di masing-masing sumbu (lebar & kedalaman)
+    // secara terpisah, lalu pakai yang paling besar — biar laut dijamin
+    // menutupi pulau penuh di KEDUA arah, bukan cuma pas di garis diagonal.
+    const scaleForX = (footprint.size.x * OCEAN_COVERAGE_MARGIN) / oceanRawSize.x
+    const scaleForZ = (footprint.size.z * OCEAN_COVERAGE_MARGIN) / oceanRawSize.z
     return {
-      scaleXZ: (islandDiagonal * OCEAN_COVERAGE_MARGIN) / oceanRawDiagonal,
+      scaleXZ: Math.max(scaleForX, scaleForZ),
       centerX: footprint.center.x,
       centerZ: footprint.center.z,
       // Titik terendah pulau = pusat bounding-box dikurangi setengah tingginya.
       baseY: footprint.center.y - footprint.size.y / 2 + OCEAN_BASE_OFFSET,
     }
-  }, [footprint, oceanRawDiagonal])
+  }, [footprint, oceanRawSize])
 
   useFrame(({ clock }) => {
     if (groupRef.current) {
