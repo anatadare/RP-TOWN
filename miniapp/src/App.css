@@ -1259,6 +1259,20 @@ body {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
+/* Fallback kalau /logo.png belum ada di folder public -- badge teks
+   biar layout topbar tetep rapi dan build gak pernah gagal. */
+.landing-logo-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: linear-gradient(135deg, #f0a35e, #d9663d);
+}
+
 .landing-topbar-text {
   min-width: 0;
 }
