@@ -299,11 +299,12 @@ export default function App() {
     }
   }, [refreshRooms])
 
-  // Ambil petak rumah milik citizen tiap kali panel Profil ATAU layar
-  // Beranda ditampilkan, biar kartu "Rumah" (di kedua tempat itu) nunjukkin
-  // data terbaru (misalnya abis nyewa dari Perumahan).
+  // Ambil petak rumah milik citizen tiap kali panel Profil ditampilkan,
+  // biar kartu "Rumah" di situ nunjukkin data terbaru (misalnya abis nyewa
+  // dari Perumahan). Layar Beranda gak nampilin kartu rumah lagi, jadi gak
+  // perlu ikut trigger fetch ini.
   useEffect(() => {
-    if (!citizen || !(showProfile || screen === 'landing')) return
+    if (!citizen || !showProfile) return
     let cancelled = false
 
     async function loadOwnedHouse() {
@@ -323,7 +324,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [showProfile, screen, citizen])
+  }, [showProfile, citizen])
 
   // Toast kecil buat fitur yang belum digarap (Pasang Foto, Edit Info)
   function showComingSoon(feature) {
@@ -432,18 +433,7 @@ export default function App() {
       {error && <p className="state-message">{error}</p>}
 
       {!loading && !error && screen === 'landing' && (
-        <Landing
-          citizen={citizen}
-          phase={phase}
-          ownedHouse={ownedHouse}
-          houseLoading={houseLoading}
-          onEnterMap={() => {
-            hapticSelect()
-            setScreen('map')
-          }}
-          onOpenHouseChat={handleOpenHouseChat}
-          onGoRentHouse={handleGoRentHouse}
-        />
+        <Landing citizen={citizen} phase={phase} />
       )}
 
       {!loading && !error && screen === 'map' && (
