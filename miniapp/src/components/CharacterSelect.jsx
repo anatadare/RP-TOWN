@@ -1,22 +1,47 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import CharacterPreview from './CharacterPreview'
 import { CHARACTERS } from '../lib/characters'
 import { hapticSelect, hapticSuccess } from '../lib/telegram'
 
+const SWIPE_THRESHOLD = 45 // px minimal geser sebelum dianggap swipe
+
 // Layar full-screen, blocking -- gak ada tombol "skip"/tutup, karena ini
 // setara "registrasi" (pilih karakter dulu baru bisa masuk ke RP Town).
 // Ditampilkan App.jsx cuma kalau citizen.character_id masih null.
+// Navigasi karakter pakai swipe kiri/kanan (+ tombol panah buat fallback),
+// bukan grid, biar 1 karakter kelihatan full-body gak kepotong.
 export default function CharacterSelect({ citizen, onConfirm }) {
-  const [selectedId, setSelectedId] = useState(CHARACTERS[0].id)
+  const [index, setIndex] = useState(0)
   const [saving, setSaving] = useState(false)
+  const touchStartX = useRef(null)
 
-  const selected = CHARACTERS.find((c) => c.id === selectedId) || CHARACTERS[0]
+  const total = CHARACTERS.length
+  const selected = CHARACTERS[index]
+
+  function goTo(nextIndex) {
+    const wrapped = (nextIndex + total) % total
+    if (wrapped === index) return
+    hapticSelect()
+    setIndex(wrapped)
+  }
+
+  function handleTouchStart(e) {
+    touchStartX.current = e.touches[0].clientX
+  }
+
+  function handleTouchEnd(e) {
+    if (touchStartX.current == null) return
+    const delta = e.changedTouches[0].clientX - touchStartX.current
+    touchStartX.current = null
+    if (delta > SWIPE_THRESHOLD) goTo(index - 1)
+    else if (delta < -SWIPE_THRESHOLD) goTo(index + 1)
+  }
 
   async function handleConfirm() {
     hapticSuccess()
     setSaving(true)
     try {
-      await onConfirm(selectedId)
+      await onConfirm(selected.id)
     } finally {
       setSaving(false)
     }
@@ -29,34 +54,41 @@ export default function CharacterSelect({ citizen, onConfirm }) {
         <h1 className="charselect-title">
           Halo, {citizen?.display_name || citizen?.username || 'Warga'}! Pilih karaktermu
         </h1>
-        <p className="charselect-sub">Ini bakal jadi wujud kamu di RP Town. Bisa diganti lagi nanti.</p>
+        <p className="charselect-sub">Geser buat lihat pilihan lain. Bisa diganti lagi nanti.</p>
       </div>
 
-      <div className="charselect-stage">
-        <CharacterPreview
-          key={selected.id}
-          modelUrl={selected.modelUrl}
-          className="charselect-stage-canvas"
-        />
-        <p className="charselect-stage-name">{selected.name}</p>
+      <div className="charselect-stage" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+        <button
+          type="button"
+          aria-label="Karakter sebelumnya"
+          className="charselect-arrow charselect-arrow-left"
+          onClick={() => goTo(index - 1)}
+        >
+          ‹
+        </button>
+
+        <CharacterPreview key={selected.id} modelUrl={selected.modelUrl} className="charselect-stage-canvas" />
+
+        <button
+          type="button"
+          aria-label="Karakter selanjutnya"
+          className="charselect-arrow charselect-arrow-right"
+          onClick={() => goTo(index + 1)}
+        >
+          ›
+        </button>
       </div>
 
-      <div className="charselect-grid">
-        {CHARACTERS.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            className={`charselect-item${c.id === selectedId ? ' is-active' : ''}`}
-            onClick={() => {
-              if (c.id === selectedId) return
-              hapticSelect()
-              setSelectedId(c.id)
-            }}
-          >
-            <span className="charselect-item-name">{c.name}</span>
-          </button>
+      <div className="charselect-dots">
+        {CHARACTERS.map((c, i) => (
+          <span key={c.id} className={`charselect-dot${i === index ? ' is-active' : ''}`} />
         ))}
       </div>
+
+      <p className="charselect-stage-name">
+        {selected.name}
+        <span className="charselect-counter"> · {index + 1}/{total}</span>
+      </p>
 
       <button type="button" className="charselect-confirm" onClick={handleConfirm} disabled={saving}>
         {saving ? 'Menyimpan...' : `Pilih ${selected.name}`}
