@@ -21,6 +21,20 @@ export async function ensureCitizen(tgUser) {
   return data
 }
 
+// Simpan pilihan karakter 3D warga (dipanggil sekali dari CharacterSelect,
+// pas warga baru/citizen yang belum punya character_id milih karakternya).
+export async function updateCitizenCharacter(citizenId, characterId) {
+  const { data, error } = await supabase
+    .from('citizens')
+    .update({ character_id: characterId })
+    .eq('id', citizenId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 // Ambil semua room + jumlah orang yang lagi di room itu
 export async function getRoomsWithPresence() {
   const { data: rooms, error: roomsError } = await supabase
