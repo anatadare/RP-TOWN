@@ -1,11 +1,13 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import './App.css'
 import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSuccess } from './lib/telegram'
-import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms } from './lib/rooms'
+import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms, updateCitizenCharacter } from './lib/rooms'
 import { getHouseByOwner } from './lib/houses'
 import TownMap3D from './components/TownMap3D'
 import HousingDistrict from './components/HousingDistrict'
 import BuildingSearch from './components/BuildingSearch'
+import CharacterSelect from './components/CharacterSelect'
+import Landing from './components/Landing'
 import { MAPS, DEFAULT_MAP_KEY, getMapByKey } from './lib/maps'
 import { buildBuildingDirectory } from './lib/buildings'
 
@@ -61,6 +63,27 @@ function initials(name) {
 }
 
 // Ikon-ikon kecil buat bottom nav, biar gak perlu tambah dependency icon library
+function HomeIcon({ active }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 11.5l8-7 8 7"
+        stroke={active ? 'var(--lantern)' : 'currentColor'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 10.5V20h12v-9.5"
+        stroke={active ? 'var(--lantern)' : 'currentColor'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M10 20v-5.5h4V20" stroke={active ? 'var(--lantern)' : 'currentColor'} strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 function MapIcon({ active }) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -141,6 +164,11 @@ export default function App() {
   const [rooms, setRooms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // 'landing' -- layar sambutan sebelum peta. 'map' -- peta 3D (tampilan lama).
+  // Layar pilih karakter GAK masuk sini, dicek terpisah lewat
+  // `citizen && !citizen.character_id` di bagian render, soalnya dia cuma
+  // relevan sekali di awal dan gak boleh "kebalik" ke screen lain.
+  const [screen, setScreen] = useState('landing')
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [entering, setEntering] = useState(false)
   const [housingRoom, setHousingRoom] = useState(null)
@@ -271,10 +299,11 @@ export default function App() {
     }
   }, [refreshRooms])
 
-  // Ambil petak rumah milik citizen tiap kali panel Profil dibuka, biar
-  // kartu "Rumah" nunjukkin data terbaru (misalnya abis nyewa dari Perumahan).
+  // Ambil petak rumah milik citizen tiap kali panel Profil ATAU layar
+  // Beranda ditampilkan, biar kartu "Rumah" (di kedua tempat itu) nunjukkin
+  // data terbaru (misalnya abis nyewa dari Perumahan).
   useEffect(() => {
-    if (!showProfile || !citizen) return
+    if (!citizen || !(showProfile || screen === 'landing')) return
     let cancelled = false
 
     async function loadOwnedHouse() {
@@ -294,13 +323,21 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [showProfile, citizen])
+  }, [showProfile, screen, citizen])
 
   // Toast kecil buat fitur yang belum digarap (Pasang Foto, Edit Info)
   function showComingSoon(feature) {
     hapticSelect()
     setProfileToast(`${feature} segera hadir 👷`)
     setTimeout(() => setProfileToast(null), 2000)
+  }
+
+  // Dipanggil dari CharacterSelect abis warga milih karakter. Nyimpen ke
+  // Supabase (bukan cuma state lokal) supaya layar ini beneran cuma muncul
+  // SEKALI -- lain kali buka mini app, citizen.character_id sudah keisi.
+  async function handleConfirmCharacter(characterId) {
+    const updated = await updateCitizenCharacter(citizen.id, characterId)
+    setCitizen(updated)
   }
 
   function handleOpenHouseChat() {
@@ -344,47 +381,72 @@ export default function App() {
     }
   }
 
+  // Warga baru (atau warga lama yang belum sempat milih sebelum fitur ini
+  // ada) -- layar pilih karakter full-screen, blocking, nutupin semuanya
+  // termasuk bottom nav. Begitu tersimpan, citizen.character_id keisi dan
+  // App otomatis lanjut ke layar 'landing' di bawah.
+  if (!loading && !error && citizen && !citizen.character_id) {
+    return <CharacterSelect citizen={citizen} onConfirm={handleConfirmCharacter} />
+  }
+
   return (
     <div className="town">
-      <div className="town-overlay-top">
-        <header className="town-header">
-          <h1 className="town-title">RP Town</h1>
+      {screen === 'map' && (
+        <div className="town-overlay-top">
+          <header className="town-header">
+            <h1 className="town-title">RP Town</h1>
 
-          <div className="world-clock">
-            <span className="phase-dot" style={{ background: phase.dot, boxShadow: `0 0 10px 2px ${phase.dot}` }} />
-            <span>{phase.label}</span>
+            <div className="world-clock">
+              <span className="phase-dot" style={{ background: phase.dot, boxShadow: `0 0 10px 2px ${phase.dot}` }} />
+              <span>{phase.label}</span>
+            </div>
+          </header>
+
+          <div className="map-switcher">
+            {MAPS.map((map) => (
+              <button
+                key={map.key}
+                type="button"
+                className={`map-switcher-item${map.key === activeMapKey ? ' is-active' : ''}`}
+                onClick={() => {
+                  if (map.key === activeMapKey) return
+                  hapticSelect()
+                  setActiveMapKey(map.key)
+                }}
+              >
+                {map.name}
+              </button>
+            ))}
           </div>
-        </header>
 
-        <div className="map-switcher">
-          {MAPS.map((map) => (
-            <button
-              key={map.key}
-              type="button"
-              className={`map-switcher-item${map.key === activeMapKey ? ' is-active' : ''}`}
-              onClick={() => {
-                if (map.key === activeMapKey) return
-                hapticSelect()
-                setActiveMapKey(map.key)
-              }}
-            >
-              {map.name}
-            </button>
-          ))}
+          <BuildingSearch
+            key={activeMapKey}
+            buildings={buildingDirectory}
+            mapName={activeMap.name}
+            onSelectBuilding={handleSelectBuildingFromSearch}
+          />
         </div>
-
-        <BuildingSearch
-          key={activeMapKey}
-          buildings={buildingDirectory}
-          mapName={activeMap.name}
-          onSelectBuilding={handleSelectBuildingFromSearch}
-        />
-      </div>
+      )}
 
       {loading && <p className="state-message">Membuka gerbang kota...</p>}
       {error && <p className="state-message">{error}</p>}
 
-      {!loading && !error && (
+      {!loading && !error && screen === 'landing' && (
+        <Landing
+          citizen={citizen}
+          phase={phase}
+          ownedHouse={ownedHouse}
+          houseLoading={houseLoading}
+          onEnterMap={() => {
+            hapticSelect()
+            setScreen('map')
+          }}
+          onOpenHouseChat={handleOpenHouseChat}
+          onGoRentHouse={handleGoRentHouse}
+        />
+      )}
+
+      {!loading && !error && screen === 'map' && (
         <TownMap3D
           mapKey={activeMap.key}
           modelUrl={activeMap.modelUrl}
@@ -399,8 +461,26 @@ export default function App() {
 
       {!loading && !error && (
         <nav className="bottom-nav">
-          <button className="bottom-nav-item is-active" type="button">
-            <MapIcon active />
+          <button
+            className={`bottom-nav-item${screen === 'landing' ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => {
+              if (screen !== 'landing') hapticSelect()
+              setScreen('landing')
+            }}
+          >
+            <HomeIcon active={screen === 'landing'} />
+            <span>Beranda</span>
+          </button>
+          <button
+            className={`bottom-nav-item${screen === 'map' ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => {
+              if (screen !== 'map') hapticSelect()
+              setScreen('map')
+            }}
+          >
+            <MapIcon active={screen === 'map'} />
             <span>Peta</span>
           </button>
           <button
