@@ -838,7 +838,15 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   }
 
   await pushHistory(supabaseAdmin, historyKey, 'user', text)
-  const history = await getHistory(supabaseAdmin, historyKey)
+  let history = await getHistory(supabaseAdmin, historyKey)
+
+  // Kalau datanya SEKARANG ada, buang jawaban lama Pegawai yang bilang "gak
+  // bisa lihat/cek data" dari histori -- model kecil suka niru jawaban lamanya
+  // sendiri dan ngulang penolakan yang sama walau data barunya udah dikasih.
+  if (askingRoomStatus && penghuluStatusContext) {
+    const oldRefusal = /\b(gak|nggak|ngga|ga|tidak|belum)\s+(bisa|dapat)\s+(lihat|liat|cek|ngecek|akses|ngakses)/i
+    history = history.filter((m) => !(m.role === 'assistant' && oldRefusal.test(m.content)))
+  }
 
   // Kalau warga lagi nanya soal ruang/Penghulu, ingetin model di giliran USER
   // (bukan cuma di system prompt yang panjang) bahwa datanya ADA -- model kecil
