@@ -136,6 +136,7 @@ async function handleAgentWebhook(request, env, agentKey) {
           penghuluAgents,
           pegawaiPriorityKeys: pegawaiPriorityAgents.map((a) => a.key),
           pegawaiPriorityNames: pegawaiPriorityAgents.map((a) => a.name),
+          env,
         })
       }
     } catch (err) {
