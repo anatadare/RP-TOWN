@@ -46,18 +46,33 @@ const GEMINI_MAX_OUTPUT_TOKENS = 800
 // gagal/429/lambat, skor EWMA-nya sendiri yang bakal ngalahin bonus ini.
 const GEMINI_DIRECT_SCORE_BONUS = 0.2
 
-// Kolam kandidat Jerouter. Urutan DI SINI gak penting (dipakai cuma buat
-// model yang belum punya histori -- semuanya mulai dari skor netral yang
-// sama). `north-mini-code` sengaja dibuang: model buat coding, kurang cocok
-// buat roleplay bahasa Indonesia.
-const FALLBACK_MODELS = [
-  'step-3.7-flash', 'mimo-v2.5', 'nemotron-3-ultra', 'qwen3.8-flash', 'glm-5.3-flash',
-  'gemini-3.7-flash', 'gemini-3.6-flash', 'nemotron-3.5-lightning', 'ling-3.0-flash',
-  'muse-spark-1.2-contributor', 'muse-spark-1.3-contributor', 'hy3', 'laguna-xs-2.1',
-  'nemotron-3-super', 'nemotron-3.5', 'laguna-s-2.1', 'lfm-2.5-2.6b', 'gemini-3.8-flash',
-  'nex-n2.5-mini', 'glm-5.2', 'glm-5.3', 'grok-4.5', 'grok-4.6',
-  'gemini-3.1-pro', 'nemotron-3-nano-omni', 'nex-n2.5-pro', 'big-pickle',
-]
+// Kolam kandidat Jerouter -- DIPILIH tangan (bukan semua model di daftar
+// status Jerouter), khusus yang enak buat roleplay chat BAHASA INDONESIA.
+// Disusun dari daftar status Jerouter tanggal 20 Sep 2026. Yang dibuang:
+//   - 🔴 offline / 🟡 lambat-tidak stabil (nanti dimasukin lagi kalau sudah 🟢)
+//   - model coding (north-mini-code), model kecil banget (lfm-2.5-2.6b,
+//     nemotron-3-nano-omni, laguna-*), model vision (ling-3.0-flash-vl),
+//     model khusus kesehatan (ling-3.0-flash-sante)
+//   - "free" (alias gak jelas, bisa nge-route ke model apa aja)
+//
+// Skor organik (modelStats.js) cuma ngukur KECEPATAN & KEBERHASILAN, gak
+// ngukur kualitas -- jadi model kecil yang kencang bisa nyalip model bagus
+// yang agak lambat. Makanya tiap model dikasih BONUS KUALITAS awal (tier di
+// bawah, penilaian dari reputasi multibahasa/gaya ngobrol keluarganya, BUKAN
+// hasil tes langsung -- ubah aja kalau di lapangan ada yang ternyata jelek/
+// bagus). Tier A ~ selisih 1,5 detik latency, tier B ~ 0,7 detik.
+const MODEL_TIERS = {
+  A: ['gpt-5.6-luna', 'grok-4.6', 'qwen3.8-27b', 'deepseek-v4-flash', 'muse-spark-1.3-contributor'],
+  B: ['step-3.7-flash', 'glm-5.2', 'mimo-v2.5', 'hy4-preview', 'hy3', 'ling-3.0-flash', 'big-pickle'],
+  C: ['nemotron-3-super', 'nemotron-3.5', 'dots-3-note-preview'], // cadangan terakhir
+}
+const TIER_BONUS = { A: 0.15, B: 0.07, C: 0 }
+
+const QUALITY_BONUS = {}
+for (const [tier, names] of Object.entries(MODEL_TIERS)) {
+  for (const name of names) QUALITY_BONUS[name] = TIER_BONUS[tier]
+}
+const JEROUTER_POOL = Object.keys(QUALITY_BONUS)
 
 // ---- Tuning hedging ----
 const HEDGE_DELAY_MIN_MS = 1800
@@ -296,7 +311,7 @@ export function hedgedRace({
 // pendek + pesan user terbaru -> balasan teks dari model.
 export async function runTurn({
   systemInstruction,
-  model, // opsional -- cuma hint kandidat (agent.aiModel/env), gak wajib dicoba pertama
+  model, // (diabaikan -- lihat komentar di bawah; dipertahankan biar pemanggil lama gak error)
   history = [],
   userMessage,
   apiKey, // key Jerouter
@@ -313,12 +328,17 @@ export async function runTurn({
   ]
 
   const geminiCandidate = geminiApiKey ? `${GEMINI_DIRECT_PREFIX}${geminiModel || DEFAULT_GEMINI_MODEL}` : null
+  // `model` (agent.aiModel dari env AI_MODEL) SENGAJA gak dipakai lagi buat
+  // nambah kandidat: env lama sering nunjuk model yang sudah dihapus dari
+  // Jerouter (contoh: qwen3.8-flash) dan bikin tiap pesan mulai dari error.
+  // Kolam sekarang murni dari JEROUTER_POOL di atas (+ Gemini langsung).
+  void model
   const pool = dedupe([
     ...(geminiCandidate ? [geminiCandidate] : []),
-    ...(apiKey ? [...(model ? [model] : []), ...FALLBACK_MODELS] : []),
+    ...(apiKey ? JEROUTER_POOL : []),
   ])
 
-  const bonus = geminiCandidate ? { [geminiCandidate]: GEMINI_DIRECT_SCORE_BONUS } : {}
+  const bonus = { ...QUALITY_BONUS, ...(geminiCandidate ? { [geminiCandidate]: GEMINI_DIRECT_SCORE_BONUS } : {}) }
   const ranked = supabaseAdmin ? await rankModelsByStats(supabaseAdmin, pool, { bonus }) : pool
   const usable = ranked.filter((m) => !isCoolingDown(m))
   const candidates = usable.length > 0 ? usable : ranked
