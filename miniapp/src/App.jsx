@@ -3,6 +3,7 @@ import './App.css'
 import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSuccess } from './lib/telegram'
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms, updateCitizenCharacter } from './lib/rooms'
 import { getHouseByOwner } from './lib/houses'
+import { requestKuaInvite, kuaInviteErrorMessage } from './lib/kua'
 import TownMap3D from './components/TownMap3D'
 import HousingDistrict from './components/HousingDistrict'
 import BuildingSearch from './components/BuildingSearch'
@@ -175,6 +176,7 @@ export default function App() {
   const [screen, setScreen] = useState('landing')
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [entering, setEntering] = useState(false)
+  const [enterError, setEnterError] = useState(null)
   const [housingRoom, setHousingRoom] = useState(null)
   const [adminMode] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -377,6 +379,7 @@ export default function App() {
 
   function handleOpenRoom(room) {
     hapticSelect()
+    setEnterError(null)
     if (room.slug === 'rumah') {
       setHousingRoom(room)
     } else {
@@ -387,17 +390,33 @@ export default function App() {
   async function handleConfirmEnter() {
     if (!citizen || !selectedRoom) return
     setEntering(true)
+    setEnterError(null)
+    let closeModal = true
     try {
-      await enterRoom(citizen.id, selectedRoom.id)
-      hapticSuccess()
-      if (selectedRoom.telegram_group_url) {
-        openTelegramLink(selectedRoom.telegram_group_url)
+      if (isKuaRoom(selectedRoom)) {
+        // KUA: link masuk dibuat bot on-demand (sekali pakai, kedaluwarsa
+        // cepat, dicek kapasitasnya) -- BUKAN link statis dari tabel rooms.
+        const invite = await requestKuaInvite()
+        if (!invite.ok) {
+          setEnterError(kuaInviteErrorMessage(invite))
+          closeModal = false
+          return
+        }
+        await enterRoom(citizen.id, selectedRoom.id)
+        hapticSuccess()
+        openTelegramLink(invite.url)
+      } else {
+        await enterRoom(citizen.id, selectedRoom.id)
+        hapticSuccess()
+        if (selectedRoom.telegram_group_url) {
+          openTelegramLink(selectedRoom.telegram_group_url)
+        }
       }
     } catch (err) {
       console.error(err)
     } finally {
       setEntering(false)
-      setSelectedRoom(null)
+      if (closeModal) setSelectedRoom(null)
     }
   }
 
@@ -644,9 +663,14 @@ export default function App() {
                   )}
                 </div>
                 <p className="modal-capacity-note">
-                  Ruang KUA cuma muat maksimal {KUA_CAPACITY} warga sekaligus. Kalau lagi penuh, tetap masuk aja --
-                  kamu bakal otomatis diantrekan dan dikasih tau begitu ada slot kosong.
+                  Ruang KUA cuma muat maksimal {KUA_CAPACITY} warga sekaligus. Kamu bakal dapat link masuk
+                  sekali pakai yang berlaku 10 menit. Kalau lagi penuh, coba lagi sebentar lagi.
                 </p>
+                {enterError && (
+                  <p className="modal-capacity-note" style={{ color: '#ff8a8a' }}>
+                    {enterError}
+                  </p>
+                )}
 
                 {visibleOccupants(selectedRoom).length > 0 && (
                   <div className="modal-occupant-list">
