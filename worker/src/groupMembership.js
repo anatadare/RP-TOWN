@@ -27,7 +27,7 @@ import { callTelegramApi } from './telegramApi.js'
 // perlu ubah kode/redeploy kalau daftar admin berubah.
 const DEFAULT_ADMIN_EXEMPT_IDS = ['5911246341', '5839217045', '8118123582']
 
-function getExemptAdminIds(env) {
+export function getExemptAdminIds(env) {
   const raw = env.KUA_ADMIN_EXEMPT_IDS
   const fromEnv = raw
     ? raw.split(',').map((s) => s.trim()).filter(Boolean)
