@@ -12,6 +12,7 @@
 //   POST /webhook/main              -> bot utama (/start, /town)
 //   POST /webhook/agent/:agentKey   -> 1 NPC agent (contoh: penghulu-1, assistant-2)
 //   POST /webhooks/house-rented     -> webhook dari Supabase Database Webhooks
+//   POST /api/kua-invite            -> Mini App minta link masuk KUA sekali pakai
 //   GET  /                          -> health check
 //   GET  /debug/models              -> HAPUS SETELAH SELESAI DIPAKAI. Nampilin
 //                                       daftar model ID persis dari Jerouter
@@ -31,6 +32,7 @@ import {
 } from './agentLogic.js'
 import { handleHouseRentedWebhook } from './houseWebhook.js'
 import { registerMainBotHandlers } from './mainBot.js'
+import { handleKuaInvite } from './kuaInvite.js'
 
 export default {
   async fetch(request, env, ctx) {
@@ -42,6 +44,10 @@ export default {
 
     if (url.pathname === '/debug/models' && request.method === 'GET') {
       return handleDebugModels(env)
+    }
+
+    if (url.pathname === '/api/kua-invite' && (request.method === 'POST' || request.method === 'OPTIONS')) {
+      return handleKuaInvite(request, env)
     }
 
     if (url.pathname === '/webhooks/house-rented' && request.method === 'POST') {
