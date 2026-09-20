@@ -28,7 +28,16 @@ export function buildAgentList(env, prefix, kind, count, defaultNames) {
       : null
 
     const aiApiKey = env[`${prefix}_${i}_AI_API_KEY`] || env.AI_API_KEY
-    if (!aiApiKey) continue // gak ada API key -> skip
+
+    // Gemini langsung (opsional) -- ikut jadi kandidat di aiClient.js kalau
+    // key-nya ada. Bisa 1 key buat semua agent (GEMINI_API_KEY) atau key
+    // sendiri per agent (PENGHULU_i_GEMINI_API_KEY / ASSISTANT_i_GEMINI_API_KEY).
+    // Catatan: limit Gemini dihitung PER PROJECT Google Cloud, bukan per key.
+    const geminiApiKey = env[`${prefix}_${i}_GEMINI_API_KEY`] || env.GEMINI_API_KEY || null
+    const geminiModel = env[`${prefix}_${i}_GEMINI_MODEL`] || env.GEMINI_MODEL || null
+
+    // Cukup salah satu dari Jerouter / Gemini yang ada.
+    if (!aiApiKey && !geminiApiKey) continue // gak ada API key sama sekali -> skip
 
     // Override model per-bot (opsional). Berguna buat sebar beban ke model
     // beda-beda kalau 1 model lagi lambat/kena limit di provider upstream
@@ -47,6 +56,8 @@ export function buildAgentList(env, prefix, kind, count, defaultNames) {
       threadIds,
       aiApiKey,
       aiModel,
+      geminiApiKey,
+      geminiModel,
     })
   }
   return list
