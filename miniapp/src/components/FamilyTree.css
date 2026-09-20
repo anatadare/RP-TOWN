@@ -1,0 +1,125 @@
+/* ============================================
+   POHON KELUARGA -- tambahan buat versi data asli
+   (gaya dasar .family-tree-* tetap di App.css)
+   ============================================ */
+
+/* Garis putus-putus = relasi tidak langsung / disimpulkan */
+.family-tree-card .family-tree-link.is-dashed {
+  stroke-dasharray: 4 10;
+  stroke-width: 2.5;
+  opacity: 0.75;
+}
+
+/* Hati kecil di tengah garis pasangan */
+.family-tree-card .family-heart-bg {
+  fill: rgba(27, 35, 64, 0.92);
+  stroke: rgba(255, 180, 84, 0.35);
+  stroke-width: 1.5;
+}
+
+.family-tree-card .family-heart {
+  font-size: 16px;
+  fill: var(--lantern);
+}
+
+/* Badge jumlah anggota (kiri atas) */
+.family-tree-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: rgba(20, 16, 34, 0.55);
+  backdrop-filter: blur(4px);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--paper);
+  pointer-events: none;
+}
+
+.family-tree-badge-sub {
+  font-size: 9.5px;
+  color: var(--ink-soft);
+  opacity: 0.75;
+}
+
+/* Overlay loading / error / data kosong */
+.family-tree-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.family-tree-empty {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(20, 16, 34, 0.78);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(244, 236, 216, 0.14);
+  text-align: center;
+}
+
+.family-tree-overlay-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--paper);
+}
+
+.family-tree-overlay-text {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.family-tree-overlay-text em {
+  font-style: normal;
+  color: var(--lantern-soft);
+}
+
+.family-tree-overlay-btn {
+  padding: 9px 18px;
+  border: 1px solid rgba(255, 180, 84, 0.5);
+  border-radius: 999px;
+  background: rgba(255, 180, 84, 0.14);
+  color: var(--lantern-soft);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.family-tree-overlay-btn:active {
+  transform: scale(0.97);
+}
+
+/* Tombol muat ulang berputar pas lagi refresh */
+.family-tree-zoom-controls .map-zoom-btn.is-spinning {
+  animation: family-tree-spin 0.9s linear infinite;
+}
+
+@keyframes family-tree-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
