@@ -106,49 +106,78 @@ async function sendPersonaMessage(ctx, text, extra = {}) {
   }
 }
 
-// Status SEMUA ruang Penghulu (kosong/sibuk + lagi ngurus apa + threadId buat
-// bikin link), dihitung dari wedding_sessions -- baris di tabel itu dihapus
-// begitu sesi beneran selesai, jadi "ada baris aktif" == ruangannya SIBUK.
-// Dipakai Pegawai (Naya dkk) buat ngarahin warga ke ruang yang kosong.
+// Status SEMUA RUANG KUA (1 ruang = 1 topic/thread di grup KUA), dihitung dari
+// config Penghulu + tabel wedding_sessions.
+//
+// 1 Penghulu bisa pegang LEBIH DARI 1 ruang (isi PENGHULU_i_THREAD_IDS dengan
+// beberapa ID dipisah koma) -- tiap thread dihitung sebagai 1 ruang sendiri.
+// Penghulu tanpa THREAD_IDS dihitung 1 ruang (tanpa link).
+//
+// Status sibuk/kosong dibaca dari wedding_sessions: baris DIHAPUS begitu sesi
+// beneran selesai (releaseWeddingSession), jadi "ada baris aktif" == SIBUK.
+// Inilah cara Penghulu "ngabarin" Pegawai di belakang layar: begitu Penghulu
+// selesai & melepas sesi, ruangnya langsung kebaca KOSONG di query berikutnya
+// -- gak perlu kirim pesan antar-bot (lagian bot gak bisa baca pesan bot lain
+// di grup Telegram).
+//
+// Tiap item: { key, name, number, threadId, busy, sessionType, penghuluBusyCount }
+//   number            = urutan ruang (1..N) menurut urutan Penghulu lalu urutan THREAD_IDS
+//   penghuluBusyCount = jumlah ruang yang lagi dipegang Penghulu itu (0 = nganggur total)
 export async function getPenghuluRoomStatuses(supabaseAdmin, penghuluAgents, chatId) {
   const { data, error } = await supabaseAdmin
     .from('wedding_sessions')
-    .select('agent_key, session_type, stage')
+    .select('agent_key, thread_id, session_type, stage')
     .eq('chat_id', chatId)
-    .neq('stage', 'selesai')
 
   if (error) throw error
-  const sessionByKey = new Map((data || []).map((r) => [r.agent_key, r]))
 
-  return penghuluAgents.map((p, i) => {
-    const session = sessionByKey.get(p.key)
-    return {
-      key: p.key,
-      name: p.name,
-      // 'penghulu-3' -> ruang nomor 3 (sama kayak nomor PENGHULU_3_* di env)
-      number: Number(String(p.key).split('-')[1]) || i + 1,
-      threadId: p.threadIds ? p.threadIds[0] : null,
-      busy: Boolean(session),
-      sessionType: session ? session.session_type || 'marriage' : null,
+  // Difilter di JS (bukan .neq di query) biar baris dengan stage NULL tetap
+  // dianggap aktif.
+  const active = (data || []).filter((r) => r.stage !== 'selesai')
+  const sessionByThread = new Map(active.map((r) => [String(r.thread_id), r]))
+  const busyCountByAgent = new Map()
+  for (const r of active) busyCountByAgent.set(r.agent_key, (busyCountByAgent.get(r.agent_key) || 0) + 1)
+
+  const rooms = []
+  for (const p of penghuluAgents) {
+    const threadIds = p.threadIds && p.threadIds.length > 0 ? p.threadIds : [null]
+    for (const threadId of threadIds) {
+      const session =
+        threadId != null
+          ? sessionByThread.get(String(threadId))
+          : active.find((r) => r.agent_key === p.key)
+      rooms.push({
+        key: p.key,
+        name: p.name,
+        threadId,
+        busy: Boolean(session),
+        sessionType: session ? session.session_type || 'marriage' : null,
+        penghuluBusyCount: busyCountByAgent.get(p.key) || 0,
+      })
     }
+  }
+  rooms.forEach((room, i) => {
+    room.number = i + 1
+  })
+  return rooms
+}
+
+// Urutan rekomendasi: ruang KOSONG dulu; di antara yang kosong, ruang milik
+// Penghulu yang paling nganggur (0 ruang lain dipegang) didahulukan; sisanya
+// urut nomor ruang. Ruang SIBUK ditaruh paling bawah.
+function sortRoomsForRecommendation(rooms) {
+  return [...rooms].sort((a, b) => {
+    if (a.busy !== b.busy) return a.busy ? 1 : -1
+    if (!a.busy && a.penghuluBusyCount !== b.penghuluBusyCount) return a.penghuluBusyCount - b.penghuluBusyCount
+    return a.number - b.number
   })
 }
 
-// Versi ringkas dari getPenghuluRoomStatuses (cuma yang KOSONG) -- ikut balikin threadId biar
-// bisa dipakai bikin deep-link langsung ke ruangan yang kosong (lihat
-// handleBusyRoomIntent). `threadId` bisa `null` kalau agent itu dikonfig
-// tanpa THREAD_IDS spesifik (jarang -- biasanya 1 Penghulu = 1 thread).
-async function getIdlePenghuluRooms(supabaseAdmin, penghuluAgents) {
-  const { data, error } = await supabaseAdmin
-    .from('wedding_sessions')
-    .select('agent_key')
-    .neq('stage', 'selesai')
-
-  if (error) throw error
-  const busyKeys = new Set((data || []).map((r) => r.agent_key))
-  return penghuluAgents
-    .filter((p) => !busyKeys.has(p.key))
-    .map((p) => ({ key: p.key, name: p.name, threadId: p.threadIds ? p.threadIds[0] : null }))
+// Ruang KOSONG saja (sudah urut rekomendasi) -- dipakai handleBusyRoomIntent
+// buat ngarahin warga yang nyelonong ke ruang yang lagi dipakai.
+async function getIdlePenghuluRooms(supabaseAdmin, penghuluAgents, chatId) {
+  const statuses = await getPenghuluRoomStatuses(supabaseAdmin, penghuluAgents, chatId)
+  return sortRoomsForRecommendation(statuses.filter((r) => !r.busy))
 }
 
 // ------------------------------------------------------------------
@@ -166,19 +195,21 @@ async function handleBusyRoomIntent(supabaseAdmin, agent, ctx, text, threadId, {
 
   let idleRooms = []
   try {
-    idleRooms = await getIdlePenghuluRooms(supabaseAdmin, penghuluAgents)
+    idleRooms = await getIdlePenghuluRooms(supabaseAdmin, penghuluAgents, chatId)
   } catch (err) {
     console.error(`[${agent.key}] gagal ambil daftar ruang KUA kosong:`, err)
   }
 
-  const idleElsewhere = idleRooms.filter((r) => r.key !== agent.key && r.threadId != null)
+  // Ruang lain yang kosong (thread beda dari yang lagi dipakai ini) -- boleh
+  // ruang milik Penghulu yang sama kalau dia pegang lebih dari 1 ruang.
+  const idleElsewhere = idleRooms.filter((r) => r.threadId != null && String(r.threadId) !== String(threadId))
 
   if (idleElsewhere.length > 0) {
     const room = idleElsewhere[0]
     const link = buildRoomLink(env, chatId, room.threadId)
     await sendPersonaMessage(
       ctx,
-      `_menunjuk ke arah pintu sebelah_\n\nMaaf ya, ruangan saya lagi dipakai warga lain. Tapi ruang KUA-nya ${room.name} lagi kosong nih, langsung ke sana aja ya: ${link}`,
+      `_menunjuk ke arah pintu sebelah_\n\nMaaf ya, ruangan saya lagi dipakai warga lain. Tapi Ruang ${room.number} (Penghulu ${room.name}) lagi kosong nih, langsung ke sana aja ya: ${link}`,
       { message_thread_id: threadId }
     )
     return
@@ -280,30 +311,43 @@ async function finishSessionAndFreeSlot(supabaseAdmin, env, agent, chatId, threa
   }
 }
 
-// Teks konteks buat Pegawai: tiap ruang Penghulu lengkap dgn nomor, status,
-// kegiatan (kalau sibuk), dan link langsung ke ruangannya. AI cuma boleh
-// MEMBUNGKUS data ini jadi kalimat, bukan mengarang nomor/link sendiri.
+// Teks konteks buat Pegawai: tiap RUANG KUA lengkap dgn nomor, nama Penghulu,
+// status, kegiatan (kalau sibuk), dan link langsung ke ruangannya. AI cuma
+// boleh MEMBUNGKUS data ini jadi kalimat, bukan mengarang nomor/link sendiri.
+// Urutan sudah diatur buat rekomendasi (lihat sortRoomsForRecommendation):
+// paling atas = ruang kosong milik Penghulu yang paling nganggur.
 export function formatPenghuluStatusContext(statuses, env, chatId) {
   if (!statuses || statuses.length === 0) return null
 
   const activityLabel = (type) =>
     type === 'family' ? 'lagi memandu pendaftaran silsilah keluarga' : 'lagi memandu prosesi nikah'
 
-  const lines = statuses.map((s) => {
+  const lines = sortRoomsForRecommendation(statuses).map((s) => {
     const link = s.threadId != null ? buildRoomLink(env, chatId, s.threadId) : null
     const linkPart = link ? ` | link ruangan: ${link}` : ''
-    return s.busy
-      ? `- Ruang ${s.number} (Penghulu ${s.name}): SIBUK, ${activityLabel(s.sessionType)}${linkPart}`
-      : `- Ruang ${s.number} (Penghulu ${s.name}): KOSONG, bisa langsung dipanggil${linkPart}`
+    if (s.busy) {
+      return `- Ruang ${s.number} (Penghulu ${s.name}): SIBUK, ${activityLabel(s.sessionType)}${linkPart}`
+    }
+    const penghuluNote =
+      s.penghuluBusyCount === 0
+        ? 'Penghulu-nya lagi nganggur total'
+        : `Penghulu-nya lagi pegang ${s.penghuluBusyCount} ruang lain`
+    return `- Ruang ${s.number} (Penghulu ${s.name}): KOSONG, bisa langsung dipanggil (${penghuluNote})${linkPart}`
   })
 
   const idleCount = statuses.filter((s) => !s.busy).length
   const summary =
     idleCount > 0
-      ? `Ringkasan: ${idleCount} dari ${statuses.length} ruang Penghulu lagi KOSONG.`
-      : `Ringkasan: SEMUA ${statuses.length} ruang Penghulu lagi dipakai warga lain.`
+      ? `Ringkasan: ${idleCount} dari ${statuses.length} ruang KUA lagi KOSONG.`
+      : `Ringkasan: SEMUA ${statuses.length} ruang KUA lagi dipakai warga lain.`
 
-  return `${summary}\n${lines.join('\n')}`
+  const fullyIdleNames = [...new Set(statuses.filter((s) => s.penghuluBusyCount === 0).map((s) => s.name))]
+  const idlePenghuluLine =
+    fullyIdleNames.length > 0
+      ? `Penghulu yang lagi nganggur total (belum pegang warga sama sekali): ${fullyIdleNames.join(', ')}.`
+      : 'Semua Penghulu lagi pegang minimal 1 ruang.'
+
+  return `${summary}\n${idlePenghuluLine}\n${lines.join('\n')}`
 }
 
 async function resolveCoupleFromText(supabaseAdmin, text) {
@@ -768,13 +812,19 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   // Cuma "niat jelas" (nikah/daftar/dst) yang nutup sesi Pegawai abis
   // ngarahin -- pertanyaan status ("mana yang kosong?") gak ikut nutup.
   const directingToPenghulu = PENGHULU_INTENT_KEYWORDS.some((kw) => lower.includes(kw))
-  if (PENGHULU_STATUS_KEYWORDS.some((kw) => lower.includes(kw))) {
-    try {
-      const statuses = await getPenghuluRoomStatuses(supabaseAdmin, penghuluAgents, ctx.chat.id)
-      penghuluStatusContext = formatPenghuluStatusContext(statuses, env, ctx.chat.id)
-    } catch (err) {
-      console.error(`[${agent.key}] gagal ambil status penghulu:`, err)
-    }
+  const askingRoomStatus = PENGHULU_STATUS_KEYWORDS.some((kw) => lower.includes(kw))
+  // Status ruang KUA SELALU diambil (1 query kecil), bukan cuma kalau pesan
+  // ini kebetulan kena keyword -- dulu pertanyaan lanjutan kayak "yang lain
+  // ada?" gak kena keyword, datanya kosong, dan Pegawai malah bilang "gak bisa
+  // lihat data". Persona (pegawai.js) yang atur kapan data ini dipakai/diabaikan.
+  try {
+    const statuses = await getPenghuluRoomStatuses(supabaseAdmin, penghuluAgents, ctx.chat.id)
+    penghuluStatusContext = formatPenghuluStatusContext(statuses, env, ctx.chat.id)
+    console.log(
+      `[${agent.key}] status ruang KUA: ${statuses.filter((r) => !r.busy).length} kosong dari ${statuses.length} ruang (${penghuluAgents.length} Penghulu aktif)`
+    )
+  } catch (err) {
+    console.error(`[${agent.key}] gagal ambil status penghulu:`, err)
   }
 
   let roomStatusContext = null
@@ -790,6 +840,15 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   await pushHistory(supabaseAdmin, historyKey, 'user', text)
   const history = await getHistory(supabaseAdmin, historyKey)
 
+  // Kalau warga lagi nanya soal ruang/Penghulu, ingetin model di giliran USER
+  // (bukan cuma di system prompt yang panjang) bahwa datanya ADA -- model kecil
+  // sering "lupa" isi system prompt dan malah niru jawaban lamanya di histori
+  // ("aku gak bisa lihat data").
+  const userMessage =
+    askingRoomStatus && penghuluStatusContext
+      ? `[Sistem: data status ruang KUA terbaru sudah ada di instruksi kamu -- jawab pakai data itu, jangan bilang kamu gak bisa lihat data.]\nPesan warga: ${text}`
+      : text
+
   const { text: reply } = await runTurn({
     systemInstruction: buildPegawaiSystemInstruction(agent.name, roomStatusContext, penghuluStatusContext),
     model: agent.aiModel,
@@ -798,7 +857,7 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
     geminiApiKey: agent.geminiApiKey,
     geminiModel: agent.geminiModel,
     history,
-    userMessage: text,
+    userMessage,
   })
   await pushHistory(supabaseAdmin, historyKey, 'model', reply)
 
