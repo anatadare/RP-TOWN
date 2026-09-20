@@ -461,6 +461,8 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
       model: agent.aiModel,
       supabaseAdmin,
       apiKey: agent.aiApiKey,
+      geminiApiKey: agent.geminiApiKey,
+      geminiModel: agent.geminiModel,
       history: priorHistory,
       userMessage: text,
     })
@@ -565,6 +567,8 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
       model: agent.aiModel,
       supabaseAdmin,
       apiKey: agent.aiApiKey,
+      geminiApiKey: agent.geminiApiKey,
+      geminiModel: agent.geminiModel,
       history,
       userMessage: `[Konteks: prosesi pernikahan ${nameA} & ${nameB}, tahap saat ini: doa/setelah ijab-kabul]\nPesan tamu: ${text}`,
     })
@@ -580,6 +584,8 @@ export async function handlePenghuluMessage(supabaseAdmin, agent, ctx, text, thr
     model: agent.aiModel,
     supabaseAdmin,
     apiKey: agent.aiApiKey,
+    geminiApiKey: agent.geminiApiKey,
+    geminiModel: agent.geminiModel,
     history,
     userMessage: `[Konteks: prosesi pernikahan ${nameA || '(mempelai A)'} & ${nameB || '(mempelai B)'}, tahap saat ini: ${session.stage}]\nPesan tamu: ${text}`,
   })
@@ -705,6 +711,8 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
     model: agent.aiModel,
     supabaseAdmin,
     apiKey: agent.aiApiKey,
+    geminiApiKey: agent.geminiApiKey,
+    geminiModel: agent.geminiModel,
     history,
     userMessage:
       `[Konteks: pendaftaran silsilah keluarga — ${relatedLabel || '(target)'} didaftarkan sebagai ${relationLabel} ` +
@@ -787,6 +795,8 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
     model: agent.aiModel,
     supabaseAdmin,
     apiKey: agent.aiApiKey,
+    geminiApiKey: agent.geminiApiKey,
+    geminiModel: agent.geminiModel,
     history,
     userMessage: text,
   })
