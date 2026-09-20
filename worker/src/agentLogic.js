@@ -48,8 +48,17 @@ import { getRoomAvailabilitySummary, formatRoomAvailabilityContext } from './roo
 
 const ROOM_AVAILABILITY_KEYWORDS = ['ruang', 'room', 'kosong', 'sepi', 'kamar']
 const PENGHULU_INTENT_KEYWORDS = [
-  'nikah', 'kawin', 'daftar', 'penghulu',
+  'nikah', 'kawin', 'daftar', 'penghulu', 'pengulu',
   'mommy', 'daddy', 'kaka', 'abang', 'nenek', 'kakek', 'paman', 'tante',
+]
+// Kata kunci yang cuma perlu nyisipin DATA status ruang Penghulu ke Pegawai
+// (warga nanya "mana yang kosong/sibuk", "ruangan nomor berapa", dst) --
+// lebih luas dari PENGHULU_INTENT_KEYWORDS di atas, tapi sengaja TIDAK ikut
+// nutup sesi Pegawai (lihat `directingToPenghulu` di handlePegawaiMessage).
+const PENGHULU_STATUS_KEYWORDS = [
+  ...PENGHULU_INTENT_KEYWORDS,
+  'sibuk', 'nganggur', 'luang', 'kosong', 'ruang', 'antri', 'antre',
+  'anak', 'suami', 'istri', 'menikah', 'keluarga', 'silsilah', 'akad', 'pasangan',
 ]
 
 // Urutan prioritas pegawai (dari config.js: agent yang beneran aktif),
@@ -97,18 +106,35 @@ async function sendPersonaMessage(ctx, text, extra = {}) {
   }
 }
 
-async function getIdlePenghuluNames(supabaseAdmin, penghuluAgents) {
+// Status SEMUA ruang Penghulu (kosong/sibuk + lagi ngurus apa + threadId buat
+// bikin link), dihitung dari wedding_sessions -- baris di tabel itu dihapus
+// begitu sesi beneran selesai, jadi "ada baris aktif" == ruangannya SIBUK.
+// Dipakai Pegawai (Naya dkk) buat ngarahin warga ke ruang yang kosong.
+export async function getPenghuluRoomStatuses(supabaseAdmin, penghuluAgents, chatId) {
   const { data, error } = await supabaseAdmin
     .from('wedding_sessions')
-    .select('agent_key')
+    .select('agent_key, session_type, stage')
+    .eq('chat_id', chatId)
     .neq('stage', 'selesai')
 
   if (error) throw error
-  const busyKeys = new Set((data || []).map((r) => r.agent_key))
-  return penghuluAgents.filter((p) => !busyKeys.has(p.key)).map((p) => p.name)
+  const sessionByKey = new Map((data || []).map((r) => [r.agent_key, r]))
+
+  return penghuluAgents.map((p, i) => {
+    const session = sessionByKey.get(p.key)
+    return {
+      key: p.key,
+      name: p.name,
+      // 'penghulu-3' -> ruang nomor 3 (sama kayak nomor PENGHULU_3_* di env)
+      number: Number(String(p.key).split('-')[1]) || i + 1,
+      threadId: p.threadIds ? p.threadIds[0] : null,
+      busy: Boolean(session),
+      sessionType: session ? session.session_type || 'marriage' : null,
+    }
+  })
 }
 
-// Versi "lengkap" dari getIdlePenghuluNames -- ikut balikin threadId biar
+// Versi ringkas dari getPenghuluRoomStatuses (cuma yang KOSONG) -- ikut balikin threadId biar
 // bisa dipakai bikin deep-link langsung ke ruangan yang kosong (lihat
 // handleBusyRoomIntent). `threadId` bisa `null` kalau agent itu dikonfig
 // tanpa THREAD_IDS spesifik (jarang -- biasanya 1 Penghulu = 1 thread).
@@ -254,11 +280,30 @@ async function finishSessionAndFreeSlot(supabaseAdmin, env, agent, chatId, threa
   }
 }
 
-function formatPenghuluStatusContext(idleNames) {
-  if (idleNames.length > 0) {
-    return `Penghulu yang lagi NGANGGUR (kosong, bisa langsung dipanggil sekarang): ${idleNames.join(', ')}.`
-  }
-  return 'Semua Penghulu lagi memandu prosesi warga lain, sarankan warga coba lagi beberapa saat lagi.'
+// Teks konteks buat Pegawai: tiap ruang Penghulu lengkap dgn nomor, status,
+// kegiatan (kalau sibuk), dan link langsung ke ruangannya. AI cuma boleh
+// MEMBUNGKUS data ini jadi kalimat, bukan mengarang nomor/link sendiri.
+export function formatPenghuluStatusContext(statuses, env, chatId) {
+  if (!statuses || statuses.length === 0) return null
+
+  const activityLabel = (type) =>
+    type === 'family' ? 'lagi memandu pendaftaran silsilah keluarga' : 'lagi memandu prosesi nikah'
+
+  const lines = statuses.map((s) => {
+    const link = s.threadId != null ? buildRoomLink(env, chatId, s.threadId) : null
+    const linkPart = link ? ` | link ruangan: ${link}` : ''
+    return s.busy
+      ? `- Ruang ${s.number} (Penghulu ${s.name}): SIBUK, ${activityLabel(s.sessionType)}${linkPart}`
+      : `- Ruang ${s.number} (Penghulu ${s.name}): KOSONG, bisa langsung dipanggil${linkPart}`
+  })
+
+  const idleCount = statuses.filter((s) => !s.busy).length
+  const summary =
+    idleCount > 0
+      ? `Ringkasan: ${idleCount} dari ${statuses.length} ruang Penghulu lagi KOSONG.`
+      : `Ringkasan: SEMUA ${statuses.length} ruang Penghulu lagi dipakai warga lain.`
+
+  return `${summary}\n${lines.join('\n')}`
 }
 
 async function resolveCoupleFromText(supabaseAdmin, text) {
@@ -672,7 +717,7 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
 // ------------------------------------------------------------------
 // Pegawai (Naya, Mimi, Cika)
 // ------------------------------------------------------------------
-export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents, pegawaiPriorityKeys, pegawaiPriorityNames }) {
+export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents, pegawaiPriorityKeys, pegawaiPriorityNames, env }) {
   const lower = text.toLowerCase()
   const chatId = String(ctx.chat.id)
   const telegramUserId = ctx.from.id
@@ -712,12 +757,13 @@ export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, thre
   }
 
   let penghuluStatusContext = null
-  let directingToPenghulu = false
-  if (PENGHULU_INTENT_KEYWORDS.some((kw) => lower.includes(kw))) {
+  // Cuma "niat jelas" (nikah/daftar/dst) yang nutup sesi Pegawai abis
+  // ngarahin -- pertanyaan status ("mana yang kosong?") gak ikut nutup.
+  const directingToPenghulu = PENGHULU_INTENT_KEYWORDS.some((kw) => lower.includes(kw))
+  if (PENGHULU_STATUS_KEYWORDS.some((kw) => lower.includes(kw))) {
     try {
-      const idleNames = await getIdlePenghuluNames(supabaseAdmin, penghuluAgents)
-      penghuluStatusContext = formatPenghuluStatusContext(idleNames)
-      directingToPenghulu = true
+      const statuses = await getPenghuluRoomStatuses(supabaseAdmin, penghuluAgents, ctx.chat.id)
+      penghuluStatusContext = formatPenghuluStatusContext(statuses, env, ctx.chat.id)
     } catch (err) {
       console.error(`[${agent.key}] gagal ambil status penghulu:`, err)
     }
