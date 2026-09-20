@@ -43,4 +43,10 @@ keep_vars = true
 # - AI_MODEL = "f/qwen3.8-flash" (WAJIB pakai prefix "f/" sesuai dokumentasi
 #   Jerouter). Kalau env ini dikosongkan, aiClient.js sudah fallback ke nilai
 #   ini secara default, tapi lebih aman diisi eksplisit.
-# - GEMINI_API_KEY / GEMINI_MODEL SUDAH TIDAK DIPAKAI LAGI, boleh dihapus.
+# - GEMINI_API_KEY (OPSIONAL, pakai `wrangler secret put GEMINI_API_KEY`) --
+#   kalau diisi, Gemini API LANGSUNG ikut jadi kandidat di aiClient.js
+#   (bersaing sama model Jerouter lewat skor organik + hedged request).
+#   GEMINI_MODEL opsional, default "gemini-2.5-flash-lite" (paling kencang &
+#   limit gratisnya paling longgar). Kalau GEMINI_API_KEY kosong, perilaku
+#   sama persis kayak sebelumnya (Jerouter saja). Bisa juga per agent:
+#   PENGHULU_i_GEMINI_API_KEY / ASSISTANT_i_GEMINI_API_KEY.
