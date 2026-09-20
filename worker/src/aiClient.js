@@ -1,18 +1,22 @@
-// Klien AI buat semua NPC (Penghulu & Pegawai) -- sekarang HYBRID:
+// Klien AI buat semua NPC (Penghulu & Pegawai) -- Jerouter DULU, Gemini TERAKHIR.
 //
-// - Jerouter (gateway OpenAI-compatible, https://je.jerouter.web.id) dengan
-//   kolam banyak model, DAN
-// - Gemini API langsung (opsional -- aktif kalau GEMINI_API_KEY diisi),
-//   sebagai kandidat "jalur resmi" yang biasanya lebih stabil daripada
-//   gateway perantara.
+// URUTAN PEMAKAIAN (2 fase):
+//   FASE 1 -- Jerouter (gateway OpenAI-compatible, https://je.jerouter.web.id)
+//     dengan kolam banyak model. Semua kandidat Jerouter dicoba se-maksimal
+//     mungkin (hedged race, lihat di bawah) sebelum menyerah.
+//   FASE 2 -- Gemini API langsung (OPSIONAL, aktif kalau GEMINI_API_KEY diisi).
+//     CUMA dipakai kalau FASE 1 gagal total (semua model Jerouter error/
+//     timeout/kehabisan waktu). Gemini TIDAK ikut bersaing di fase 1.
 //
 // PILIHAN MODEL ORGANIK (lihat modelStats.js): tiap attempt (sukses/gagal)
 // dicatat ke Supabase (EWMA sukses + latency), dan tiap ada pesan baru urutan
 // kandidat dihitung dari skor itu -- model yang lagi lambat/sering gagal
-// otomatis mundur, yang kencang naik ke depan, tanpa ubah env manual.
+// otomatis mundur, yang kencang naik ke depan, tanpa ubah env manual. Model
+// yang statusnya 🔴/🟡 di daftar Jerouter SENGAJA tetap ada di kolam: kalau
+// lagi mati dia gagal cepat lalu turun peringkat, kalau sudah pulih dia naik
+// sendiri -- gak perlu ubah kode tiap status berubah.
 //
-// CARA NGEJAR KECEPATAN (beda dari versi sebelumnya): HEDGED REQUEST, bukan
-// race 5 model sekaligus.
+// CARA NGEJAR KECEPATAN: HEDGED REQUEST, bukan race banyak model sekaligus.
 //   1. Kirim ke model peringkat #1 SAJA.
 //   2. Kalau belum balas dalam `hedgeDelayMs` (adaptif: ~1.6x latency biasa
 //      model itu, dibatasi 1.8-4 detik) -> luncurkan model #2 TANPA
@@ -22,11 +26,6 @@
 //   4. Yang balas sukses PERTAMA menang; sisanya di-abort (koneksi langsung
 //      dilepas). Model yang kelamaan (>= hedgeDelay) dan kalah dicatat
 //      sebagai "terlalu lambat" biar turun peringkat.
-// Hasilnya: kondisi normal cuma 1 request per pesan (bukan 5), jadi jauh
-// lebih ringan buat gateway (aman dari rate limit / ToS "beban berlebih")
-// dan gak ngabisin jatah 6 koneksi keluar per request di Workers, tapi kalau
-// model utama lagi nge-lag, pengganti sudah jalan di detik ke-2 -- bukan
-// nunggu timeout penuh baru pindah model.
 //
 // TETAP TIDAK ADA health-check terjadwal ke Jerouter (ToS mereka melarang
 // traffic anomali) -- semua data skor berasal dari request nyata.
@@ -37,22 +36,28 @@ const JEROUTER_BASE_URL = 'https://je.jerouter.web.id/v1'
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 // Nama kandidat Gemini langsung dibedain dari model Jerouter (yang juga ada
-// "gemini-3.7-flash" dst lewat gateway) pakai prefix ini. Prefix ikut
-// tersimpan di ai_model_stats sebagai nama model -- gak perlu migration.
+// "gemini-3.6-flash" lewat gateway) pakai prefix ini. Prefix ikut tersimpan
+// di ai_model_stats sebagai nama model (buat mantau seberapa sering Gemini
+// kepakai) -- gak perlu migration.
 export const GEMINI_DIRECT_PREFIX = 'gemini-direct/'
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite' // paling kencang & limit gratisnya paling longgar
-const GEMINI_MAX_OUTPUT_TOKENS = 800
-// Bonus skor kecil buat jalur resmi (Gemini langsung) -- kalau dia sering
-// gagal/429/lambat, skor EWMA-nya sendiri yang bakal ngalahin bonus ini.
-const GEMINI_DIRECT_SCORE_BONUS = 0.2
 
-// Kolam kandidat Jerouter -- DIPILIH tangan (bukan semua model di daftar
-// status Jerouter), khusus yang enak buat roleplay chat BAHASA INDONESIA.
-// Disusun dari daftar status Jerouter tanggal 20 Sep 2026. Yang dibuang:
-//   - 🔴 offline / 🟡 lambat-tidak stabil (nanti dimasukin lagi kalau sudah 🟢)
+// Rantai Gemini (urutan dicoba). Kalau env GEMINI_MODEL diisi, dia jadi yang
+// pertama, sisanya tetap jadi cadangan. gemini-2.5-flash-lite dijadwalkan
+// dimatikan Google (Okt 2026), makanya yang 3.1 di depan -- tapi 2.5 tetap
+// ditaruh di belakang buat jaga-jaga selama dia masih hidup / kalau ada nama
+// model yang salah (error 404 langsung pindah ke berikutnya).
+const DEFAULT_GEMINI_MODELS = ['gemini-3.1-flash-lite', 'gemini-2.5-flash-lite']
+const GEMINI_MAX_OUTPUT_TOKENS = 1024
+
+// Kolam kandidat Jerouter -- DIPILIH tangan, khusus yang enak buat roleplay
+// chat BAHASA INDONESIA. Disusun dari daftar status Jerouter tanggal 20 Sep
+// 2026. Model 🔴 offline / 🟡 lambat SENGAJA ikut (bisa pulih sendiri, lihat
+// catatan di atas). Yang dibuang:
 //   - model coding (north-mini-code), model kecil banget (lfm-2.5-2.6b,
-//     nemotron-3-nano-omni, laguna-*), model vision (ling-3.0-flash-vl),
-//     model khusus kesehatan (ling-3.0-flash-sante)
+//     nemotron-3-nano-omni, laguna-xs-2.1, laguna-s-2.1), model vision
+//     (ling-3.0-flash-vl), model khusus kesehatan (ling-3.0-flash-sante)
+//   - model agent/coding (nex-n2.5-pro, nex-n2.5-mini) & model pencarian
+//     (sonar -- jawabannya gaya search engine, bukan roleplay)
 //   - "free" (alias gak jelas, bisa nge-route ke model apa aja)
 //
 // Skor organik (modelStats.js) cuma ngukur KECEPATAN & KEBERHASILAN, gak
@@ -62,9 +67,18 @@ const GEMINI_DIRECT_SCORE_BONUS = 0.2
 // hasil tes langsung -- ubah aja kalau di lapangan ada yang ternyata jelek/
 // bagus). Tier A ~ selisih 1,5 detik latency, tier B ~ 0,7 detik.
 const MODEL_TIERS = {
-  A: ['gpt-5.6-luna', 'grok-4.6', 'qwen3.8-27b', 'deepseek-v4-flash', 'muse-spark-1.3-contributor'],
-  B: ['step-3.7-flash', 'glm-5.2', 'mimo-v2.5', 'hy4-preview', 'hy3', 'ling-3.0-flash', 'big-pickle'],
-  C: ['nemotron-3-super', 'nemotron-3.5', 'dots-3-note-preview'], // cadangan terakhir
+  A: [
+    'gpt-5.6-luna', 'grok-4.6', 'qwen3.8-27b', 'deepseek-v4-flash', 'muse-spark-1.3-contributor',
+    'gemini-3.6-flash', 'glm-5.3', 'deepseek-v4.1-flash', // 🔴 pas daftar dibuat
+  ],
+  B: [
+    'step-3.7-flash', 'glm-5.2', 'mimo-v2.5', 'hy4-preview', 'hy3', 'ling-3.0-flash', 'big-pickle',
+    'glm-5.3-flash', 'gemma4', 'deepseek-v4-flash-0731', // 🔴 pas daftar dibuat
+  ],
+  C: [
+    'nemotron-3-super', 'nemotron-3.5', 'dots-3-note-preview', // cadangan
+    'nemotron-3.5-lightning', 'mistral-nemotron', // 🟡/🔴 pas daftar dibuat
+  ],
 }
 const TIER_BONUS = { A: 0.15, B: 0.07, C: 0 }
 
@@ -74,20 +88,26 @@ for (const [tier, names] of Object.entries(MODEL_TIERS)) {
 }
 const JEROUTER_POOL = Object.keys(QUALITY_BONUS)
 
-// ---- Tuning hedging ----
+// ---- Tuning hedging (fase 1: Jerouter) ----
 const HEDGE_DELAY_MIN_MS = 1800
 const HEDGE_DELAY_MAX_MS = 4000
 const HEDGE_LATENCY_MULTIPLIER = 1.6
 const DEFAULT_TYPICAL_LATENCY_MS = 2500
 const MAX_CONCURRENT_ATTEMPTS = 3 // aman di bawah batas 6 koneksi keluar Workers
-const MAX_TOTAL_ATTEMPTS = 8
+const MAX_TOTAL_ATTEMPTS = 12 // naik dari 8: kolam sekarang lebih besar & model 🔴 gagalnya cepat
 const ATTEMPT_TIMEOUT_MS = 9000
-// Total waktu buat SEMUA percobaan -- nyesuain ke timeoutMilliseconds di
-// webhookCallback (index.js, 20000ms), sisanya buat fetch history dll.
-const TOTAL_TIME_BUDGET_MS = 15000
+const JEROUTER_BUDGET_MS = 11000
 
-// Model yang barusan kena 429/5xx dikistirahatkan sebentar (per isolate),
-// biar gak dihajar terus pas lagi rate limited.
+// ---- Tuning fase 2 (Gemini, pilihan terakhir) ----
+// Total fase 1 + fase 2 = 16 detik, masih di bawah timeoutMilliseconds
+// webhookCallback (index.js, 20000ms) -- sisanya buat fetch history dll.
+const GEMINI_HEDGE_DELAY_MS = 2500
+const GEMINI_ATTEMPT_TIMEOUT_MS = 4500
+const GEMINI_BUDGET_MS = 5000
+
+// Model yang barusan GAGAL (429/5xx/timeout/offline/teks kosong) dikistirahatkan
+// sebentar (per isolate), biar gak dihajar terus & gak jadi pilihan #1 lagi
+// di pesan berikutnya.
 const COOLDOWN_MS = 45000
 const cooldownUntil = new Map()
 
@@ -171,6 +191,8 @@ async function callGeminiDirect(modelWithPrefix, messages, apiKey, signal) {
   const generationConfig = { maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS }
   // Seri 2.5 Flash "mikir" dulu secara default -- itu yang bikin lambat buat
   // chat roleplay pendek. Budget 0 = matiin thinking (didukung Flash & Flash-Lite).
+  // (Seri 3.x sengaja gak diutak-atik: parameter thinking-nya beda, dan
+  // salah kirim malah bikin request ditolak.)
   if (/gemini-2\.5-flash/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 }
 
   const res = await fetch(`${GEMINI_API_BASE}/${model}:generateContent`, {
@@ -202,7 +224,8 @@ async function callGeminiDirect(modelWithPrefix, messages, apiKey, signal) {
 // Hedged race (dipisah & di-export biar gampang dites)
 // ------------------------------------------------------------------
 // `attempt(model, signal)` -> Promise<string> (teks balasan).
-// `onOutcome(model, success, latencyMs)` dipanggil buat pencatatan skor.
+// `onOutcome(model, success, latencyMs, err?)` dipanggil buat pencatatan skor.
+// `err` cuma ada kalau modelnya BENERAN gagal (bukan sekadar kalah race).
 export function hedgedRace({
   candidates,
   attempt,
@@ -211,7 +234,7 @@ export function hedgedRace({
   maxConcurrent = MAX_CONCURRENT_ATTEMPTS,
   maxAttempts = MAX_TOTAL_ATTEMPTS,
   attemptTimeoutMs = ATTEMPT_TIMEOUT_MS,
-  budgetMs = TOTAL_TIME_BUDGET_MS,
+  budgetMs = JEROUTER_BUDGET_MS,
 }) {
   return new Promise((resolve, reject) => {
     const running = new Map() // model -> { controller, startedAt }
@@ -315,8 +338,8 @@ export async function runTurn({
   history = [],
   userMessage,
   apiKey, // key Jerouter
-  geminiApiKey, // opsional -- kalau diisi, Gemini langsung ikut jadi kandidat
-  geminiModel, // opsional -- default gemini-2.5-flash-lite
+  geminiApiKey, // opsional -- kalau diisi, jadi PILIHAN TERAKHIR kalau semua Jerouter gagal
+  geminiModel, // opsional -- model Gemini yang dicoba paling dulu di fase 2
   supabaseAdmin, // opsional -- tanpa ini pencatatan+ranking dilewati
 }) {
   if (!apiKey && !geminiApiKey) throw new Error('AI_API_KEY (Jerouter) atau GEMINI_API_KEY belum dikonfigurasi')
@@ -327,41 +350,68 @@ export async function runTurn({
     { role: 'user', content: userMessage },
   ]
 
-  const geminiCandidate = geminiApiKey ? `${GEMINI_DIRECT_PREFIX}${geminiModel || DEFAULT_GEMINI_MODEL}` : null
   // `model` (agent.aiModel dari env AI_MODEL) SENGAJA gak dipakai lagi buat
   // nambah kandidat: env lama sering nunjuk model yang sudah dihapus dari
   // Jerouter (contoh: qwen3.8-flash) dan bikin tiap pesan mulai dari error.
-  // Kolam sekarang murni dari JEROUTER_POOL di atas (+ Gemini langsung).
+  // Kolam sekarang murni dari JEROUTER_POOL di atas.
   void model
-  const pool = dedupe([
-    ...(geminiCandidate ? [geminiCandidate] : []),
-    ...(apiKey ? JEROUTER_POOL : []),
-  ])
 
-  const bonus = { ...QUALITY_BONUS, ...(geminiCandidate ? { [geminiCandidate]: GEMINI_DIRECT_SCORE_BONUS } : {}) }
-  const ranked = supabaseAdmin ? await rankModelsByStats(supabaseAdmin, pool, { bonus }) : pool
-  const usable = ranked.filter((m) => !isCoolingDown(m))
-  const candidates = usable.length > 0 ? usable : ranked
+  const onOutcome = (candidateModel, success, latencyMs, err) => {
+    if (!success && err) cooldownUntil.set(candidateModel, Date.now() + COOLDOWN_MS)
+    // Fire-and-forget: pencatatan skor gak boleh nambah latency balasan.
+    if (supabaseAdmin) void recordModelAttempt(supabaseAdmin, candidateModel, success, latencyMs)
+  }
 
-  const typicalLatency = getCachedLatencyMs(candidates[0]) ?? DEFAULT_TYPICAL_LATENCY_MS
-  const hedgeDelayMs = clamp(typicalLatency * HEDGE_LATENCY_MULTIPLIER, HEDGE_DELAY_MIN_MS, HEDGE_DELAY_MAX_MS)
+  // ---------------- FASE 1: Jerouter ----------------
+  let jerouterError = null
+  if (apiKey) {
+    try {
+      const ranked = supabaseAdmin
+        ? await rankModelsByStats(supabaseAdmin, JEROUTER_POOL, { bonus: QUALITY_BONUS })
+        : JEROUTER_POOL
+      const usable = ranked.filter((m) => !isCoolingDown(m))
+      const candidates = usable.length > 0 ? usable : ranked
 
-  const result = await hedgedRace({
-    candidates,
-    hedgeDelayMs,
-    attempt: (candidateModel, signal) =>
-      candidateModel.startsWith(GEMINI_DIRECT_PREFIX)
-        ? callGeminiDirect(candidateModel, messages, geminiApiKey, signal)
-        : callJerouter(candidateModel, messages, apiKey, signal),
-    onOutcome: (candidateModel, success, latencyMs, err) => {
-      if (!success && (err?.status === 429 || err?.status >= 500)) {
-        cooldownUntil.set(candidateModel, Date.now() + COOLDOWN_MS)
-      }
-      // Fire-and-forget: pencatatan skor gak boleh nambah latency balasan.
-      if (supabaseAdmin) void recordModelAttempt(supabaseAdmin, candidateModel, success, latencyMs)
-    },
-  })
+      const typicalLatency = getCachedLatencyMs(candidates[0]) ?? DEFAULT_TYPICAL_LATENCY_MS
+      const hedgeDelayMs = clamp(typicalLatency * HEDGE_LATENCY_MULTIPLIER, HEDGE_DELAY_MIN_MS, HEDGE_DELAY_MAX_MS)
 
-  console.log(`[aiClient] ${result.modelUsed} menang (hedge ${Math.round(hedgeDelayMs)}ms)`)
-  return result
+      const result = await hedgedRace({
+        candidates,
+        hedgeDelayMs,
+        attempt: (candidateModel, signal) => callJerouter(candidateModel, messages, apiKey, signal),
+        onOutcome,
+      })
+
+      console.log(`[aiClient] ${result.modelUsed} menang (hedge ${Math.round(hedgeDelayMs)}ms)`)
+      return result
+    } catch (err) {
+      jerouterError = err
+      if (!geminiApiKey) throw err
+      console.warn(`[aiClient] semua Jerouter gagal, pindah ke Gemini (pilihan terakhir): ${err?.message || err}`)
+    }
+  }
+
+  // ---------------- FASE 2: Gemini (pilihan terakhir) ----------------
+  const geminiChain = dedupe([...(geminiModel ? [geminiModel] : []), ...DEFAULT_GEMINI_MODELS]).map(
+    (m) => `${GEMINI_DIRECT_PREFIX}${m}`
+  )
+
+  try {
+    const result = await hedgedRace({
+      candidates: geminiChain,
+      hedgeDelayMs: GEMINI_HEDGE_DELAY_MS,
+      maxConcurrent: 2,
+      maxAttempts: geminiChain.length,
+      attemptTimeoutMs: GEMINI_ATTEMPT_TIMEOUT_MS,
+      budgetMs: GEMINI_BUDGET_MS,
+      attempt: (candidateModel, signal) => callGeminiDirect(candidateModel, messages, geminiApiKey, signal),
+      onOutcome,
+    })
+    console.log(`[aiClient] ${result.modelUsed} menang (pilihan terakhir, Jerouter gagal semua)`)
+    return result
+  } catch (geminiErr) {
+    throw new Error(
+      `Jerouter & Gemini sama-sama gagal. Jerouter: ${jerouterError?.message || '(gak dipakai)'} | Gemini: ${geminiErr.message}`
+    )
+  }
 }
