@@ -176,7 +176,8 @@ const FAMILY_SCRIPTED_LINES = {
 
   selesai: (subject, related, relationLabel) =>
     `✅ _mengetok palu digital dan menutup berkas_\n\n` +
-    `Tercatat resmi! *${related}* kini menjadi *${relationLabel}* dari *${subject}* di silsilah keluarga RP Town. Selamat! 🎉`,
+    `Tercatat resmi! *${related}* kini menjadi *${relationLabel}* dari *${subject}* di silsilah keluarga RP Town. Selamat! 🎉\n\n` +
+    `Pohon keluarganya bisa dilihat di Mini App RP Town: Profil → Keluarga.`,
 
   // Ditanyakan tiap kali 1 relasi berhasil dicatat — 1 warga boleh
   // daftarin lebih dari 1 anggota keluarga dalam 1x kunjungan (masih
