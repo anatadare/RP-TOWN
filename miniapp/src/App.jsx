@@ -8,6 +8,7 @@ import HousingDistrict from './components/HousingDistrict'
 import BuildingSearch from './components/BuildingSearch'
 import CharacterSelect from './components/CharacterSelect'
 import Landing from './components/Landing'
+import FamilyTree from './components/FamilyTree'
 import { MAPS, DEFAULT_MAP_KEY, getMapByKey } from './lib/maps'
 import { buildBuildingDirectory } from './lib/buildings'
 
@@ -126,6 +127,18 @@ function EditIcon() {
   )
 }
 
+function FamilyIcon() {
+  return (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
+      <circle cx="8" cy="6" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="16" cy="6" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="12" cy="15.5" r="2.8" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M8 8.6V11M16 8.6V11M8 11h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M12 18.3V21" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function GearIcon() {
   return (
     <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
@@ -165,6 +178,7 @@ export default function App() {
   const [housingRoom, setHousingRoom] = useState(null)
   const [adminMode] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showFamily, setShowFamily] = useState(false)
   const [ownedHouse, setOwnedHouse] = useState(null)
   const [houseLoading, setHouseLoading] = useState(false)
   const [profileToast, setProfileToast] = useState(null)
@@ -323,6 +337,21 @@ export default function App() {
     setTimeout(() => setProfileToast(null), 2000)
   }
 
+  // Tab "Pengaturan" & "Keluarga" saling eksklusif -- gak masuk akal
+  // nampilin dua-duanya bareng di bawah tombol aksi, jadi buka salah satu
+  // otomatis nutup yang lain.
+  function handleToggleSettings() {
+    hapticSelect()
+    setShowFamily(false)
+    setShowSettings((v) => !v)
+  }
+
+  function handleToggleFamily() {
+    hapticSelect()
+    setShowSettings(false)
+    setShowFamily((v) => !v)
+  }
+
   // Dipanggil dari CharacterSelect abis warga milih karakter. Nyimpen ke
   // Supabase (bukan cuma state lokal) supaya layar ini beneran cuma muncul
   // SEKALI -- lain kali buka mini app, citizen.character_id sudah keisi.
@@ -459,18 +488,23 @@ export default function App() {
               </div>
 
               {/* ==== Tombol aksi ==== */}
-              <div className="profile-actions">
+              <div className="profile-actions profile-actions-3">
                 <button type="button" className="profile-action-btn" onClick={() => showComingSoon('Edit Info')}>
                   <EditIcon />
                   <span>Edit Info</span>
                 </button>
                 <button
                   type="button"
+                  className={`profile-action-btn${showFamily ? ' is-active' : ''}`}
+                  onClick={handleToggleFamily}
+                >
+                  <FamilyIcon />
+                  <span>Keluarga</span>
+                </button>
+                <button
+                  type="button"
                   className={`profile-action-btn${showSettings ? ' is-active' : ''}`}
-                  onClick={() => {
-                    hapticSelect()
-                    setShowSettings((v) => !v)
-                  }}
+                  onClick={handleToggleSettings}
                 >
                   <GearIcon />
                   <span>Pengaturan</span>
@@ -483,54 +517,66 @@ export default function App() {
                 <p className="profile-settings-empty">Belum ada pengaturan tersedia saat ini.</p>
               )}
 
-              {/* ==== Rumah ==== */}
-              <div className="profile-section">
-                <div className="profile-section-title-row">
-                  <span className="profile-section-title">Rumah</span>
-                </div>
-
-                {houseLoading ? (
-                  <div className="profile-house-card profile-house-empty">
-                    <p className="profile-house-empty-text">Memuat data rumah...</p>
+              {showFamily ? (
+                /* ==== Pohon Keluarga (gantiin Rumah + Info selama tab ini aktif) ==== */
+                <div className="profile-section">
+                  <div className="profile-section-title-row">
+                    <span className="profile-section-title">Pohon Keluarga</span>
                   </div>
-                ) : ownedHouse ? (
-                  <button type="button" className="profile-house-card" onClick={handleOpenHouseChat}>
-                    <div className="profile-house-icon"><HouseIcon /></div>
-                    <div className="profile-house-info">
-                      <p className="profile-house-name">
-                        {ownedHouse.district?.name || 'Rumah'} — Petak No. {ownedHouse.plot_number}
-                      </p>
-                      <p className="profile-house-sub">Ketuk untuk buka chat rumah</p>
+                  <FamilyTree citizen={citizen} />
+                </div>
+              ) : (
+                <>
+                  {/* ==== Rumah ==== */}
+                  <div className="profile-section">
+                    <div className="profile-section-title-row">
+                      <span className="profile-section-title">Rumah</span>
                     </div>
-                    <span className="profile-house-arrow">›</span>
-                  </button>
-                ) : (
-                  <div className="profile-house-card profile-house-empty">
-                    <p className="profile-house-empty-text">Kamu belum menyewa rumah.</p>
-                    <button type="button" className="profile-house-cta" onClick={handleGoRentHouse}>
-                      🏘️ Sewa rumah di Perumahan
-                    </button>
-                  </div>
-                )}
-              </div>
 
-              {/* ==== Info: Status & Bio ==== */}
-              <div className="profile-info-card">
-                <div className="profile-info-row">
-                  <p className="profile-info-value">{STATUS_LABELS[citizen.status] || 'Single'}</p>
-                  <p className="profile-info-label">Status</p>
-                </div>
-                <div className="profile-info-row">
-                  <p className="profile-info-value">{citizen.bio || 'Belum ada bio'}</p>
-                  <p className="profile-info-label">Bio</p>
-                </div>
-                {citizen.username && (
-                  <div className="profile-info-row">
-                    <p className="profile-info-value">@{citizen.username}</p>
-                    <p className="profile-info-label">Username</p>
+                    {houseLoading ? (
+                      <div className="profile-house-card profile-house-empty">
+                        <p className="profile-house-empty-text">Memuat data rumah...</p>
+                      </div>
+                    ) : ownedHouse ? (
+                      <button type="button" className="profile-house-card" onClick={handleOpenHouseChat}>
+                        <div className="profile-house-icon"><HouseIcon /></div>
+                        <div className="profile-house-info">
+                          <p className="profile-house-name">
+                            {ownedHouse.district?.name || 'Rumah'} — Petak No. {ownedHouse.plot_number}
+                          </p>
+                          <p className="profile-house-sub">Ketuk untuk buka chat rumah</p>
+                        </div>
+                        <span className="profile-house-arrow">›</span>
+                      </button>
+                    ) : (
+                      <div className="profile-house-card profile-house-empty">
+                        <p className="profile-house-empty-text">Kamu belum menyewa rumah.</p>
+                        <button type="button" className="profile-house-cta" onClick={handleGoRentHouse}>
+                          🏘️ Sewa rumah di Perumahan
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+
+                  {/* ==== Info: Status & Bio ==== */}
+                  <div className="profile-info-card">
+                    <div className="profile-info-row">
+                      <p className="profile-info-value">{STATUS_LABELS[citizen.status] || 'Single'}</p>
+                      <p className="profile-info-label">Status</p>
+                    </div>
+                    <div className="profile-info-row">
+                      <p className="profile-info-value">{citizen.bio || 'Belum ada bio'}</p>
+                      <p className="profile-info-label">Bio</p>
+                    </div>
+                    {citizen.username && (
+                      <div className="profile-info-row">
+                        <p className="profile-info-value">@{citizen.username}</p>
+                        <p className="profile-info-label">Username</p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <p className="state-message" style={{ position: 'static', padding: '20px 0' }}>
