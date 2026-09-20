@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch'
-import { fetchFamilyData, fetchKuaRoomUrl, buildFamilyLayout, signatureOf, LAYOUT } from '../lib/family'
+import { fetchFamilyData, buildFamilyLayout, signatureOf, LAYOUT } from '../lib/family'
+import { fetchHasKuaRoom, requestKuaInvite, kuaInviteErrorMessage } from '../lib/kua'
 import { openTelegramLink, hapticSelect } from '../lib/telegram'
 import './FamilyTree.css'
 
@@ -167,7 +168,9 @@ export default function FamilyTree({ citizen }) {
   const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
   const [errorMsg, setErrorMsg] = useState('')
   const [refreshing, setRefreshing] = useState(false)
-  const [kuaUrl, setKuaUrl] = useState(null)
+  const [hasKua, setHasKua] = useState(false)
+  const [kuaBusy, setKuaBusy] = useState(false)
+  const [kuaError, setKuaError] = useState(null)
   const signatureRef = useRef('')
 
   const load = useCallback(
@@ -207,15 +210,33 @@ export default function FamilyTree({ citizen }) {
 
   useEffect(() => {
     let cancelled = false
-    fetchKuaRoomUrl()
-      .then((url) => {
-        if (!cancelled) setKuaUrl(url)
+    fetchHasKuaRoom()
+      .then((exists) => {
+        if (!cancelled) setHasKua(exists)
       })
-      .catch((err) => console.warn('[FamilyTree] link KUA gak ketemu:', err))
+      .catch((err) => console.warn('[FamilyTree] ruang KUA gak ketemu:', err))
     return () => {
       cancelled = true
     }
   }, [])
+
+  // Link masuk KUA dibuat bot on-demand (sekali pakai, kedaluwarsa cepat,
+  // dicek kapasitasnya) -- gak ada link statis yang bisa disebar.
+  async function handleOpenKua() {
+    hapticSelect()
+    setKuaBusy(true)
+    setKuaError(null)
+    try {
+      const invite = await requestKuaInvite()
+      if (invite.ok) {
+        openTelegramLink(invite.url)
+      } else {
+        setKuaError(kuaInviteErrorMessage(invite))
+      }
+    } finally {
+      setKuaBusy(false)
+    }
+  }
 
   async function handleManualRefresh() {
     hapticSelect()
@@ -333,17 +354,22 @@ export default function FamilyTree({ citizen }) {
             <br />
             atau nikah lewat <em>“nikahin @andi dan @sari”</em>.
           </p>
-          {kuaUrl && (
-            <button
-              type="button"
-              className="family-tree-overlay-btn"
-              onClick={() => {
-                hapticSelect()
-                openTelegramLink(kuaUrl)
-              }}
-            >
-              🏛️ Buka grup KUA
-            </button>
+          {hasKua && (
+            <>
+              <button
+                type="button"
+                className="family-tree-overlay-btn"
+                onClick={handleOpenKua}
+                disabled={kuaBusy}
+              >
+                {kuaBusy ? 'Membuka pintu...' : '🏛️ Buka grup KUA'}
+              </button>
+              {kuaError && (
+                <p className="family-tree-overlay-text" style={{ color: '#ff8a8a' }}>
+                  {kuaError}
+                </p>
+              )}
+            </>
           )}
         </div>
       )}
