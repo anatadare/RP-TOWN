@@ -982,6 +982,10 @@ body {
   margin-bottom: 12px;
 }
 
+.profile-actions-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .profile-action-btn {
   display: flex;
   flex-direction: column;
@@ -1221,6 +1225,124 @@ body {
 .switch.is-on .switch-knob {
   transform: translateX(18px);
   background: #201a2e;
+}
+
+/* ============================================
+   POHON KELUARGA (tab "Keluarga" di halaman Profil)
+   ============================================ */
+.family-tree-card {
+  position: relative;
+  height: 58vh;
+  min-height: 380px;
+  max-height: 560px;
+  border-radius: 20px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(255, 180, 84, 0.08), transparent 60%),
+    linear-gradient(180deg, rgba(244, 236, 216, 0.06) 0%, rgba(244, 236, 216, 0.02) 100%);
+  border: 1px solid rgba(244, 236, 216, 0.14);
+  margin-bottom: 16px;
+}
+
+.family-tree-wrapper {
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+}
+
+.family-tree-wrapper:active {
+  cursor: grabbing;
+}
+
+.family-tree-canvas {
+  display: block;
+}
+
+/* Garis penghubung (pasangan & turunan) */
+.family-tree-link {
+  stroke: rgba(244, 236, 216, 0.35);
+  stroke-width: 3;
+  fill: none;
+  stroke-linecap: round;
+}
+
+.family-node {
+  cursor: default;
+}
+
+.family-node-shadow {
+  fill: rgba(0, 0, 0, 0.28);
+}
+
+.family-node-circle {
+  fill: var(--moss);
+  stroke: rgba(255, 180, 84, 0.3);
+  stroke-width: 2;
+}
+
+.family-node.is-you .family-node-circle,
+.family-node.is-you .family-node-ring {
+  stroke: var(--lantern);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 6px rgba(255, 180, 84, 0.55));
+}
+
+.family-node-ring {
+  fill: none;
+  stroke: rgba(255, 180, 84, 0.3);
+  stroke-width: 2;
+}
+
+.family-node-initials {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 26px;
+  fill: var(--paper);
+}
+
+.family-node-label-bg {
+  fill: rgba(27, 35, 64, 0.85);
+  stroke: rgba(244, 236, 216, 0.16);
+}
+
+.family-node-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  fill: var(--paper);
+}
+
+.family-node-role {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  fill: var(--ink-soft);
+  opacity: 0.75;
+}
+
+.family-tree-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(20, 16, 34, 0.55);
+  backdrop-filter: blur(4px);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.family-tree-zoom-controls {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .building-room-list {
