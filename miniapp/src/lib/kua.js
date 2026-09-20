@@ -15,7 +15,7 @@ const WORKER_URL = (import.meta.env.VITE_WORKER_URL || '').replace(/\/+$/, '')
 export async function requestKuaInvite() {
   const initData = typeof window !== 'undefined' ? window.Telegram?.WebApp?.initData : ''
   if (!initData) return { ok: false, reason: 'not_in_telegram' }
-  if (!WORKER_URL) return { ok: false, reason: 'not_configured' }
+  if (!WORKER_URL) return { ok: false, reason: 'no_worker_url' }
 
   try {
     const res = await fetch(`${WORKER_URL}/api/kua-invite`, {
@@ -24,8 +24,8 @@ export async function requestKuaInvite() {
       body: JSON.stringify({ initData }),
     })
     const data = await res.json().catch(() => null)
-    if (data && typeof data === 'object') return data
-    return { ok: false, reason: 'bad_response' }
+    if (data && typeof data === 'object') return { status: res.status, ...data }
+    return { ok: false, reason: 'bad_response', status: res.status }
   } catch (err) {
     console.warn('[kua] gagal minta link masuk:', err)
     return { ok: false, reason: 'network' }
@@ -42,8 +42,13 @@ export function kuaInviteErrorMessage(result) {
       return 'Sebentar ya, jangan terlalu cepat mencet tombolnya.'
     case 'unauthorized':
       return 'Sesi kamu kedaluwarsa. Tutup lalu buka lagi Mini App-nya.'
+    case 'no_worker_url':
+      return 'Mini App belum tahu alamat servernya (env VITE_WORKER_URL belum terbaca).'
+    case 'network':
+      return 'Gak bisa nyambung ke server. Cek koneksi lalu coba lagi.'
     default:
-      return 'Gagal buka pintu KUA. Coba lagi sebentar lagi.'
+      // Kode ditampilin biar gampang dilacak kalau ada yang gagal.
+      return `Gagal buka pintu KUA (kode: ${result?.reason || 'unknown'}${result?.status ? ` ${result.status}` : ''}). Coba lagi sebentar lagi.`
   }
 }
 
