@@ -1,12 +1,24 @@
 import { supabase } from './supabase'
 
-// Ambil semua petak rumah di sebuah distrik (misal room "Perumahan"),
+// Pulau yang boleh disewa. 'rp-town-city' SENGAJA tidak ada di sini
+// karena itu aset milik RP Town. (Server juga menolak lewat rent_house.)
+export const RENTABLE_ISLANDS = [
+  { key: 'kawasan-pantai', name: 'Kawasan Pantai', emoji: '🏖️' },
+  { key: 'lpm', name: 'LPM', emoji: '🌴' },
+]
+
+export function getIslandName(key) {
+  return RENTABLE_ISLANDS.find((i) => i.key === key)?.name || key
+}
+
+// Ambil semua petak rumah di sebuah distrik (room "Rumah Pulau"),
 // beserta info pemiliknya kalau sudah disewa.
 export async function getHouses(districtRoomId) {
   const { data, error } = await supabase
     .from('houses')
     .select('*, owner:citizens(id, display_name, avatar_url)')
     .eq('district_room_id', districtRoomId)
+    .in('map_key', RENTABLE_ISLANDS.map((i) => i.key))
     .order('plot_number', { ascending: true })
 
   if (error) throw error
