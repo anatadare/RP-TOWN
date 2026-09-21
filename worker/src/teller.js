@@ -152,6 +152,7 @@ export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threa
   while (history.length && history[0].role !== 'user') history.shift()
 
   const { min, max } = limits(env)
+  let invoiceSent = false // true kalau QR/link setor sudah terkirim di giliran ini
 
   async function onFunctionCall(name, args) {
     switch (name) {
@@ -176,6 +177,7 @@ export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threa
 
         if (active) {
           await sendInvoiceToChat(agent, { chatId, threadId, deposit: active })
+          invoiceSent = true
           return {
             ok: true,
             reused_existing_invoice: true,
@@ -215,6 +217,7 @@ export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threa
         }
 
         const { qrSent } = await sendInvoiceToChat(agent, { chatId, threadId, deposit })
+        invoiceSent = true
         return {
           ok: true,
           amount_idr: deposit.amount_idr,
@@ -278,7 +281,11 @@ export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threa
   })
 
   await pushHistory(supabaseAdmin, historyKey, 'user', userText)
-  const finalReply = reply || 'Siap, sudah aku proses ya 🙌'
+  const finalReply =
+    reply ||
+    (invoiceSent
+      ? 'Tagihannya sudah aku kirim di atas ya, tinggal scan QRIS-nya 🙌 Saldo masuk otomatis setelah bayar.'
+      : 'Siap, sudah aku proses ya 🙌')
   await pushHistory(supabaseAdmin, historyKey, 'model', finalReply)
 
   await ctx.reply(finalReply, replyExtra)
