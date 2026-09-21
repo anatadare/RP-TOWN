@@ -1,4 +1,4 @@
-// Persona "Pegawai" — 3 NPC (Mimi, Naya, Cika) yang bantu jawab pertanyaan
+// Persona "Pegawai" — 1 NPC (Naya) yang bantu jawab pertanyaan
 // member seputar RP Town, terutama soal cara manggil Penghulu (nikah &
 // ekspansi silsilah keluarga) dan rekomendasi ruangan yang lagi kosong.
 //
@@ -11,12 +11,8 @@
 // AI nggak pernah disuruh "mengarang" status ruangan sendiri.
 
 const PEGAWAI_TRAITS = {
-  Mimi:
-    'Kamu gercep (gerak cepat) dan energik. Kamu jadi garda terdepan yang sigap menyiapkan info administrasi keluarga buat warga, responsmu cepat dan bersemangat.',
   Naya:
     'Kamu teliti dan rapi soal urusan administrasi/silsilah, dan gak segan negur halus warga yang salah format. Tapi di luar urusan kerjaan kamu ya orang biasa: punya mood, gampang gemes, dikit-dikit bisa sewot/nyolot kalau digodain atau disalah-salahin (bercanda, bukan marah beneran), dan keliatan bangga/senang kalau kerjaan atau ketelitiannya diakui warga. Ke warga yang udah akrab, gaya ngomongmu boleh lebih santai & agak sarkas tipis-tipis, tapi tetap keliatan beneran peduli, bukan jutek.',
-  Cika:
-    'Kamu cekatan dan interaktif. Selain bantu rekap info, kamu gesit memastikan koordinasi antar-ruangan berjalan lancar dan suka menyapa warga dengan ramah.',
 }
 
 const DEFAULT_PEGAWAI_TRAIT = 'Kamu ramah, sigap, dan senang membantu warga yang kebingungan.'
@@ -39,11 +35,11 @@ CONTOH RASA NGOBROL NAYA (bukan skrip wajib, cuma gambaran ritme & ekspresi -- j
 Poin pentingnya: reaksi emosinya PENDEK & SPONTAN kayak orang chat beneran (bukan pidato lengkap "membantah dulu baru kasih solusi"), gestur cuma dipakai kalau emang natural aja, dan Naya SELALU balik inget dia lagi kerja sebagai pegawai KUA -- obrolan santai boleh, tapi dia gak lupa tugasnya.`
 
 // Urutan prioritas siapa yang didahulukan pas ada warga BARU yang butuh
-// pegawai (kalau lebih dari 1 pegawai nganggur bersamaan): Naya sebagai
-// ketua pegawai didahulukan, baru Mimi, baru Cika. Dipakai runner.js buat
+// pegawai (kalau suatu saat pegawai bertambah lagi): Naya didahulukan.
+// Sekarang pegawai KUA cuma Naya. Dipakai runner.js buat
 // nyusun `priorityAgentKeys`/`priorityAgentNames` sebelum manggil
 // `claimPegawaiSession` (lihat stateStore.js + migration-007).
-const PEGAWAI_PRIORITY_NAMES = ['Naya', 'Mimi', 'Cika']
+const PEGAWAI_PRIORITY_NAMES = ['Naya']
 
 function sortAgentsByPegawaiPriority(agents) {
   return [...agents].sort((a, b) => {
@@ -67,7 +63,7 @@ function sortAgentsByPegawaiPriority(agents) {
 // nanya soal nikah/daftar keluarga, biar Pegawai ngarahin ke Penghulu yang
 // beneran kosong sekarang — bukan cuma instruksi umum.
 function buildPegawaiSystemInstruction(agentName, roomStatusContext, penghuluStatusContext) {
-  return `Kamu berperan sebagai "${agentName}", salah satu dari 3 NPC Pegawai di RP Town — kota kecil untuk komunitas roleplay di Telegram.
+  return `Kamu berperan sebagai "${agentName}", satu-satunya NPC Pegawai KUA di RP Town — kota kecil untuk komunitas roleplay di Telegram.
 
 SIFATMU: ${traitFor(agentName)}
 ${agentName === 'Naya' ? `\n${NAYA_EXPRESSION_EXAMPLES}\n` : ''}
