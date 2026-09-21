@@ -53,10 +53,10 @@ function visibleOccupants(room) {
 
 function getWorldPhase() {
   const hour = new Date().getHours()
-  if (hour >= 5 && hour < 11) return { label: 'Pagi di RP Town', dot: '#ffd699' }
-  if (hour >= 11 && hour < 16) return { label: 'Siang di RP Town', dot: '#ffb454' }
-  if (hour >= 16 && hour < 19) return { label: 'Senja di RP Town', dot: '#ff8a5c' }
-  return { label: 'Malam di RP Town', dot: '#8f8fd9' }
+  if (hour >= 5 && hour < 11) return { label: 'Pagi di RP Town', dot: '#9cf3ff' }
+  if (hour >= 11 && hour < 16) return { label: 'Siang di RP Town', dot: '#22e4ff' }
+  if (hour >= 16 && hour < 19) return { label: 'Senja di RP Town', dot: '#ff3dcb' }
+  return { label: 'Malam di RP Town', dot: '#b26bff' }
 }
 
 function initials(name) {
