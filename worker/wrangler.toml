@@ -11,6 +11,11 @@ compatibility_flags = ["nodejs_compat"]
 # gak ditimpa ulang.
 keep_vars = true
 
+# Cron tiap menit: nyapu & hapus QR setor yang belum dibayar > 3 menit
+# (lihat src/qrSweep.js + handler `scheduled` di src/index.js).
+[triggers]
+crons = ["* * * * *"]
+
 # Semua nilai di bawah ini CONTOH/placeholder, bukan yang beneran dipakai --
 # di dashboard Cloudflare (Workers & Pages > rp-town-bot > Settings >
 # Variables and Secrets) isi manual, atau lewat `wrangler secret put NAMA`.
