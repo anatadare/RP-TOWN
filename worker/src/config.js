@@ -1,4 +1,4 @@
-// Config terpusat buat semua NPC agent (5 Penghulu + 3 Pegawai).
+// Config terpusat buat semua NPC agent (5 Penghulu + 1 Pegawai: Naya).
 //
 // Beda sama versi Railway: di situ pakai `process.env` + dotenv (baca file
 // .env). Cloudflare Workers gak punya `process.env` — semua secret/env
@@ -43,7 +43,7 @@ export function buildAgentList(env, prefix, kind, count, defaultNames) {
     // beda-beda kalau 1 model lagi lambat/kena limit di provider upstream
     // Jerouter (lihat FAQ mereka: "provider yang lambat/limit bisa
     // menyebabkan jeda, coba model lain dari menu Model") -- daripada semua
-    // 8 bot mukul 1 model yang sama terus. Fallback ke AI_MODEL global kalau
+    // semua bot mukul 1 model yang sama terus. Fallback ke AI_MODEL global kalau
     // env per-agent ini kosong.
     const aiModel = env[`${prefix}_${i}_AI_MODEL`] || env.AI_MODEL || 'qwen3.8-flash'
 
@@ -63,18 +63,17 @@ export function buildAgentList(env, prefix, kind, count, defaultNames) {
   return list
 }
 
-// Bumped dari 5 -> 10 (10 ruang KUA) buat dukung fitur kapasitas +
-// antrian ruang KUA (lihat kuaQueue.js) -- kapasitas total dihitung dari
-// PANJANG array ini (penghuluAgents.length), jadi ini SATU-SATUNYA tempat
-// yang perlu diubah kalau jumlah ruang KUA berubah lagi nanti. Agent yang
-// token/grup/API key-nya belum diisi di env otomatis di-skip (lihat
-// buildAgentList di atas), jadi aman nambah nama default lebih banyak dari
-// yang dipakai sekarang -- gak ada efek sebelum env PENGHULU_6..10 diisi.
-const PENGHULU_DEFAULT_NAMES = [
-  'Zavier', 'Axel', 'Valdez', 'Gavin', 'Baron',
-  'Raka', 'Bagas', 'Teguh', 'Wira', 'Surya',
-]
-const ASSISTANT_DEFAULT_NAMES = ['Mimi', 'Naya', 'Cika']
+// 5 ruang KUA -- kapasitas total dihitung dari PANJANG array hasil
+// buildAgentList (penghuluAgents.length), jadi jumlah ruang KUA cukup diubah
+// lewat konstanta PENGHULU_COUNT di bawah + daftar nama ini. Agent yang
+// token/grup/API key-nya belum diisi di env otomatis di-skip.
+const PENGHULU_COUNT = 5
+const PENGHULU_DEFAULT_NAMES = ['Zavier', 'Axel', 'Valdez', 'Gavin', 'Baron']
+
+// Pegawai KUA tinggal 1: Naya (= ASSISTANT_1_*). Mimi sekarang dipakai jadi
+// Teller Bank (lihat buildTellerAgents), Cika sudah dihapus.
+const ASSISTANT_COUNT = 1
+const ASSISTANT_DEFAULT_NAMES = ['Naya']
 
 // Agent Teller Bank (grup RP Town Bank). Beda dari Penghulu/Pegawai: pakai
 // Gemini LANGSUNG (function calling), jadi wajib punya Gemini key. Sengaja
@@ -128,8 +127,8 @@ export function buildTellerAgents(env, count = 2) {
 // Workers. Dipanggil dari src/index.js tiap ada request masuk (bukan
 // sekali pas cold start global scope, biar selalu baca env yang terbaru).
 export function loadAgents(env) {
-  const penghuluAgents = buildAgentList(env, 'PENGHULU', 'penghulu', 10, PENGHULU_DEFAULT_NAMES)
-  const assistantAgents = buildAgentList(env, 'ASSISTANT', 'assistant', 3, ASSISTANT_DEFAULT_NAMES)
+  const penghuluAgents = buildAgentList(env, 'PENGHULU', 'penghulu', PENGHULU_COUNT, PENGHULU_DEFAULT_NAMES)
+  const assistantAgents = buildAgentList(env, 'ASSISTANT', 'assistant', ASSISTANT_COUNT, ASSISTANT_DEFAULT_NAMES)
   const tellerAgents = buildTellerAgents(env)
   return {
     penghuluAgents,
