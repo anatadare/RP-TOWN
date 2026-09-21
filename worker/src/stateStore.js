@@ -77,8 +77,8 @@ export async function releaseWeddingSession(supabaseAdmin, id) {
 
 // ---- Assistant message claims (1 klaim = 1 pertanyaan yang lagi dijawab) ----
 
-// Coba klaim 1 pesan spesifik buat salah satu dari 3 bot asisten, biar
-// cuma 1 yang jawab tiap pertanyaan (bukan bertiga sekaligus).
+// Coba klaim 1 pesan spesifik buat bot asisten, biar
+// cuma 1 yang jawab tiap pertanyaan.
 export async function claimAssistantMessage(supabaseAdmin, { chatId, messageId, agentKey }) {
   const scopeKey = `assist:${chatId}:${messageId}`
 
@@ -99,13 +99,13 @@ export async function claimAssistantMessage(supabaseAdmin, { chatId, messageId, 
 // cepat"): ini klaim per-WARGA, jadi 1 pegawai "nempel" ke 1 warga terus
 // sampai idle >3 menit atau warga udah diarahkan ke Penghulu. Logikanya
 // atomik di database lewat RPC `claim_pegawai_session` (lihat
-// migration-007-pegawai-sessions.sql) biar gak race antar 3 proses bot
-// pegawai yang jalan bersamaan.
+// migration-007-pegawai-sessions.sql) biar gak race antar request pegawai
+// yang jalan bersamaan.
 
 const PEGAWAI_IDLE_SECONDS = 180 // 3 menit
 
 // `priorityAgentKeys`/`priorityAgentNames` HARUS sudah diurutkan sesuai
-// prioritas (Naya -> Mimi -> Cika, lihat personas/pegawai.js) sebelum
+// prioritas (Naya, lihat personas/pegawai.js) sebelum
 // dikirim ke sini — urutan array inilah yang dipakai database buat
 // nentuin siapa yang nganggur duluan.
 //
@@ -133,4 +133,3 @@ export async function releasePegawaiSession(supabaseAdmin, sessionId) {
   const { error } = await supabaseAdmin.rpc('release_pegawai_session', { p_session_id: sessionId })
   if (error) throw error
 }
-
