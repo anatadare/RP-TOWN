@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import './App.css'
 import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSuccess } from './lib/telegram'
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms, updateCitizenCharacter } from './lib/rooms'
-import { getHouseByOwner } from './lib/houses'
+import { getHouseByOwner, getIslandName } from './lib/houses'
 import { requestKuaInvite, kuaInviteErrorMessage } from './lib/kua'
 import TownMap3D from './components/TownMap3D'
 import HousingDistrict from './components/HousingDistrict'
@@ -307,7 +307,7 @@ export default function App() {
 
   // Ambil petak rumah milik citizen tiap kali halaman Profil dibuka,
   // biar kartu "Rumah" di situ nunjukkin data terbaru (misalnya abis nyewa
-  // dari Perumahan). Layar Beranda gak nampilin kartu rumah lagi, jadi gak
+  // dari Rumah Pulau). Layar Beranda gak nampilin kartu rumah lagi, jadi gak
   // perlu ikut trigger fetch ini.
   useEffect(() => {
     if (!citizen || screen !== 'profile') return
@@ -561,7 +561,7 @@ export default function App() {
                         <div className="profile-house-icon"><HouseIcon /></div>
                         <div className="profile-house-info">
                           <p className="profile-house-name">
-                            {ownedHouse.district?.name || 'Rumah'} — Petak No. {ownedHouse.plot_number}
+                            {getIslandName(ownedHouse.map_key)} — Petak No. {ownedHouse.plot_number}
                           </p>
                           <p className="profile-house-sub">Ketuk untuk buka chat rumah</p>
                         </div>
@@ -571,7 +571,7 @@ export default function App() {
                       <div className="profile-house-card profile-house-empty">
                         <p className="profile-house-empty-text">Kamu belum menyewa rumah.</p>
                         <button type="button" className="profile-house-cta" onClick={handleGoRentHouse}>
-                          🏘️ Sewa rumah di Perumahan
+                          🏝️ Sewa rumah di pulau
                         </button>
                       </div>
                     )}
