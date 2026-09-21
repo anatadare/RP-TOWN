@@ -22,8 +22,8 @@ keep_vars = true
 #   BOT_TOKEN, MINIAPP_URL, HOUSING_GROUP_CHAT_ID, HOUSING_GROUP_USERNAME,
 #   WEBHOOK_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
 #   AI_API_KEY, AI_MODEL, KUA_GROUP_CHAT_ID,
-#   PENGHULU_1_TOKEN..PENGHULU_10_TOKEN (+ _NAME/_GROUP_IDS/_THREAD_IDS/_AI_API_KEY opsional per agent),
-#   ASSISTANT_1_TOKEN..ASSISTANT_3_TOKEN (+ opsional yang sama)
+#   PENGHULU_1_TOKEN..PENGHULU_5_TOKEN (+ _NAME/_GROUP_IDS/_THREAD_IDS/_AI_API_KEY opsional per agent),
+#   ASSISTANT_1_TOKEN (= Naya, satu-satunya pegawai KUA; + opsional yang sama)
 #   KUA_GROUP_USERNAME (opsional -- isi kalau grup KUA-nya PUBLIC, dipakai
 #     buat bikin link https://t.me/<username>/<threadId> ke ruangan yang
 #     lagi kosong. Kalau grup privat, dikosongin aja, kodenya otomatis
