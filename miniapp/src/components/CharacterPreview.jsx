@@ -89,7 +89,7 @@ export default function CharacterPreview({
         <ambientLight intensity={0.9} />
         <directionalLight position={[3, 5, 4]} intensity={1.3} />
         <directionalLight position={[-3, 2, -4]} intensity={0.4} />
-        <hemisphereLight args={['#8f8fd9', '#1b2340', 0.55]} />
+        <hemisphereLight args={['#8f8fd9', '#0b1220', 0.55]} />
         <Suspense fallback={null}>
           <Bounds key={modelUrl} fit clip margin={1.2}>
             <CharacterModel
