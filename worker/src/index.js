@@ -1,7 +1,7 @@
 // RP Town — bot Telegram + agent NPC + webhook, versi Cloudflare Workers.
 //
 // Beda paling mendasar dari versi Railway (bot/index.js + bot/agents/runner.js):
-// - Dulu: 9 proses Telegraf (1 bot utama + 8 NPC agent) polling terus-terusan
+// - Dulu: 9 proses Telegraf (1 bot utama + 6 NPC agent) polling terus-terusan
 //   di 1 container Node yang nyala 24 jam.
 // - Sekarang: SEMUANYA lewat 1 Worker, mode webhook. Tiap bot (termasuk
 //   tiap NPC agent) punya URL webhook sendiri (lihat routing di bawah),
@@ -10,7 +10,7 @@
 //
 // Routing:
 //   POST /webhook/main              -> bot utama (/start, /town)
-//   POST /webhook/agent/:agentKey   -> 1 NPC agent (contoh: penghulu-1, assistant-2)
+//   POST /webhook/agent/:agentKey   -> 1 NPC agent (contoh: penghulu-1, assistant-1, teller-1)
 //   POST /webhooks/house-rented     -> webhook dari Supabase Database Webhooks
 //   POST /webhooks/bayargg          -> callback pembayaran dari bayar.gg (setor teller bank)
 //   POST /api/kua-invite            -> Mini App minta link masuk KUA sekali pakai
@@ -214,7 +214,7 @@ async function handleAgentWebhook(request, env, agentKey) {
       }
 
       if (agent.kind !== 'penghulu') {
-        // Pegawai (Naya/Mimi/Cika): ganti fallback generik dengan template
+        // Pegawai (Naya): ganti fallback generik dengan template
         // "pergi sebentar" -- trigger cuma sekali per episode timeout, sisanya
         // diemin aja (lihat handlePegawaiTimeout + awayState.js). Pesan warga
         // yang bikin ini ke-trigger tetap kesimpen normal, gak hilang.
