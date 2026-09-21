@@ -50,6 +50,14 @@ export async function settleInvoice(supabaseAdmin, env, invoiceId, { notify = tr
   })
   if (rpcError) throw rpcError
 
+  // Setoran sudah lunas -> QR-nya gak dibutuhin lagi, hapus dari chat
+  // (best-effort: gagal hapus TIDAK boleh mengganggu saldo/notifikasi).
+  try {
+    await deleteQrMessage(supabaseAdmin, env, deposit)
+  } catch (err) {
+    console.error('[deposit] gagal hapus pesan QR setelah lunas:', err)
+  }
+
   if (result.credited && notify) {
     try {
       await notifyDepositPaid(supabaseAdmin, env, result)
@@ -65,6 +73,41 @@ export async function settleInvoice(supabaseAdmin, env, invoiceId, { notify = tr
     balanceIdr: result.balance_idr,
     deposit,
   }
+}
+
+// Hapus pesan QR/tagihan dari chat + tandai qr_deleted_at di database.
+// Balikin true kalau pesannya sudah hilang (terhapus sekarang, atau memang
+// sudah gak ada), false kalau gagal sementara -- pemanggil boleh coba lagi.
+export async function deleteQrMessage(supabaseAdmin, env, deposit) {
+  if (!deposit?.qr_message_id || deposit.qr_deleted_at) return true
+
+  const { tellerAgents } = loadAgents(env)
+  const agent = tellerAgents.find((a) => a.key === deposit.agent_key)
+  if (!agent) {
+    console.error(`[deposit] agent teller ${deposit.agent_key} tidak ditemukan di env, pesan QR gak bisa dihapus`)
+    return false
+  }
+
+  try {
+    await callTelegramApi(agent.token, 'deleteMessage', {
+      chat_id: deposit.chat_id,
+      message_id: deposit.qr_message_id,
+    })
+  } catch (err) {
+    // Pesan sudah dihapus manual / sudah hilang = tujuan tercapai juga.
+    const gone = /message to delete not found|message can't be deleted/i.test(err.message)
+    if (!gone) {
+      console.warn(`[deposit] deleteMessage gagal invoice=${deposit.invoice_id}: ${err.message}`)
+      return false
+    }
+  }
+
+  const { error } = await supabaseAdmin
+    .from('deposits')
+    .update({ qr_deleted_at: new Date().toISOString() })
+    .eq('id', deposit.id)
+  if (error) console.error('[deposit] gagal tandai qr_deleted_at:', error)
+  return true
 }
 
 async function notifyDepositPaid(supabaseAdmin, env, result) {
