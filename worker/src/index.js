@@ -36,8 +36,14 @@ import { registerMainBotHandlers } from './mainBot.js'
 import { handleKuaInvite } from './kuaInvite.js'
 import { handleBayarGgWebhook } from './bayarWebhook.js'
 import { handleTellerMessage } from './teller.js'
+import { sweepQrMessages } from './qrSweep.js'
 
 export default {
+  // Cron Trigger tiap menit: hapus QR setor yang sudah lewat 3 menit (lihat qrSweep.js).
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(sweepQrMessages(env).catch((err) => console.error('[qr-sweep] gagal:', err)))
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
 
