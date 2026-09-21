@@ -50,3 +50,25 @@ keep_vars = true
 #   limit gratisnya paling longgar). Kalau GEMINI_API_KEY kosong, perilaku
 #   sama persis kayak sebelumnya (Jerouter saja). Bisa juga per agent:
 #   PENGHULU_i_GEMINI_API_KEY / ASSISTANT_i_GEMINI_API_KEY.
+
+# ============================================================
+# TELLER BANK (setor via bayar.gg + agent Gemini)
+# Semua di bawah ini lewat `wrangler secret put` / dashboard Cloudflare.
+#
+#   TELLER_1_TOKEN         token bot teller (bot BARU dari BotFather, bukan token Penghulu/Pegawai)
+#   BANK_GROUP_CHAT_ID     id grup "RP Town Bank" (format -100xxxxxxxxxx)
+#   TELLER_1_THREAD_IDS    (opsional) id topic "setor dan tarik uang"
+#   GEMINI_API_KEY         (sudah ada di atas) dipakai teller juga
+#   BAYARGG_API_KEY        API key bayar.gg (bayar.gg > login > lihat API Key)
+#   BAYARGG_WEBHOOK_SECRET Webhook Secret Key (bayar.gg > Developer > Webhook & Callback)
+#   PUBLIC_WORKER_URL      URL publik Worker ini, mis. https://rp-town-bot.xxx.workers.dev
+#   BAYARGG_PAYMENT_METHOD (opsional) default "qris" (maks Rp 500.000/transaksi).
+#                          Alternatif: qris_bayar_gg, gopay_qris, qris_livin, qris_user
+#   BAYARGG_PAYMENT_URL    (opsional) default https://www.bayar.gg/pay
+#   DEPOSIT_MIN_IDR / DEPOSIT_MAX_IDR (opsional) default 5000 / 500000
+#   COINGECKO_API_KEY      (opsional tapi disarankan) Demo key gratis CoinGecko
+#   COINGECKO_TON_ID       (opsional) default "the-open-network"
+#
+# Set webhook bot teller ke: <PUBLIC_WORKER_URL>/webhook/agent/teller-1
+# Whitelist IP webhook bayar.gg kalau Worker dipasang di belakang WAF/Bot Fight
+# Mode: 95.169.180.225 (daftar terbaru: https://www.bayar.gg/api/webhook-ips.php)
