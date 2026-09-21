@@ -115,6 +115,15 @@ async function handleAgentWebhook(request, env, agentKey) {
   const agent = allAgents.find((a) => a.key === agentKey) || tellerAgents.find((a) => a.key === agentKey)
 
   if (!agent) {
+    // Diagnostik teller: kasih tahu env mana yang kosong (kelihatan di log Worker).
+    if (agentKey.startsWith('teller-')) {
+      const n = agentKey.split('-')[1]
+      const missing = []
+      if (!env[`TELLER_${n}_TOKEN`]) missing.push(`TELLER_${n}_TOKEN`)
+      if (!env[`TELLER_${n}_GROUP_IDS`] && !env.BANK_GROUP_CHAT_ID) missing.push('BANK_GROUP_CHAT_ID')
+      if (!env[`TELLER_${n}_GEMINI_API_KEY`] && !env.GEMINI_API_KEY) missing.push('GEMINI_API_KEY')
+      console.warn(`[${agentKey}] agent belum terkonfigurasi. Env kosong: ${missing.join(', ') || '(tidak ada; cek nomor teller di URL webhook)'}`)
+    }
     // Agent ini belum dikonfigurasi lengkap (token/grup/API key kosong di
     // env) -- balikin 200 kosong (bukan error) biar Telegram gak nganggep
     // webhook-nya gagal & terus nyoba ulang.
@@ -134,10 +143,24 @@ async function handleAgentWebhook(request, env, agentKey) {
       // -- tanpa ini gampang kejadian bot saling balas pesan bot lain terus
       // (loop tak berujung). Sama kayak versi Railway.
       if (botCtx.from?.is_bot) return
-      if (!groupIdSet.has(String(botCtx.chat.id))) return
 
       const threadId = botCtx.message.message_thread_id ?? null
-      if (threadIdSet && !threadIdSet.has(String(threadId))) return
+
+      // Diagnostik teller: log ID asli yang diterima, biar gampang dicocokkan
+      // dengan BANK_GROUP_CHAT_ID / TELLER_1_THREAD_IDS di env.
+      if (agent.kind === 'teller') {
+        console.log(`[${agent.key}] pesan masuk chat=${botCtx.chat.id} thread=${threadId ?? 'none'} dari=${botCtx.from?.id}`)
+      }
+
+      if (!groupIdSet.has(String(botCtx.chat.id))) {
+        if (agent.kind === 'teller') console.warn(`[${agent.key}] DIABAIKAN: chat ${botCtx.chat.id} tidak ada di grup yang diizinkan (${[...groupIdSet].join(',')})`)
+        return
+      }
+
+      if (threadIdSet && !threadIdSet.has(String(threadId))) {
+        if (agent.kind === 'teller') console.warn(`[${agent.key}] DIABAIKAN: thread ${threadId ?? 'none'} tidak ada di TELLER_THREAD_IDS (${[...threadIdSet].join(',')})`)
+        return
+      }
 
       const text = botCtx.message.text || botCtx.message.caption
       if (!text) return
