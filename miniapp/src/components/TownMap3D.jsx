@@ -1,10 +1,11 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { unassignBuilding, createRoomForBuilding } from '../lib/rooms'
 import { MAPS } from '../lib/maps'
 import { BUILDING_PREFIX } from '../lib/buildings'
+import { hapticSelect } from '../lib/telegram'
 
 // Warna highlight
 const COLOR_ASSIGNED = '#ffb454' // lantern, bangunan yang sudah jadi room
@@ -394,6 +395,49 @@ function FocusBuilding({ groupRef, focusRequest }) {
   return null
 }
 
+// Penjaga kalau peta tiba-tiba "hilang" (layar kosong) setelah user muter/geser
+// cepat — biasanya gara-gara WebGL context di HP kebuang (context lost, karena
+// memori GPU habis) atau posisi kamera jadi NaN. Komponen ini gak ngubah
+// zoom/rotasi sama sekali, cuma ngedeteksi kondisi rusak lalu minta Canvas
+// di-remount (onRecover) — hasilnya sama kayak user nekan tombol refresh.
+const AUTO_RECOVER_MIN_GAP_MS = 1500 // jeda minimal antar auto-recover, cegah loop tanpa henti
+
+function RecoveryGuard({ onRecover }) {
+  const { gl, camera } = useThree()
+  const lastRecoverAt = useRef(0)
+
+  function recoverThrottled() {
+    const now = Date.now()
+    if (now - lastRecoverAt.current < AUTO_RECOVER_MIN_GAP_MS) return
+    lastRecoverAt.current = now
+    onRecover()
+  }
+
+  useEffect(() => {
+    const canvas = gl.domElement
+
+    function handleLost(e) {
+      // preventDefault wajib supaya browser boleh nyoba mulihin context.
+      e.preventDefault()
+      recoverThrottled()
+    }
+
+    canvas.addEventListener('webglcontextlost', handleLost, false)
+    return () => canvas.removeEventListener('webglcontextlost', handleLost, false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gl, onRecover])
+
+  // Kamera yang posisinya NaN/Infinity = peta gak bakal kerender lagi.
+  useFrame(() => {
+    const { x, y, z } = camera.position
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      recoverThrottled()
+    }
+  })
+
+  return null
+}
+
 // Panel yang muncul pas sebuah bangunan diklik dalam mode admin:
 // lepas assignment, atau bikin room baru (bebas nama/emoji sendiri).
 function BuildingAssignPanel({ buildingKey, currentRoom, onUnassign, onCreateNew, onClose }) {
@@ -493,7 +537,13 @@ export default function TownMap3D({
   const [hoveredKey, setHoveredKey] = useState(null)
   const [pickerBuilding, setPickerBuilding] = useState(null)
   const [islandFootprint, setIslandFootprint] = useState(null)
+  // Dinaikin tiap kali peta perlu di-refresh (tombol refresh / auto-recover).
+  // Ikut jadi bagian key <Canvas>, jadi Canvas di-remount bersih tanpa user
+  // harus keluar dari miniapp.
+  const [refreshNonce, setRefreshNonce] = useState(0)
   const modelGroupRef = useRef()
+
+  const refreshMap = useCallback(() => setRefreshNonce((n) => n + 1), [])
 
   const assignedByKey = useMemo(() => {
     const map = {}
@@ -528,7 +578,7 @@ export default function TownMap3D({
       {/* key={mapKey} di sini sengaja bikin seluruh <Canvas> remount pas pindah
           peta: model lama di-unload, kamera & framing dihitung ulang dari nol
           buat bounding box peta yang baru (tiap peta beda ukuran/posisi). */}
-      <Canvas key={mapKey} shadows dpr={[1, 2]} camera={{ fov: 42, near: 1, far: 5000 }}>
+      <Canvas key={`${mapKey}-${refreshNonce}`} shadows dpr={[1, 2]} camera={{ fov: 42, near: 1, far: 5000 }}>
         <color attach="background" args={['#1b2340']} />
         <ambientLight intensity={0.65} />
         <directionalLight position={[60, 100, 40]} intensity={1.15} castShadow />
@@ -569,7 +619,27 @@ export default function TownMap3D({
           touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
         />
         <FrameBuildingsOnce groupRef={modelGroupRef} />
+        <RecoveryGuard onRecover={refreshMap} />
       </Canvas>
+
+      {/* Tombol refresh peta: kalau peta sampai kosong/hilang, user tinggal
+          tap ini (gak perlu keluar-masuk miniapp). Berlaku buat semua peta
+          karena ada di komponen yang dipakai bareng. */}
+      <button
+        type="button"
+        className="map3d-refresh-btn"
+        aria-label="Muat ulang peta"
+        title="Muat ulang peta"
+        onClick={() => {
+          hapticSelect()
+          refreshMap()
+        }}
+      >
+        <svg key={refreshNonce} className="map3d-refresh-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <polyline points="21 3 21 9 15 9" />
+        </svg>
+      </button>
 
       {adminMode && (
         <div className="map3d-admin-badge">Mode Admin — klik bangunan untuk atur room</div>
