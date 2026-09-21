@@ -6,12 +6,13 @@
 //   dikirim lewat header x-cg-demo-api-key). Tanpa key masih bisa tapi
 //   rate-limit-nya sangat ketat, jadi isi key kalau sudah dipakai beneran.
 // - Di-cache 60 detik di edge Cloudflare (cf.cacheTtl) biar hemat kuota.
-// - COINGECKO_TON_ID default 'the-open-network'. Karena TON sudah di-rename
-//   jadi GRAM (Juni 2026), cek dulu id-nya masih valid di browser:
-//   https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=idr
+// - COINGECKO_TON_ID default 'gram' (TON di-rename jadi GRAM, Juni 2026; halaman
+//   CoinGecko-nya sekarang https://www.coingecko.com/en/coins/gram). Kalau id
+//   berubah lagi, cukup ganti env ini, tanpa ubah kode. Cek di browser:
+//   https://api.coingecko.com/api/v3/simple/price?ids=gram&vs_currencies=idr
 
 export async function getTonRateIdr(env) {
-  const id = env.COINGECKO_TON_ID || 'the-open-network'
+  const id = env.COINGECKO_TON_ID || 'gram'
   const url = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=idr&include_last_updated_at=true`
 
   const headers = { Accept: 'application/json' }
