@@ -803,6 +803,43 @@ body {
   touch-action: none;
 }
 
+/* Tombol refresh peta — pojok kanan bawah, tepat di atas bottom nav */
+.map3d-refresh-btn {
+  position: absolute;
+  right: 16px;
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 76px);
+  z-index: 6;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 214, 153, 0.35);
+  background: rgba(27, 35, 64, 0.82);
+  backdrop-filter: blur(8px);
+  color: var(--lantern-soft);
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.map3d-refresh-btn:active {
+  background: rgba(255, 180, 84, 0.18);
+  transform: scale(0.94);
+}
+
+/* Ikon muter sekali tiap kali peta di-refresh (svg di-remount lewat key) */
+.map3d-refresh-icon {
+  animation: map3d-refresh-spin 0.6s ease-out;
+}
+
+@keyframes map3d-refresh-spin {
+  from { transform: rotate(-360deg); }
+  to { transform: rotate(0deg); }
+}
+
 .map3d-admin-badge {
   position: absolute;
   top: 14px;
