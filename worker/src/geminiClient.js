@@ -56,10 +56,20 @@ export async function runTurn({
         functionResponse: { name: call.name, response: toolResult },
       })
     }
-    contents.push({ role: 'function', parts: functionResponseParts })
+    // role 'user' = format yang dipakai dokumentasi resmi Gemini buat functionResponse.
+    contents.push({ role: 'user', parts: functionResponseParts })
 
-    response = await callGemini(model, apiKey, { contents, systemInstruction: body.systemInstruction, tools })
-    candidate = response.candidates?.[0]
+    // Tool SUDAH jalan (mis. QR setor sudah terkirim ke chat). Kalau panggilan
+    // Gemini kedua ini gagal (limit/timeout), jangan lempar error -- itu bikin
+    // warga dapat "sistem bank sibuk" padahal QR-nya sudah muncul. Cukup balikin
+    // teks kosong; pemanggil yang milih kalimat penutup.
+    try {
+      response = await callGemini(model, apiKey, { contents, systemInstruction: body.systemInstruction, tools })
+      candidate = response.candidates?.[0]
+    } catch (err) {
+      console.error('[gemini] panggilan lanjutan setelah tool gagal (tool sudah jalan):', err.message)
+      return { text: '', functionCalls, followUpFailed: true }
+    }
   }
 
   return {
@@ -70,17 +80,24 @@ export async function runTurn({
 
 async function callGemini(model, apiKey, body) {
   const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  let lastError
+  // 1x ulang kalau kena limit sesaat (429) atau error server (5xx).
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
 
-  if (!res.ok) {
+    if (res.ok) return res.json()
+
     const errText = await res.text().catch(() => '')
-    throw new Error(`Gemini API error ${res.status}: ${errText}`)
+    lastError = new Error(`Gemini API error ${res.status}: ${errText}`)
+    const retryable = res.status === 429 || res.status >= 500
+    if (!retryable || attempt === 1) break
+    await new Promise((resolve) => setTimeout(resolve, 1200))
   }
-  return res.json()
+  throw lastError
 }
 
 function extractText(candidate) {
