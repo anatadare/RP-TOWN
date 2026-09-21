@@ -43,6 +43,10 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
 
   async function handleConfirmRent() {
     if (!selectedHouse || !citizen) return
+    if (houses.some((h) => h.owner_citizen_id === citizen.id)) {
+      setRentError('Satu akun hanya boleh punya 1 rumah.')
+      return
+    }
     setRenting(true)
     setRentError(null)
     try {
@@ -59,7 +63,11 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
       setSelectedHouse(null)
     } catch (err) {
       console.error(err)
-      setRentError(err.message || 'Gagal menyewa petak ini. Mungkin baru saja disewa orang lain.')
+      setRentError(
+        err.code === '23505'
+          ? 'Satu akun hanya boleh punya 1 rumah.'
+          : err.message || 'Gagal menyewa petak ini. Mungkin baru saja disewa orang lain.'
+      )
     } finally {
       setRenting(false)
     }
@@ -170,17 +178,19 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
                 <h2 className="modal-title">Petak {selectedHouse.plot_number}</h2>
                 <p className="modal-desc" style={{ marginBottom: 4 }}>📍 {getIslandName(selectedHouse.map_key)}</p>
                 <p className="modal-desc">
-                  {RENTAL_OPEN
-                    ? 'Petak ini masih kosong dan bisa kamu sewa.'
-                    : 'Petak ini masih kosong. Penyewaan rumah segera dibuka, tunggu pengumuman ya!'}
+                  {myHouse
+                    ? `Kamu sudah punya rumah di ${getIslandName(myHouse.map_key)} — Petak ${myHouse.plot_number}. Satu akun hanya boleh punya 1 rumah.`
+                    : RENTAL_OPEN
+                      ? 'Petak ini masih kosong dan bisa kamu sewa.'
+                      : 'Petak ini masih kosong. Penyewaan rumah segera dibuka, tunggu pengumuman ya!'}
                 </p>
                 {rentError && <p className="housing-error">{rentError}</p>}
                 <button
                   className="modal-btn modal-btn-primary"
                   onClick={handleConfirmRent}
-                  disabled={!RENTAL_OPEN || renting}
+                  disabled={!RENTAL_OPEN || renting || Boolean(myHouse)}
                 >
-                  {!RENTAL_OPEN ? 'Segera dibuka' : renting ? 'Memproses...' : 'Sewa Sekarang'}
+                  {myHouse ? 'Sudah punya rumah' : !RENTAL_OPEN ? 'Segera dibuka' : renting ? 'Memproses...' : 'Sewa Sekarang'}
                 </button>
                 <button className="modal-btn modal-btn-secondary" onClick={() => setSelectedHouse(null)} disabled={renting}>
                   Batal
