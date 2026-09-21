@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { getHouses, rentHouse, RENTABLE_ISLANDS, getIslandName } from '../lib/houses'
 import { hapticSuccess, hapticSelect, openTelegramLink } from '../lib/telegram'
 
+// Penyewaan dikunci dulu sampai pembayaran uang asli siap. Ubah ke true kalau sudah live.
+const RENTAL_OPEN = false
+
 export default function HousingDistrict({ districtRoom, citizen, onClose, onCitizenUpdate }) {
   const [houses, setHouses] = useState([])
   const [island, setIsland] = useState(RENTABLE_ISLANDS[0].key)
@@ -53,7 +56,6 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
             : h
         )
       )
-      onCitizenUpdate?.({ ...citizen, coins: citizen.coins - selectedHouse.rent_price })
       setSelectedHouse(null)
     } catch (err) {
       console.error(err)
@@ -76,13 +78,6 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
           </div>
           <button className="housing-close-btn" onClick={onClose} aria-label="Tutup">✕</button>
         </div>
-
-        {citizen && (
-          <div className="housing-balance">
-            <span>💰 Koin kamu</span>
-            <strong>{citizen.coins}</strong>
-          </div>
-        )}
 
         <div className="housing-tabs">
           {RENTABLE_ISLANDS.map((i) => (
@@ -116,7 +111,7 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
                   {!isMine && isTaken && (
                     <span className="housing-plot-tag">{house.owner?.display_name || 'Disewa'}</span>
                   )}
-                  {!isTaken && <span className="housing-plot-price">{house.rent_price} koin</span>}
+                  {!isTaken && <span className="housing-plot-price">Tersedia</span>}
                 </button>
               )
             })}
@@ -172,18 +167,20 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
             ) : (
               <>
                 <div className="modal-icon">🏗️</div>
-                <h2 className="modal-title">Sewa Petak {selectedHouse.plot_number}?</h2>
+                <h2 className="modal-title">Petak {selectedHouse.plot_number}</h2>
                 <p className="modal-desc" style={{ marginBottom: 4 }}>📍 {getIslandName(selectedHouse.map_key)}</p>
                 <p className="modal-desc">
-                  Biaya sewa: <strong>{selectedHouse.rent_price} koin</strong>. Koin kamu sekarang: {citizen?.coins ?? 0}.
+                  {RENTAL_OPEN
+                    ? 'Petak ini masih kosong dan bisa kamu sewa.'
+                    : 'Petak ini masih kosong. Penyewaan rumah segera dibuka, tunggu pengumuman ya!'}
                 </p>
                 {rentError && <p className="housing-error">{rentError}</p>}
                 <button
                   className="modal-btn modal-btn-primary"
                   onClick={handleConfirmRent}
-                  disabled={renting || (citizen?.coins ?? 0) < selectedHouse.rent_price}
+                  disabled={!RENTAL_OPEN || renting}
                 >
-                  {renting ? 'Memproses...' : 'Sewa Sekarang'}
+                  {!RENTAL_OPEN ? 'Segera dibuka' : renting ? 'Memproses...' : 'Sewa Sekarang'}
                 </button>
                 <button className="modal-btn modal-btn-secondary" onClick={() => setSelectedHouse(null)} disabled={renting}>
                   Batal
