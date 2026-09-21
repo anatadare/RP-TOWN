@@ -9,8 +9,8 @@ export function initTelegram() {
   if (tg) {
     tg.ready()
     tg.expand()
-    tg.setHeaderColor?.('#1B2340')
-    tg.setBackgroundColor?.('#1B2340')
+    tg.setHeaderColor?.('#0B1220')
+    tg.setBackgroundColor?.('#0B1220')
   }
 }
 
