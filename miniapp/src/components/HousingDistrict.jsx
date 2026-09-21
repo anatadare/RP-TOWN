@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { getHouses, rentHouse } from '../lib/houses'
+import { getHouses, rentHouse, RENTABLE_ISLANDS, getIslandName } from '../lib/houses'
 import { hapticSuccess, hapticSelect, openTelegramLink } from '../lib/telegram'
 
 export default function HousingDistrict({ districtRoom, citizen, onClose, onCitizenUpdate }) {
   const [houses, setHouses] = useState([])
+  const [island, setIsland] = useState(RENTABLE_ISLANDS[0].key)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedHouse, setSelectedHouse] = useState(null)
@@ -19,7 +20,7 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
         if (!cancelled) setHouses(data)
       } catch (err) {
         console.error(err)
-        if (!cancelled) setError('Gagal memuat data perumahan.')
+        if (!cancelled) setError('Gagal memuat data rumah.')
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -63,14 +64,15 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
   }
 
   const myHouse = houses.find((h) => h.owner_citizen_id === citizen?.id)
+  const islandHouses = houses.filter((h) => h.map_key === island)
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-sheet housing-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="housing-header">
           <div>
-            <h2 className="modal-title" style={{ textAlign: 'left', marginBottom: 2 }}>🏘️ Perumahan</h2>
-            <p className="housing-subtitle">Sewa petak rumahmu sendiri di kota ini</p>
+            <h2 className="modal-title" style={{ textAlign: 'left', marginBottom: 2 }}>🏝️ Rumah Pulau</h2>
+            <p className="housing-subtitle">Sewa rumahmu di Kawasan Pantai atau LPM</p>
           </div>
           <button className="housing-close-btn" onClick={onClose} aria-label="Tutup">✕</button>
         </div>
@@ -82,12 +84,24 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
           </div>
         )}
 
+        <div className="housing-tabs">
+          {RENTABLE_ISLANDS.map((i) => (
+            <button
+              key={i.key}
+              className={`housing-tab ${island === i.key ? 'housing-tab-active' : ''}`}
+              onClick={() => { hapticSelect(); setIsland(i.key) }}
+            >
+              {i.emoji} {i.name}
+            </button>
+          ))}
+        </div>
+
         {loading && <p className="state-message" style={{ position: 'static', padding: '24px 0' }}>Memuat petak rumah...</p>}
         {error && <p className="state-message" style={{ position: 'static', padding: '24px 0' }}>{error}</p>}
 
         {!loading && !error && (
           <div className="housing-grid">
-            {houses.map((house) => {
+            {islandHouses.map((house) => {
               const isMine = house.owner_citizen_id === citizen?.id
               const isTaken = Boolean(house.owner_citizen_id)
               return (
@@ -109,9 +123,13 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
           </div>
         )}
 
+        <p className="housing-hint housing-note">
+          🏙️ RP Town City adalah aset RP Town, jadi tidak tersedia untuk disewa.
+        </p>
+
         {myHouse && (
           <p className="housing-hint">
-            Kamu sudah punya rumah di Petak {myHouse.plot_number}. Fitur dekorasi & chat personal rumah menyusul.
+            Kamu sudah punya rumah di {getIslandName(myHouse.map_key)} — Petak {myHouse.plot_number}. Fitur dekorasi & chat personal rumah menyusul.
           </p>
         )}
       </div>
@@ -155,6 +173,7 @@ export default function HousingDistrict({ districtRoom, citizen, onClose, onCiti
               <>
                 <div className="modal-icon">🏗️</div>
                 <h2 className="modal-title">Sewa Petak {selectedHouse.plot_number}?</h2>
+                <p className="modal-desc" style={{ marginBottom: 4 }}>📍 {getIslandName(selectedHouse.map_key)}</p>
                 <p className="modal-desc">
                   Biaya sewa: <strong>{selectedHouse.rent_price} koin</strong>. Koin kamu sekarang: {citizen?.coins ?? 0}.
                 </p>
