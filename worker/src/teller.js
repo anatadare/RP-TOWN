@@ -12,12 +12,16 @@
 import { runTurn } from './geminiClient.js'
 import { getHistory, pushHistory } from './chatHistory.js'
 import { createPayment } from './bayarGg.js'
-import { settleInvoice, formatRupiah } from './depositSettlement.js'
+import { settleInvoice, formatRupiah, deleteQrMessage } from './depositSettlement.js'
 import { getTonRateIdr } from './tonRate.js'
 import { callTelegramApi } from './telegramApi.js'
 
 const MAX_MESSAGE_LENGTH = 500
 const ACTIVE_INVOICE_WINDOW_MS = 15 * 60 * 1000 // tagihan dianggap "masih aktif" selama 15 menit
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
 
 function limits(env) {
   const min = Number(env.DEPOSIT_MIN_IDR) || 5000
@@ -29,10 +33,11 @@ function buildSystemInstruction(agent, env) {
   const { min, max } = limits(env)
   return `Kamu adalah ${agent.name}, teller RP Town Bank di grup Telegram RP Town. Gaya bicara ramah, singkat, santai tapi sopan (bahasa Indonesia sehari-hari). Balasan maksimal 3 kalimat.
 
-TUGASMU sekarang hanya: (1) membantu warga SETOR uang (deposit) lewat QRIS, (2) memberi tahu saldo, (3) mengecek status setoran, (4) memberi info harga TON (koin ini sekarang bernama GRAM; warga boleh menyebutnya TON atau GRAM).
+TUGASMU sekarang hanya: (1) membantu warga SETOR uang (deposit) lewat QRIS, (2) memberi tahu saldo, (3) mengecek status setoran, (4) memberi info harga TON (koin ini sekarang bernama GRAM; warga boleh menyebutnya TON atau GRAM), (5) membatalkan/menghapus QRIS yang tadi diminta warga.
 
 ATURAN KETAT:
 - Untuk membuat tagihan setor, WAJIB panggil tool create_deposit. Jangan pernah menulis link, QR, nomor invoice, atau nominal tagihan sendiri -- QR & link dikirim otomatis oleh sistem setelah tool berhasil.
+- QRIS otomatis dihapus dari chat oleh sistem: 3 menit setelah dikirim kalau belum dibayar, dan langsung setelah pembayaran berhasil. Kalau warga minta batal/hapus QRIS-nya, WAJIB panggil tool cancel_deposit; jangan bilang sudah dihapus sebelum hasil tool memastikan.
 - Nominal setor minimal ${formatRupiah(min)} dan maksimal ${formatRupiah(max)}. Kalau warga belum menyebut nominal, tanyakan dulu.
 - Jangan pernah bilang setoran "sudah masuk" atau menyebut saldo kecuali hasil tool (get_balance / check_deposit_status) yang memastikan. Kalau warga bilang sudah bayar, panggil check_deposit_status.
 - TARIK / withdraw uang BELUM dibuka. Kalau ada yang minta tarik, bilang fitur itu belum tersedia dan akan diumumkan. Jangan menjanjikan tanggal, jangan minta alamat wallet.
@@ -55,6 +60,12 @@ const TOOLS = [
           },
           required: ['amount_idr'],
         },
+      },
+      {
+        name: 'cancel_deposit',
+        description:
+          'Batalkan dan hapus QRIS/tagihan setor aktif milik warga yang sedang chat (dipakai kalau warga bilang batal, gak jadi, atau minta QRIS-nya dihapus).',
+        parameters: { type: 'OBJECT', properties: {} },
       },
       {
         name: 'check_deposit_status',
@@ -97,35 +108,61 @@ async function getBalance(supabaseAdmin, citizenId) {
 
 // Kirim QR (kalau ada) + tombol link bayar. Foto QR itu "best effort":
 // kalau gagal, jatuh ke pesan teks + tombol -- link SELALU sampai.
-async function sendInvoiceToChat(agent, { chatId, threadId, deposit }) {
+// Pesan ini me-mention & me-reply pemintanya (biar jelas QR ini punya siapa),
+// dan message_id-nya disimpan di database supaya bisa dihapus otomatis
+// (3 menit belum dibayar / sudah lunas / dibatalkan warga -- lihat qrSweep.js).
+async function sendInvoiceToChat(supabaseAdmin, agent, { chatId, threadId, deposit, user, replyToMessageId }) {
+  const mention = `<a href="tg://user?id=${user.id}">${escapeHtml(user.name)}</a>`
   const caption =
-    `🧾 Tagihan setor ${formatRupiah(deposit.amount_idr)}\n` +
+    `🧾 Tagihan setor ${formatRupiah(deposit.amount_idr)} untuk ${mention}\n` +
     `Total bayar: ${formatRupiah(deposit.final_amount_idr)}\n\n` +
+    `⚠️ QRIS ini khusus untuk ${escapeHtml(user.name)}, jangan dibayar orang lain ya.\n` +
     `Scan QRIS ini atau buka halaman bayar lewat tombol di bawah. ` +
-    `Saldo masuk otomatis setelah pembayaran terverifikasi.`
+    `Saldo masuk otomatis setelah pembayaran terverifikasi.\n` +
+    `⏳ Otomatis dihapus dalam 3 menit kalau belum dibayar.`
 
   const base = {
     chat_id: chatId,
     ...(threadId ? { message_thread_id: threadId } : {}),
+    ...(replyToMessageId ? { reply_to_message_id: replyToMessageId, allow_sending_without_reply: true } : {}),
+    parse_mode: 'HTML',
   }
   const reply_markup = deposit.payment_url
     ? { inline_keyboard: [[{ text: '💳 Buka halaman bayar', url: deposit.payment_url }]] }
     : undefined
+
+  let sent = null
+  let qrSent = false
 
   if (deposit.qris_string) {
     try {
       const qrUrl =
         'https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=12&data=' +
         encodeURIComponent(deposit.qris_string)
-      await callTelegramApi(agent.token, 'sendPhoto', { ...base, photo: qrUrl, caption, reply_markup })
-      return { qrSent: true }
+      sent = await callTelegramApi(agent.token, 'sendPhoto', { ...base, photo: qrUrl, caption, reply_markup })
+      qrSent = true
     } catch (err) {
       console.error('[teller] sendPhoto QR gagal, fallback ke teks + link:', err.message)
     }
   }
 
-  await callTelegramApi(agent.token, 'sendMessage', { ...base, text: caption, reply_markup })
-  return { qrSent: false }
+  if (!sent) {
+    sent = await callTelegramApi(agent.token, 'sendMessage', { ...base, text: caption, reply_markup })
+  }
+
+  // Simpan message_id buat penghapusan otomatis. Best-effort: kalau gagal
+  // (mis. kolom belum ada), tagihan tetap sampai ke warga.
+  try {
+    const { error } = await supabaseAdmin
+      .from('deposits')
+      .update({ qr_message_id: sent.message_id, qr_sent_at: new Date().toISOString(), qr_deleted_at: null })
+      .eq('id', deposit.id)
+    if (error) throw error
+  } catch (err) {
+    console.error('[teller] gagal simpan qr_message_id (QR gak bakal auto-hapus):', err)
+  }
+
+  return { qrSent }
 }
 
 export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threadId, { env }) {
@@ -143,6 +180,11 @@ export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threa
   }
 
   const userText = String(text).slice(0, MAX_MESSAGE_LENGTH)
+  const mentionUser = {
+    id: from.id,
+    name: [from.first_name, from.last_name].filter(Boolean).join(' ') || citizen.display_name || citizen.username || 'Warga',
+  }
+  const replyToMessageId = ctx.message?.message_id ?? null
   const historyKey = `teller:${agent.key}:${chatId}:${threadId ?? 0}:${from.id}`
 
   // History disimpan format OpenAI-ish ('assistant'); Gemini butuh 'model' & harus mulai dari 'user'.
@@ -169,6 +211,7 @@ export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threa
           .select('*')
           .eq('citizen_id', citizen.id)
           .eq('status', 'pending')
+          .is('qr_deleted_at', null) // QR yang sudah dihapus/dibatalkan gak dipakai ulang
           .gte('created_at', since)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -176,7 +219,9 @@ export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threa
         if (activeError) throw activeError
 
         if (active) {
-          await sendInvoiceToChat(agent, { chatId, threadId, deposit: active })
+          // Hapus pesan QR lama dulu biar di chat cuma ada 1 QR aktif.
+          await deleteQrMessage(supabaseAdmin, env, active)
+          await sendInvoiceToChat(supabaseAdmin, agent, { chatId, threadId, deposit: active, user: mentionUser, replyToMessageId })
           invoiceSent = true
           return {
             ok: true,
@@ -216,7 +261,7 @@ export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threa
           return { error: 'Gagal menyimpan tagihan, coba lagi sebentar lagi.' }
         }
 
-        const { qrSent } = await sendInvoiceToChat(agent, { chatId, threadId, deposit })
+        const { qrSent } = await sendInvoiceToChat(supabaseAdmin, agent, { chatId, threadId, deposit, user: mentionUser, replyToMessageId })
         invoiceSent = true
         return {
           ok: true,
@@ -225,6 +270,30 @@ export async function handleTellerMessage(supabaseAdmin, agent, ctx, text, threa
           qr_dan_link_terkirim: true,
           qr_gambar_terkirim: qrSent,
           note: 'QR/link SUDAH dikirim ke chat oleh sistem. Jangan tulis ulang link atau nomor invoice.',
+        }
+      }
+
+      case 'cancel_deposit': {
+        const { data: open, error } = await supabaseAdmin
+          .from('deposits')
+          .select('*')
+          .eq('citizen_id', citizen.id)
+          .eq('status', 'pending')
+          .is('qr_deleted_at', null)
+          .not('qr_message_id', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (error) throw error
+        if (!open) return { ok: true, status: 'tidak_ada_tagihan_aktif' }
+
+        const removed = await deleteQrMessage(supabaseAdmin, env, open)
+        if (!removed) return { error: 'Gagal menghapus pesan QRIS dari chat, coba lagi sebentar lagi.' }
+        return {
+          ok: true,
+          status: 'qris_dihapus',
+          amount_idr: open.amount_idr,
+          note: 'QRIS sudah dihapus dari chat. Kalau warga terlanjur membayar sebelum dihapus, saldo tetap masuk otomatis.',
         }
       }
 
