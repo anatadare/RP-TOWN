@@ -1,4 +1,4 @@
-// Logic 8 NPC agent (5 Penghulu + 3 Pegawai) — versi Workers.
+// Logic 6 NPC agent (5 Penghulu + 1 Pegawai) — versi Workers.
 //
 // Beda paling penting dari bot/agents/runner.js (versi Railway):
 // 1. Semua fungsi di sini terima `supabaseAdmin`, `env`/config sebagai
@@ -64,9 +64,9 @@ const PENGHULU_STATUS_KEYWORDS = [
 // Urutan prioritas pegawai (dari config.js: agent yang beneran aktif),
 // dihitung sekali per-request di index.js lalu dikirim ke handlePegawaiMessage.
 export function sortAgentsByPegawaiPriority(assistantAgents) {
-  // Urutan tetap: Naya -> Mimi -> Cika kalau ketiganya ada; fallback ke
-  // urutan array asli buat nama lain yang gak dikenal (custom naming).
-  const priorityOrder = ['Naya', 'Mimi', 'Cika']
+  // Pegawai KUA sekarang cuma Naya; fallback ke urutan array asli buat
+  // nama lain yang gak dikenal (custom naming).
+  const priorityOrder = ['Naya']
   return [...assistantAgents].sort((a, b) => {
     const ai = priorityOrder.indexOf(a.name)
     const bi = priorityOrder.indexOf(b.name)
@@ -767,7 +767,7 @@ async function handleFamilyMessage(supabaseAdmin, agent, ctx, text, threadId, se
 }
 
 // ------------------------------------------------------------------
-// Pegawai (Naya, Mimi, Cika)
+// Pegawai (Naya)
 // ------------------------------------------------------------------
 export async function handlePegawaiMessage(supabaseAdmin, agent, ctx, text, threadId, { penghuluAgents, pegawaiPriorityKeys, pegawaiPriorityNames, env }) {
   const lower = text.toLowerCase()
