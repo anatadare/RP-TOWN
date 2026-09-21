@@ -12,6 +12,7 @@
 //   POST /webhook/main              -> bot utama (/start, /town)
 //   POST /webhook/agent/:agentKey   -> 1 NPC agent (contoh: penghulu-1, assistant-2)
 //   POST /webhooks/house-rented     -> webhook dari Supabase Database Webhooks
+//   POST /webhooks/bayargg          -> callback pembayaran dari bayar.gg (setor teller bank)
 //   POST /api/kua-invite            -> Mini App minta link masuk KUA sekali pakai
 //   GET  /                          -> health check
 //   GET  /debug/models              -> HAPUS SETELAH SELESAI DIPAKAI. Nampilin
@@ -33,6 +34,8 @@ import {
 import { handleHouseRentedWebhook } from './houseWebhook.js'
 import { registerMainBotHandlers } from './mainBot.js'
 import { handleKuaInvite } from './kuaInvite.js'
+import { handleBayarGgWebhook } from './bayarWebhook.js'
+import { handleTellerMessage } from './teller.js'
 
 export default {
   async fetch(request, env, ctx) {
@@ -52,6 +55,10 @@ export default {
 
     if (url.pathname === '/webhooks/house-rented' && request.method === 'POST') {
       return handleHouseRentedWebhook(request, env)
+    }
+
+    if (url.pathname === '/webhooks/bayargg' && request.method === 'POST') {
+      return handleBayarGgWebhook(request, env)
     }
 
     if (url.pathname === '/webhook/main' && request.method === 'POST') {
@@ -104,8 +111,8 @@ async function handleMainBotWebhook(request, env) {
 }
 
 async function handleAgentWebhook(request, env, agentKey) {
-  const { allAgents, penghuluAgents, assistantAgents } = loadAgents(env)
-  const agent = allAgents.find((a) => a.key === agentKey)
+  const { allAgents, tellerAgents, penghuluAgents, assistantAgents } = loadAgents(env)
+  const agent = allAgents.find((a) => a.key === agentKey) || tellerAgents.find((a) => a.key === agentKey)
 
   if (!agent) {
     // Agent ini belum dikonfigurasi lengkap (token/grup/API key kosong di
@@ -135,6 +142,11 @@ async function handleAgentWebhook(request, env, agentKey) {
       const text = botCtx.message.text || botCtx.message.caption
       if (!text) return
 
+      if (agent.kind === 'teller') {
+        await handleTellerMessage(supabaseAdmin, agent, botCtx, text, threadId, { env })
+        return
+      }
+
       if (agent.kind === 'penghulu') {
         await handlePenghuluMessage(supabaseAdmin, agent, botCtx, text, threadId, { penghuluAgents, assistantAgents, env })
       } else {
@@ -152,6 +164,18 @@ async function handleAgentWebhook(request, env, agentKey) {
       // (ambil ulang threadId di sini karena yang di dalam try itu
       // block-scoped, gak kebaca dari catch)
       const fallbackThreadId = botCtx.message?.message_thread_id ?? null
+
+      if (agent.kind === 'teller') {
+        // Teller: jangan pakai template "pergi sebentar" milik Pegawai KUA.
+        try {
+          await botCtx.reply('Maaf, sistem bank lagi sibuk. Coba kirim lagi sebentar lagi ya 🙏', {
+            ...(fallbackThreadId ? { message_thread_id: fallbackThreadId } : {}),
+          })
+        } catch (replyErr) {
+          console.error(`[${agent.key}] gagal kirim fallback reply:`, replyErr)
+        }
+        return
+      }
 
       if (agent.kind === 'penghulu') {
         // Cuma nyimpen marker recovery konteks (lihat penghuluTimeoutState.js
