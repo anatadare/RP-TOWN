@@ -42,7 +42,8 @@ export async function handleHouseRentedWebhook(request, env) {
     if (ownerError) throw ownerError
 
     const ownerName = owner.display_name || owner.username || 'Warga'
-    const topicTitle = `🏡 Petak ${record.plot_number} — ${ownerName}`
+    const islandName = record.map_key === 'lpm' ? 'LPM' : 'Pantai'
+    const topicTitle = `🏡 ${islandName} · Petak ${record.plot_number} — ${ownerName}`
 
     const topic = await api.createForumTopic(env.HOUSING_GROUP_CHAT_ID, topicTitle)
 
