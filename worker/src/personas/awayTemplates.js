@@ -1,4 +1,4 @@
-// Template "pergi sebentar" buat Pegawai (Naya/Mimi/Cika) pas AI beneran
+// Template "pergi sebentar" buat Pegawai (Naya) pas AI beneran
 // timeout total (semua model di aiClient.js gagal/timeout).
 //
 // KENAPA INI ADA: daripada balikin pesan generik "(sinyal lagi kurang
@@ -18,7 +18,7 @@
 //
 // Placeholder yang dipakai (diganti pas dipanggil, lihat pickAwayTemplate +
 // fillAwayTemplate di bawah):
-// - {name}    -> nama pegawai yang lagi jaga (Naya/Mimi/Cika)
+// - {name}    -> nama pegawai yang lagi jaga (Naya)
 // - {mention} -> @username warga yang lagi ditinggal (atau nama depannya
 //                kalau dia gak punya username publik)
 
@@ -141,7 +141,7 @@ const LEAVE_TEMPLATES = [
     enter: '_kucing kantor tiba-tiba manjat ke atas meja {name}_',
     say: 'eh ini kucing lagi, bentar turunin dulu ya',
     exit: '_{name} berdiri sambil gendong kucingnya keluar ruangan_',
-    back: '_{name} balik setelah nitipin kucingnya ke Mimi, duduk, ngeliat {mention}_',
+    back: '_{name} balik setelah nitipin kucingnya ke pos satpam, duduk, ngeliat {mention}_',
   },
   {
     enter: '_dokumen di meja {name} numpuk dan butuh dirapiin bareng_',
