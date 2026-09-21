@@ -72,7 +72,8 @@ crons = ["* * * * *"]
 #   BAYARGG_PAYMENT_URL    (opsional) default https://www.bayar.gg/pay
 #   DEPOSIT_MIN_IDR / DEPOSIT_MAX_IDR (opsional) default 5000 / 500000
 #   COINGECKO_API_KEY      (opsional tapi disarankan) Demo key gratis CoinGecko
-#   COINGECKO_TON_ID       (opsional) default "gram" (TON sudah rename jadi GRAM)
+#   COINGECKO_TON_ID       (opsional) default "the-open-network" (API id CoinGecko untuk TON/GRAM;
+#                          JANGAN pakai "gram" -- itu slug halaman, ids=gram nunjuk koin lain)
 #
 # Set webhook bot teller ke: <PUBLIC_WORKER_URL>/webhook/agent/teller-1
 # Whitelist IP webhook bayar.gg kalau Worker dipasang di belakang WAF/Bot Fight
