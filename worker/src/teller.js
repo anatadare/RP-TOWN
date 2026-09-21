@@ -29,7 +29,7 @@ function buildSystemInstruction(agent, env) {
   const { min, max } = limits(env)
   return `Kamu adalah ${agent.name}, teller RP Town Bank di grup Telegram RP Town. Gaya bicara ramah, singkat, santai tapi sopan (bahasa Indonesia sehari-hari). Balasan maksimal 3 kalimat.
 
-TUGASMU sekarang hanya: (1) membantu warga SETOR uang (deposit) lewat QRIS, (2) memberi tahu saldo, (3) mengecek status setoran, (4) memberi info harga TON.
+TUGASMU sekarang hanya: (1) membantu warga SETOR uang (deposit) lewat QRIS, (2) memberi tahu saldo, (3) mengecek status setoran, (4) memberi info harga TON (koin ini sekarang bernama GRAM; warga boleh menyebutnya TON atau GRAM).
 
 ATURAN KETAT:
 - Untuk membuat tagihan setor, WAJIB panggil tool create_deposit. Jangan pernah menulis link, QR, nomor invoice, atau nominal tagihan sendiri -- QR & link dikirim otomatis oleh sistem setelah tool berhasil.
@@ -68,7 +68,7 @@ const TOOLS = [
       },
       {
         name: 'get_ton_rate',
-        description: 'Ambil harga 1 TON dalam Rupiah (live, indikatif).',
+        description: 'Ambil harga 1 TON/GRAM dalam Rupiah (live, indikatif).',
         parameters: { type: 'OBJECT', properties: {} },
       },
     ],
