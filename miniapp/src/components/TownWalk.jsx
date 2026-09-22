@@ -5,7 +5,15 @@ import * as THREE from 'three'
 import { MAPS } from '../lib/maps'
 import { buildWalkWorld, ROAD_LIFT } from '../lib/walkWorld'
 import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
-import { lockTelegramSwipe, unlockTelegramSwipe, hapticSelect } from '../lib/telegram'
+import {
+  lockTelegramSwipe,
+  unlockTelegramSwipe,
+  hapticSelect,
+  requestTelegramFullscreen,
+  exitTelegramFullscreen,
+  lockTelegramOrientation,
+  unlockTelegramOrientation,
+} from '../lib/telegram'
 
 // Model karakter (Quaternius) punya skinned mesh + skeleton (tulang buat
 // animasi jalan/lari/lompat). `Object3D.clone()` bawaan three.js nge-clone
@@ -40,6 +48,71 @@ function cloneSkinnedScene(source) {
   })
 
   return root
+}
+
+// Mode Jelajahi paling enak dipakai landscape (kamera lebih lega, joystick &
+// tombol lompat gak numpuk di layar sempit). Pas komponen ini kepasang, coba
+// paksa ke landscape; pas kelepas (keluar mode Jelajahi), otomatis balik lagi
+// ke portrait -- gak nyisa efek ke layar biasa (peta/beranda dkk tetap potret
+// seperti biasa, sesuai desain mini app ini).
+//
+// Di Android/Telegram WebView biasanya BENERAN bisa dipaksa muter (lewat
+// Screen Orientation API + fullscreen). Di iOS Safari, API paksa-orientasi
+// ini emang gak didukung sama sekali (batasan dari Apple, bukan dari kode) --
+// buat kasus itu kita cuma kasih ajakan buat muter HP-nya manual; begitu
+// diputer, layout udah otomatis responsif jadi pas duluan.
+function useLandscapeLock() {
+  const [isLandscape, setIsLandscape] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= window.innerHeight
+  )
+
+  useEffect(() => {
+    function check() {
+      setIsLandscape(window.innerWidth >= window.innerHeight)
+    }
+    check()
+    window.addEventListener('resize', check)
+    window.addEventListener('orientationchange', check)
+
+    requestTelegramFullscreen()
+    let selfFullscreen = false
+    try {
+      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+        document.documentElement
+          .requestFullscreen()
+          .then(() => {
+            selfFullscreen = true
+          })
+          .catch(() => {})
+      }
+    } catch {
+      // Fullscreen API gak ada / ditolak browser -- lanjut aja, gak fatal.
+    }
+    try {
+      screen.orientation?.lock?.('landscape')?.catch(() => {})
+    } catch {
+      // Screen Orientation API gak didukung (mis. iOS Safari) -- fallback-nya
+      // ya ajakan muter manual di bawah (lihat isLandscape).
+    }
+    lockTelegramOrientation()
+
+    return () => {
+      window.removeEventListener('resize', check)
+      window.removeEventListener('orientationchange', check)
+      try {
+        screen.orientation?.unlock?.()
+      } catch {
+        // diabaikan
+      }
+      unlockTelegramOrientation()
+      exitTelegramFullscreen()
+      if (selfFullscreen && document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => {})
+      }
+    }
+  }, [])
+
+  return isLandscape
 }
 
 // Mode "Jelajahi": jalan-jalan langsung di dalam peta 3D (third-person)
@@ -672,8 +745,14 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
     }
   }
   const sky = useMemo(getSky, [])
+  const isLandscape = useLandscapeLock()
   const [ready, setReady] = useState(false)
   const [showHint, setShowHint] = useState(true)
+  // Selalu dikasih tau di awal buat muter HP -- soalnya walau paksa-landscape
+  // di kode ini BERHASIL, `isLandscape` bisa aja kebaca true padahal HP-nya
+  // masih dipegang tegak (browser cuma ngerender kontennya "miring"), jadi
+  // gak bisa cuma ngandelin `!isLandscape` doang buat mutusin nampilin hint.
+  const [showRotateHint, setShowRotateHint] = useState(true)
   const handleReady = useCallback(() => setReady(true), [])
 
   // Ganti peta = Canvas remount (key) -> tampilkan loading lagi.
@@ -683,6 +762,13 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
     const t = setTimeout(() => setShowHint(false), 6000)
     return () => clearTimeout(t)
   }, [mapKey])
+
+  // Hint muter HP cuma perlu ditampilin sekali di awal masuk mode Jelajahi
+  // (bukan tiap ganti peta) -- makanya efek terpisah dengan deps kosong.
+  useEffect(() => {
+    const t = setTimeout(() => setShowRotateHint(false), 5000)
+    return () => clearTimeout(t)
+  }, [])
 
   // Geser vertikal di Telegram bisa nutup/minimize mini app -- matikan selama
   // mode jalan, karena geser ke bawah dipakai buat mutar kamera.
@@ -721,6 +807,13 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
       </Canvas>
 
       <WalkControls inputRef={inputRef} />
+
+      {(showRotateHint || !isLandscape) && (
+        <div className="walk-rotate-hint">
+          <span className="walk-rotate-hint-icon">🔄</span>
+          Muter HP kamu ke mode landscape biar jalan-jalannya lebih nyaman
+        </div>
+      )}
 
       <div className="walk-topbar">
         <button type="button" className="walk-pill-btn" onClick={onExit}>
