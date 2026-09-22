@@ -62,3 +62,26 @@ export function unlockTelegramSwipe() {
   tg?.enableVerticalSwipes?.()
   tg?.disableClosingConfirmation?.()
 }
+
+// Layar penuh + kunci orientasi landscape, dipakai bareng Screen Orientation
+// API di TownWalk.jsx pas masuk/keluar mode Jelajahi. Semua ini no-op kalau
+// gak jalan di dalem Telegram (tg null) atau versi client-nya belum dukung.
+export function requestTelegramFullscreen() {
+  tg?.requestFullscreen?.()
+}
+
+export function exitTelegramFullscreen() {
+  tg?.exitFullscreen?.()
+}
+
+// Catatan: lockOrientation() Telegram cuma ngunci ke orientasi yang LAGI
+// AKTIF saat dipanggil (bukan maksa ganti ke landscape) -- makanya di
+// TownWalk.jsx ini dipanggil SETELAH screen.orientation.lock('landscape')
+// berhasil, biar yang dikunci beneran udah landscape.
+export function lockTelegramOrientation() {
+  tg?.lockOrientation?.()
+}
+
+export function unlockTelegramOrientation() {
+  tg?.unlockOrientation?.()
+}
