@@ -61,6 +61,263 @@ const OCEAN_SCALE_Y = 0.05
 const OCEAN_BASE_Y_FALLBACK = -1.45 // dipakai sebentar sebelum footprint pulau kehitung
 const OCEAN_BASE_OFFSET = 0.5 // jarak air di atas titik terendah pulau
 
+// ============================================================
+// Matahari / Bulan / Bintang — benda langit low-poly yang beneran nyala
+// ============================================================
+// Posisinya SENGAJA di-fix di tengah-tengah peta (di atas pulau), bukan
+// gerak muter ngikutin jam kayak matahari beneran — biar user gampang
+// langsung ngenalin "oh itu mataharinya" / "oh itu bulannya" begitu buka
+// peta, gak peduli kameranya lagi diputer ke arah mana. Yang berubah
+// cuma DUA hal seiring jalannya waktu HP:
+//   1. warna & kecerahan bola langitnya — kuning-terang pas siang, pelan²
+//      meredup jadi oranye pas senja, lalu jadi putih-kebiruan pas malam
+//      (bulan), lewat crossfade — bukan "klik" langsung ganti.
+//   2. bintang-bintang di sekelilingnya, cuma nongol pas udah cukup gelap.
+// Jam transisinya bebas ditentuin sendiri (sesuai instruksi), disamain
+// kira-kira sama 4 fase yang sudah ada di header ("Pagi/Siang/Senja/Malam
+// di RP Town", lihat getWorldPhase() di App.jsx) biar dua-duanya nyambung:
+const SKY_DAWN_START = 5     // pagi: matahari mulai nongol, bulan mulai pudar
+const SKY_DAWN_END = 6.5     // matahari udah full nyala
+const SKY_DUSK_START = 16.5  // sore: matahari mulai meredup
+const SKY_DUSK_END = 19      // udah malam total: bulan + bintang full nyala
+
+// Hitung "fase langit" versi angka (0..1) dari jam beneran di HP user,
+// dipakai buat nge-lerp warna & opacity matahari/bulan/bintang tiap 30
+// detik (gak perlu tiap frame, wong jam jalannya pelan).
+function getSkyPhase(date) {
+  const t = date.getHours() + date.getMinutes() / 60
+  const ramp = (start, end, x) => THREE.MathUtils.clamp((x - start) / (end - start), 0, 1)
+
+  let sunOpacity
+  if (t >= SKY_DAWN_START && t < SKY_DAWN_END) {
+    sunOpacity = ramp(SKY_DAWN_START, SKY_DAWN_END, t)
+  } else if (t >= SKY_DAWN_END && t < SKY_DUSK_START) {
+    sunOpacity = 1
+  } else if (t >= SKY_DUSK_START && t < SKY_DUSK_END) {
+    sunOpacity = 1 - ramp(SKY_DUSK_START, SKY_DUSK_END, t)
+  } else {
+    sunOpacity = 0
+  }
+  const moonOpacity = 1 - sunOpacity
+
+  // Bintang baru mulai keliatan begitu langit udah cukup gelap (bukan
+  // barengan pas senja baru mulai), lalu ikut pudar begitu matahari naik.
+  const starsOpacity = THREE.MathUtils.clamp((moonOpacity - 0.35) / 0.65, 0, 1)
+
+  // Pas mepet senja/pagi, warnanya digeser ke oranye-kemerahan biar kerasa
+  // efek "sunset/sunrise"-nya, bukan cuma transparan doang.
+  const inDusk = t >= SKY_DUSK_START && t < SKY_DUSK_END
+  const inDawn = t >= SKY_DAWN_START && t < SKY_DAWN_END
+  const sunsetMix = inDusk ? ramp(SKY_DUSK_START, SKY_DUSK_END, t) : inDawn ? 1 - ramp(SKY_DAWN_START, SKY_DAWN_END, t) : 0
+  const sunGlowColor = new THREE.Color('#fff6d6').lerp(new THREE.Color('#ff7a3d'), sunsetMix)
+
+  return { sunOpacity, moonOpacity, starsOpacity, sunGlowColor }
+}
+
+// Tekstur glow lingkaran lembut, dibikin SEKALI pake canvas 2D (bukan tiap
+// frame) terus dipasang di <sprite> yang selalu ngadep kamera (billboard
+// otomatis bawaan three.js). Ini "akal-akalan" bikin badan mataharinya
+// kerasa nyala/bloom tanpa perlu pasang post-processing bloom yang berat
+// buat HP low-end.
+function makeGlowTexture() {
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  gradient.addColorStop(0, 'rgba(255,255,255,1)')
+  gradient.addColorStop(0.35, 'rgba(255,255,255,0.55)')
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, size, size)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.needsUpdate = true
+  return texture
+}
+
+function makeStarTexture() {
+  const size = 32
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  gradient.addColorStop(0, 'rgba(255,255,255,1)')
+  gradient.addColorStop(0.5, 'rgba(255,255,255,0.55)')
+  gradient.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, size, size)
+  return new THREE.CanvasTexture(canvas)
+}
+
+const MOON_BASE_COLOR = new THREE.Color('#eaf1ff')
+const MOON_EMISSIVE = new THREE.Color('#9fb8ff')
+const SUN_BASE_COLOR = new THREE.Color('#fff6d6')
+const SUN_EMISSIVE = new THREE.Color('#ffb454')
+
+// Satu badan langit doang (bukan dua mesh matahari+bulan numpuk) yang
+// warnanya di-lerp pelan² dari "mode bulan" ke "mode matahari" — sengaja
+// gitu biar gak ada dua geometry transparan numpuk di titik yang sama
+// (bisa bikin kedip/z-fighting pas lagi crossfade). Geometrinya icosahedron
+// low-poly (flatShading) biar tiap muter kelihatan "berfaset" & pantulan
+// cahayanya kerlap-kerlip dikit — nambah kesan "hidup"/nyala.
+function CelestialBody({ anchor, bodyRadius, phase }) {
+  const spinRef = useRef()
+  const matRef = useRef()
+  const glowRef = useRef()
+  const glowMatRef = useRef()
+  const lightRef = useRef()
+  const glowTexture = useMemo(() => makeGlowTexture(), [])
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime
+    if (spinRef.current) spinRef.current.rotation.y = t * 0.05
+    const pulse = 1 + Math.sin(t * 1.6) * 0.05
+
+    const mixedColor = MOON_BASE_COLOR.clone().lerp(SUN_BASE_COLOR, phase.sunOpacity)
+    const mixedEmissive = MOON_EMISSIVE.clone().lerp(phase.sunGlowColor, phase.sunOpacity)
+    const glowStrength = Math.max(phase.sunOpacity, phase.moonOpacity)
+
+    if (matRef.current) {
+      matRef.current.color.copy(mixedColor)
+      matRef.current.emissive.copy(mixedEmissive)
+      matRef.current.emissiveIntensity = 0.8 + phase.sunOpacity * 1.0
+    }
+    if (glowRef.current) glowRef.current.scale.setScalar(bodyRadius * 4.5 * pulse)
+    if (glowMatRef.current) {
+      glowMatRef.current.color.copy(mixedEmissive)
+      glowMatRef.current.opacity = 0.5 + glowStrength * 0.4
+    }
+    if (lightRef.current) {
+      lightRef.current.color.copy(mixedEmissive)
+      // Cahaya beneran cuma dikuatin pas matahari (biar siang kerasa lebih
+      // terang), bulan cuma kasih cahaya remang-remang.
+      lightRef.current.intensity = 0.25 + phase.sunOpacity * 0.9
+    }
+  })
+
+  return (
+    <group position={anchor}>
+      {/* Halo/glow lembut di belakang badannya — inilah yang bikin dia
+          "bersinar" alih-alih cuma bola polos nempel di langit. */}
+      <sprite ref={glowRef} renderOrder={0}>
+        <spriteMaterial ref={glowMatRef} map={glowTexture} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
+      </sprite>
+      <group ref={spinRef}>
+        <mesh renderOrder={1}>
+          <icosahedronGeometry args={[bodyRadius, 1]} />
+          <meshStandardMaterial ref={matRef} flatShading roughness={0.55} metalness={0.1} />
+        </mesh>
+      </group>
+      <pointLight ref={lightRef} distance={bodyRadius * 45} decay={2} />
+    </group>
+  )
+}
+
+// Kubah bintang: satu THREE.Points doang per lapisan (bukan ratusan mesh
+// kecil satu-satu) biar cuma 1 draw call — murah buat HP low-end. Dipasang
+// pake sizeAttenuation=false biar ukurannya tetap sama di layar berapa pun
+// jauhnya (kayak bintang beneran, gak ngecil pas "jauh").
+function StarField({ radius, opacity, count = 220, size = 2.2, speed = 0.003 }) {
+  const pointsRef = useRef()
+  const materialRef = useRef()
+  const starTexture = useMemo(() => makeStarTexture(), [])
+
+  const positions = useMemo(() => {
+    const pos = new Float32Array(count * 3)
+    for (let i = 0; i < count; i++) {
+      const theta = Math.random() * Math.PI * 2
+      // Dibikin numpuk di puncak langit, jarang deket horizon (kubah atas
+      // doang) — bintang deket horizon toh jarang kelihatan pas kamera
+      // dikunci gak nembus ke bawah 90° (lihat MAX_POLAR_ANGLE).
+      const phi = Math.acos(1 - Math.random() * 0.85)
+      pos[i * 3] = radius * Math.sin(phi) * Math.cos(theta)
+      pos[i * 3 + 1] = radius * Math.abs(Math.cos(phi))
+      pos[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta)
+    }
+    return pos
+  }, [radius, count])
+
+  useFrame(({ clock }) => {
+    if (opacity <= 0.01) return
+    if (materialRef.current) {
+      // Kedip pelan barengan (1 nilai opacity doang, bukan per-titik) —
+      // cukup buat kerasa "berkelip" tanpa perlu shader custom yang mahal.
+      const twinkle = 0.82 + Math.sin(clock.elapsedTime * 1.3 + radius) * 0.18
+      materialRef.current.opacity = opacity * twinkle
+    }
+    if (pointsRef.current) pointsRef.current.rotation.y = clock.elapsedTime * speed
+  })
+
+  if (opacity <= 0.01) return null
+
+  return (
+    <points ref={pointsRef}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        ref={materialRef}
+        map={starTexture}
+        color="#ffffff"
+        size={size}
+        sizeAttenuation={false}
+        transparent
+        opacity={opacity}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </points>
+  )
+}
+
+// Nentuin posisi (di tengah pulau, ketinggian sepantasnya) & ukuran badan
+// langit dari bounding-box pulau yang lagi aktif (footprint yang sama yang
+// dipakai OceanSurface) — jadi otomatis pas buat SEMUA peta walau
+// ukuran/skala tiap peta beda-beda, gak perlu di-hardcode per peta.
+function useCelestialGeometry(footprint) {
+  return useMemo(() => {
+    if (!footprint) {
+      // Dipakai sebentar doang sebelum footprint peta kehitung.
+      return { anchor: [0, 30, 0], bodyRadius: 3, starsRadius: 220 }
+    }
+    const maxDim = Math.max(footprint.size.x, footprint.size.z, 1)
+    const heightAboveIsland = maxDim * 0.55
+    const anchor = [
+      footprint.center.x,
+      footprint.center.y + footprint.size.y / 2 + heightAboveIsland,
+      footprint.center.z,
+    ]
+    // Ukurannya sengaja di rentang tengah — cukup gede buat langsung
+    // kebaca "oh itu matahari/bulan", tapi gak sampe kegedean nutupin peta.
+    const bodyRadius = Math.max(maxDim * 0.045, 1.5)
+    const starsRadius = maxDim * 7
+    return { anchor, bodyRadius, starsRadius }
+  }, [footprint])
+}
+
+// Komponen pembungkus: gabungin badan langit + 2 lapis bintang (satu rapat
+// & redup buat "isi", satu jarang & lebih terang buat kesan kedalaman),
+// dan nge-update fase langit tiap 30 detik dari jam beneran di HP user.
+function CelestialSystem({ footprint }) {
+  const { anchor, bodyRadius, starsRadius } = useCelestialGeometry(footprint)
+  const [phase, setPhase] = useState(() => getSkyPhase(new Date()))
+
+  useEffect(() => {
+    const id = setInterval(() => setPhase(getSkyPhase(new Date())), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <>
+      <StarField radius={starsRadius} opacity={phase.starsOpacity} count={260} size={2} speed={0.003} />
+      <StarField radius={starsRadius * 0.75} opacity={phase.starsOpacity} count={40} size={3.4} speed={-0.002} />
+      <CelestialBody anchor={anchor} bodyRadius={bodyRadius} phase={phase} />
+    </>
+  )
+}
+
 // Laut utamanya sekarang dari sini: aset low-poly siap pakai (bukan hasil
 // generate shader lagi), jadi cukup dipasang dan dikasih material
 // flat-shaded biar kelihatan "berfaset" khas low-poly. Geometrinya sendiri
@@ -583,6 +840,10 @@ export default function TownMap3D({
         <ambientLight intensity={0.65} />
         <directionalLight position={[60, 100, 40]} intensity={1.15} castShadow />
         <hemisphereLight args={['#6b7fd9', '#232a45', 0.4]} />
+        {/* Matahari/bulan/bintang gak butuh nunggu model .glb kebaca, jadi
+            ditaruh di luar <Suspense> biar langsung nongol dari awal
+            (footprint pulau masih null sebentar, dipakai fallback dulu). */}
+        <CelestialSystem footprint={islandFootprint} />
         <Suspense fallback={null}>
           <OceanSurface footprint={islandFootprint} />
           <group ref={modelGroupRef}>
