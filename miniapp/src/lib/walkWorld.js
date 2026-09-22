@@ -314,6 +314,47 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], ce
     }
   }
 
+  // ---- batasi kemiringan tanah isian ---------------------------------------
+  // BUG FIX: sel tanah isian (hasil IDW) di dekat gedung yang berdiri di lahan
+  // miring bisa ketarik naik jauh gara-gara jangkar "dasar tembok" gedung itu
+  // sendiri jauh lebih tinggi dari tanah sekitarnya (mis. sudut gedung yang
+  // nempel ke bukit). Efeknya tanah keliatan "manjat"/nyatu ke badan gedung
+  // alih-alih landai. Di sini kita relaksasi: sel isian gak boleh beda tinggi
+  // lebih dari MAX_SLOPE (meter) dibanding tetangga darat mana pun (termasuk
+  // sesama sel isian), diulang beberapa kali sampai stabil. Sel yang tingginya
+  // PASTI (tinExact, dari mesh terrain asli) gak pernah diubah -- itu tetap
+  // jadi acuan kebenaran.
+  const MAX_SLOPE = 0.9 // m naik/turun maksimum per sel grid (grid = `cell` meter)
+  {
+    const locked = new Uint8Array(count)
+    for (let n = 0; n < count; n++) locked[n] = land[n] && tinExact[n] ? 1 : 0
+    for (let pass = 0; pass < 8; pass++) {
+      let changed = false
+      for (let j = 0; j < nz; j++) {
+        for (let i = 0; i < nx; i++) {
+          const n = j * nx + i
+          if (!land[n] || locked[n]) continue
+          let lo = -Infinity, hi = Infinity
+          const nbrs = [
+            i > 0 ? n - 1 : -1,
+            i < nx - 1 ? n + 1 : -1,
+            j > 0 ? n - nx : -1,
+            j < nz - 1 ? n + nx : -1,
+          ]
+          for (const m of nbrs) {
+            if (m < 0 || !land[m]) continue
+            if (heights[m] - MAX_SLOPE > lo) lo = heights[m] - MAX_SLOPE
+            if (heights[m] + MAX_SLOPE < hi) hi = heights[m] + MAX_SLOPE
+          }
+          if (lo > hi) continue // tetangga2 kontradiksi (kasus langka), skip pass ini
+          if (heights[n] < lo) { heights[n] = lo; changed = true }
+          else if (heights[n] > hi) { heights[n] = hi; changed = true }
+        }
+      }
+      if (!changed) break
+    }
+  }
+
   // ---- mesh tanah (visual) -------------------------------------------------
   const groundMesh = buildGroundMesh({ nx, nz, minX, minZ, cell, land, heights, waterHash, waterLevel })
 
