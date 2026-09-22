@@ -1722,3 +1722,223 @@ body {
   margin-top: 14px;
   opacity: 0.7;
 }
+   MODE "JELAJAHI" — jalan-jalan 3D third-person.
+   Full-screen, gantiin seluruh UI town biasa selama aktif.
+   ============================================ */
+
+/* Bungkus clock + tombol Jelajahi jadi satu grup di kanan header */
+.town-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Tombol "Jelajahi" di header peta biasa, buka mode jalan */
+.explore-fab {
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 228, 255, 0.5);
+  background: rgba(34, 228, 255, 0.16);
+  color: var(--lantern-soft);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.walk-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--sky-dusk-1);
+  touch-action: none;
+}
+
+.walk-root canvas {
+  touch-action: none;
+}
+
+/* Area sentuh transparan penuh layar buat joystick (kiri) + putar kamera (kanan) */
+.walk-zone {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  touch-action: none;
+}
+
+.walk-joy-base {
+  position: absolute;
+  width: 108px;
+  height: 108px;
+  margin-left: -54px;
+  margin-top: -54px;
+  border-radius: 50%;
+  background: rgba(234, 246, 255, 0.1);
+  border: 1px solid rgba(234, 246, 255, 0.28);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.walk-joy-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin-left: -23px;
+  margin-top: -23px;
+  border-radius: 50%;
+  background: rgba(34, 228, 255, 0.35);
+  border: 1px solid rgba(34, 228, 255, 0.6);
+  transform: translate(-50%, -50%);
+}
+
+.walk-jump {
+  position: absolute;
+  right: 20px;
+  bottom: 28px;
+  z-index: 5;
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  border: 1px solid rgba(34, 228, 255, 0.55);
+  background: rgba(11, 18, 32, 0.55);
+  backdrop-filter: blur(6px);
+  color: var(--lantern-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.walk-jump span {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+}
+
+.walk-jump:active {
+  background: rgba(34, 228, 255, 0.22);
+}
+
+.walk-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  padding: 20px 16px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.walk-topbar > * {
+  pointer-events: auto;
+}
+
+.walk-pill-btn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(234, 246, 255, 0.22);
+  background: rgba(11, 18, 32, 0.55);
+  backdrop-filter: blur(6px);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.walk-map-switcher {
+  margin-top: 0;
+  background: rgba(11, 18, 32, 0.45);
+}
+
+.walk-side {
+  position: absolute;
+  right: 20px;
+  bottom: 118px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.walk-round-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(234, 246, 255, 0.22);
+  background: rgba(11, 18, 32, 0.55);
+  backdrop-filter: blur(6px);
+  color: var(--paper);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.walk-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  z-index: 4;
+  max-width: 78vw;
+  text-align: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(11, 18, 32, 0.6);
+  border: 1px solid rgba(234, 246, 255, 0.16);
+  backdrop-filter: blur(6px);
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.2px;
+  pointer-events: none;
+}
+
+.walk-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 18, 32, 0.55);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.walk-loading p {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--paper);
+  background: rgba(11, 18, 32, 0.7);
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(234, 246, 255, 0.18);
+}
+
+@media (min-width: 480px) {
+  .walk-topbar {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+}
