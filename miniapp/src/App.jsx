@@ -5,12 +5,14 @@ import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms, updateCitize
 import { getHouseByOwner, getIslandName } from './lib/houses'
 import { requestKuaInvite, kuaInviteErrorMessage } from './lib/kua'
 import TownMap3D from './components/TownMap3D'
+import TownWalk from './components/TownWalk'
 import HousingDistrict from './components/HousingDistrict'
 import BuildingSearch from './components/BuildingSearch'
 import CharacterSelect from './components/CharacterSelect'
 import Landing from './components/Landing'
 import FamilyTree from './components/FamilyTree'
 import { MAPS, DEFAULT_MAP_KEY, getMapByKey } from './lib/maps'
+import { getCharacterById, DEFAULT_CHARACTER_ID } from './lib/characters'
 import { buildBuildingDirectory } from './lib/buildings'
 
 // Label status warga. Sistem status lengkap (custom, emoji, dsb) menyusul —
@@ -195,6 +197,14 @@ export default function App() {
 
   const phase = useMemo(getWorldPhase, [])
   const activeMap = useMemo(() => getMapByKey(activeMapKey), [activeMapKey])
+
+  // Karakter yang dipakai di mode Jelajahi = karakter yang dipilih citizen
+  // pas pertama gabung (lihat CharacterSelect); fallback ke default kalau
+  // entah kenapa belum ada.
+  const walkCharacter = useMemo(
+    () => getCharacterById(citizen?.character_id) || getCharacterById(DEFAULT_CHARACTER_ID),
+    [citizen]
+  )
 
   // Cuma room yang "milik" peta yang lagi aktif yang ditampilkan/bisa
   // ditempel ke bangunan — room lama (sebelum fitur multi-map) otomatis
@@ -428,6 +438,25 @@ export default function App() {
     return <CharacterSelect citizen={citizen} onConfirm={handleConfirmCharacter} />
   }
 
+  // Mode "Jelajahi": jalan-jalan 3D full-screen, gantiin seluruh UI town
+  // (topbar peta biasa + bottom nav) karena TownWalk punya kontrol sendiri
+  // (joystick, tombol lompat, ganti-peta di atas).
+  if (!loading && !error && screen === 'walk') {
+    return (
+      <TownWalk
+        mapKey={activeMap.key}
+        mapName={activeMap.name}
+        modelUrl={activeMap.modelUrl}
+        character={walkCharacter}
+        onExit={() => {
+          hapticSelect()
+          setScreen('map')
+        }}
+        onChangeMap={setActiveMapKey}
+      />
+    )
+  }
+
   return (
     <div className="town">
       {screen === 'map' && (
@@ -435,9 +464,22 @@ export default function App() {
           <header className="town-header">
             <h1 className="town-title">RP Town</h1>
 
-            <div className="world-clock">
-              <span className="phase-dot" style={{ background: phase.dot, boxShadow: `0 0 10px 2px ${phase.dot}` }} />
-              <span>{phase.label}</span>
+            <div className="town-header-right">
+              <div className="world-clock">
+                <span className="phase-dot" style={{ background: phase.dot, boxShadow: `0 0 10px 2px ${phase.dot}` }} />
+                <span>{phase.label}</span>
+              </div>
+
+              <button
+                type="button"
+                className="explore-fab"
+                onClick={() => {
+                  hapticSelect()
+                  setScreen('walk')
+                }}
+              >
+                🚶 Jelajahi
+              </button>
             </div>
           </header>
 
