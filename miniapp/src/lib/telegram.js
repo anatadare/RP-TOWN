@@ -26,7 +26,7 @@ export function getTelegramUser() {
   }
   // Fallback untuk development di browser biasa (bukan dari dalam Telegram)
   return {
-    id: 000000000,
+    id: 0,
     username: 'dev_tester',
     displayName: 'Dev Tester',
     photoUrl: null,
@@ -50,3 +50,15 @@ export function hapticSuccess() {
 }
 
 export const isInsideTelegram = Boolean(tg)
+
+// Dipakai pas masuk mode Jelajahi (jalan-jalan 3D): geser vertikal dipakai
+// buat putar kamera, jadi gesture "swipe to close/minimize" bawaan Telegram
+// harus dimatikan sementara supaya mini app gak ke-minimize gak sengaja.
+export function lockTelegramSwipe() {
+  tg?.disableVerticalSwipes?.()
+}
+
+export function unlockTelegramSwipe() {
+  tg?.enableVerticalSwipes?.()
+  tg?.disableClosingConfirmation?.()
+}
