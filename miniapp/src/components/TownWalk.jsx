@@ -161,7 +161,7 @@ function getSky() {
 // Baca segitiga dari scene (koordinat dunia) buat dunia tabrakan.
 // ---------------------------------------------------------------------------
 function extractWorldData(root) {
-  const out = { water: [], green: [], roads: [], buildings: [], trunks: [] }
+  const out = { water: [], green: [], roads: [], buildings: [], buildingBases: [], trunks: [] }
   const targets = {
     TPX_Waterways: out.water,
     TPX_GreenAreas: out.green,
@@ -205,6 +205,24 @@ function extractWorldData(root) {
 
     const target = targets[grp]
     if (!target) return
+
+    // Untuk fisika tanah, kita butuh titik dasar bangunan yang BENAR.
+    // Jangan mengambil semua sudut dinding: pada beberapa GLB, fasad lantai
+    // atas diekspor sebagai mesh terpisah dengan sedikit pergeseran koordinat,
+    // sehingga sistem lama bisa mengira atap sebagai "dasar" dan menarik
+    // tanah sampai setinggi gedung. Ambil hanya vertex yang berada di level Y
+    // terendah dari masing-masing mesh bangunan.
+    if (grp === 'TPX_Buildings') {
+      let minY = Infinity
+      for (let i = 1; i < world.length; i += 3) minY = Math.min(minY, world[i])
+      const BASE_EPS = 0.08
+      for (let i = 0; i < world.length; i += 3) {
+        if (world[i + 1] <= minY + BASE_EPS) {
+          out.buildingBases.push(world[i], world[i + 2], minY)
+        }
+      }
+    }
+
     const idx = obj.geometry.index
     const n = idx ? idx.count : pos.count
     for (let k = 0; k < n; k++) {
@@ -218,6 +236,7 @@ function extractWorldData(root) {
     green: Float32Array.from(out.green),
     roads: Float32Array.from(out.roads),
     buildings: Float32Array.from(out.buildings),
+    buildingBases: Float32Array.from(out.buildingBases),
     trunks: out.trunks,
   }
 }
