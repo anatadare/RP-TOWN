@@ -128,11 +128,10 @@ function smoothstep(t) {
 // ---------------------------------------------------------------------------
 // Bangun dunia jalan.
 //   water, green, roads, buildings : array datar segitiga (koordinat dunia)
-//   buildingBases : titik dasar bangunan [x,z,y] (koordinat dunia)
 //   trunks : [{ x, z, r, y0, y1 }]  batang pohon (lingkaran vertikal)
 //   cell   : ukuran sel grid tanah pengisi (meter)
 // ---------------------------------------------------------------------------
-export function buildWalkWorld({ water, green, roads, buildings, buildingBases = [], trunks = [], cell = 2 }) {
+export function buildWalkWorld({ water, green, roads, buildings, trunks = [], cell = 2 }) {
   // ---- jalan diangkat sedikit --------------------------------------------
   const roadTris = new Float32Array(roads)
   for (let i = 1; i < roadTris.length; i += 3) roadTris[i] += ROAD_LIFT
@@ -219,15 +218,14 @@ export function buildWalkWorld({ water, green, roads, buildings, buildingBases =
   }
   for (let i = 0; i < greenTris.length; i += 3) addAnchor(greenTris[i], greenTris[i + 2], greenTris[i + 1])
   for (let i = 0; i < roads.length; i += 3) addAnchor(roads[i], roads[i + 2], roads[i + 1])
-  // Dasar bangunan diambil langsung dari vertex paling rendah tiap mesh
-  // bangunan (lihat extractWorldData). Ini jauh lebih aman daripada memakai
-  // sudut dinding satu per satu: model bertingkat kadang memecah fasad per
-  // lantai dan posisi X/Z tiap lantai bisa bergeser beberapa sentimeter.
-  // Jika sudut lantai atas ikut dijadikan anchor, IDW akan membentuk bukit
-  // palsu setinggi gedung. Hanya titik dasar yang dipakai sebagai anchor tanah.
-  for (let i = 0; i + 2 < buildingBases.length; i += 3) {
-    addAnchor(buildingBases[i], buildingBases[i + 1], buildingBases[i + 2])
-  }
+  // JANGAN memakai mesh bangunan sebagai anchor ketinggian tanah.
+  // Bangunan di GLB ini terdiri dari banyak dinding/level dan beberapa
+  // bagian fasad punya vertex dengan Y yang bukan merupakan permukaan tanah.
+  // Kalau titik-titik itu masuk IDW, tanah bisa tertarik naik sampai badan
+  // bangunan dan membentuk bukit/piramida seperti pada screenshot.
+  // Ketinggian tanah cukup diambil dari mesh hijau + jalan + batang pohon.
+  // Bangunan tetap dipakai di bawah sebagai collision wall.
+  const walls = extractWalls(buildings)
   for (const t of trunks) addAnchor(t.x, t.z, t.y0 + TREE_SINK)
 
   const aHash = new Map()
