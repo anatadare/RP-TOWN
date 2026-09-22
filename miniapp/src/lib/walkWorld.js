@@ -218,13 +218,30 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], ce
   }
   for (let i = 0; i < greenTris.length; i += 3) addAnchor(greenTris[i], greenTris[i + 2], greenTris[i + 1])
   for (let i = 0; i < roads.length; i += 3) addAnchor(roads[i], roads[i + 2], roads[i + 1])
-  // dasar bangunan = ujung bawah tiap dinding (dinding pasti ada, sedangkan
-  // sisi bawah/lantai bangunan belum tentu ada di model).
+  // dasar bangunan = ujung bawah dinding (dinding pasti ada, sedangkan sisi
+  // bawah/lantai bangunan belum tentu ada di model).
+  //
+  // BUG FIX (akar masalah "tanah manjat ke gedung"): gedung bertingkat sering
+  // direpresentasikan sebagai TUMPUKAN dinding per-lantai, bukan satu dinding
+  // utuh lantai-dasar-ke-atap. Kalau y1 tiap segmen dinding langsung dipakai
+  // apa adanya, dasar dinding lantai 5/10/dst -- yang sebenarnya melayang di
+  // tengah udara -- ikut jadi "jangkar tanah" tepat di posisi X,Z gedung.
+  // Efeknya tanah di sekitar gedung ketarik naik ke ketinggian lantai itu.
+  // Makanya di sini per SUDUT (x,z) gedung cuma diambil SATU jangkar: titik
+  // paling rendah dari semua dinding yang nongol di sudut itu (= lantai
+  // dasar beneran).
   const walls = extractWalls(buildings)
-  for (let s = 0; s < walls.count; s++) {
-    addAnchor(walls.x1[s], walls.z1[s], walls.y1[s])
-    addAnchor(walls.x2[s], walls.z2[s], walls.y1[s])
+  const cornerMinY = new Map()
+  function noteCorner(x, z, y) {
+    const k = Math.round(x * 20) + ',' + Math.round(z * 20)
+    const prev = cornerMinY.get(k)
+    if (!prev || y < prev.y) cornerMinY.set(k, { x, z, y })
   }
+  for (let s = 0; s < walls.count; s++) {
+    noteCorner(walls.x1[s], walls.z1[s], walls.y1[s])
+    noteCorner(walls.x2[s], walls.z2[s], walls.y1[s])
+  }
+  for (const c of cornerMinY.values()) addAnchor(c.x, c.z, c.y)
   for (const t of trunks) addAnchor(t.x, t.z, t.y0 + TREE_SINK)
 
   const aHash = new Map()
