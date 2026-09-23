@@ -131,6 +131,15 @@ const GROUP_PREFIXES = ['TPX_RoadsOutlines', 'TPX_Roads', 'TPX_Buildings', 'TPX_
 // Batang pohon = mesh kecil (32 vertex); tajuk = mesh besar (128 vertex).
 const TRUNK_MAX_VERTS = 40
 
+// Pohon di mode jelajah dibikin lebih tinggi supaya pandangan ke depan gak
+// ketutup tajuk (di peta aslinya bagian bawah tajuk cuma ~1-7 m dari tanah).
+// Ini HANYA berlaku di mode jelajah -- peta tampilan luar (TownMap3D) tidak
+// disentuh karena prepareWalkScene bekerja di salinan (clone) scene.
+//   tinggi bawah tajuk baru = max(tinggi lama * TREE_RAISE_MULT, TREE_MIN_CLEARANCE)
+// Mau lebih tinggi/rendah? Cukup ubah 2 angka ini.
+const TREE_RAISE_MULT = 1.8
+const TREE_MIN_CLEARANCE = 8 // meter dari tanah ke bawah tajuk
+
 const CAM_MIN_DIST = 2.5
 const CAM_MAX_DIST = 16
 const CAM_DEFAULT_DIST = 6.5
@@ -242,6 +251,52 @@ function extractWorldData(root) {
 }
 
 // ---------------------------------------------------------------------------
+// Naikkan semua pohon di salinan scene mode jelajah.
+// Tiap pohon = 1 grup berisi 2 mesh (batang + tajuk), sumbu lokal Z-up, tanah
+// di z = 0 dan batang tertanam sampai z = -1 (lihat TREE_SINK di walkWorld.js).
+//  - tajuk digeser ke atas (bentuk/ukurannya tetap),
+//  - batang dipanjangkan ke atas dengan dasar TETAP di z = -1, jadi jangkar
+//    ketinggian tanah & tabrakan batang (dibaca dari mesh ini) tetap akurat.
+// Geometri dipakai bareng scene cache, jadi yang diubah cuma position/scale
+// objek salinan -- geometri & scene asli gak tersentuh.
+// ---------------------------------------------------------------------------
+function raiseTrees(root) {
+  const groups = new Map() // parent -> { trunk, crown }
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry || groupOf(obj) !== 'TPX_Trees' || !obj.parent) return
+    const count = obj.geometry.getAttribute('position')?.count || 0
+    let g = groups.get(obj.parent)
+    if (!g) {
+      g = {}
+      groups.set(obj.parent, g)
+    }
+    if (count > TRUNK_MAX_VERTS) g.crown = obj
+    else g.trunk = obj
+  })
+
+  for (const { trunk, crown } of groups.values()) {
+    if (!crown) continue
+    if (!crown.geometry.boundingBox) crown.geometry.computeBoundingBox()
+    const bottom = crown.geometry.boundingBox.min.z + crown.position.z
+    const newBottom = Math.max(bottom * TREE_RAISE_MULT, TREE_MIN_CLEARANCE)
+    const lift = newBottom - bottom
+    if (lift <= 0) continue
+
+    crown.position.z += lift
+
+    if (trunk) {
+      if (!trunk.geometry.boundingBox) trunk.geometry.computeBoundingBox()
+      const baseZ = trunk.geometry.boundingBox.min.z // ~ -1 (dasar batang)
+      const topZ = trunk.geometry.boundingBox.max.z
+      const k = (topZ + lift - baseZ) / (topZ - baseZ)
+      // z' = k*z + (baseZ - k*baseZ)  -> titik z = baseZ tetap di tempat
+      trunk.scale.z = k
+      trunk.position.z = baseZ * (1 - k)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Siapkan salinan scene peta khusus mode jalan. `scene` dari useGLTF di-cache
 // & dipakai bareng TownMap3D (yang memodifikasinya), jadi di sini SELALU
 // bekerja di salinan (clone) supaya peta tampilan luar gak ikut berubah.
@@ -251,6 +306,11 @@ function prepareWalkScene(scene) {
   root.position.set(0, 0, 0)
   root.scale.set(1, 1, 1)
   root.rotation.set(AXIS_FIX, 0, 0)
+  root.updateMatrixWorld(true)
+
+  // pohon dinaikkan dulu, supaya batang (tabrakan) & tajuk (efek memudar)
+  // yang dibaca di bawah sudah ikut tinggi barunya
+  raiseTrees(root)
   root.updateMatrixWorld(true)
 
   // data tabrakan dibaca SEBELUM modifikasi visual di bawah
