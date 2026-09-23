@@ -88,26 +88,39 @@ function PoleBase({ poleRadius }) {
   )
 }
 
-export default function AdBillboard({ footprint, offsetXFactor = 0, offsetZFactor = -1, imageUrl = null }) {
+export default function AdBillboard({
+  footprint,
+  boundsFootprint = null,
+  offsetXFactor = 0,
+  offsetZFactor = -1,
+  imageUrl = null,
+}) {
   const headRef = useRef()
   const texture = useOptionalTexture(imageUrl)
 
   const geo = useMemo(() => {
     if (!footprint) return null
-    const maxDim = Math.max(footprint.size.x, footprint.size.z, 1)
+    // Ukuran & posisi (x/z) dihitung dari bounding-box BANGUNAN — basis yang
+    // sama dipakai buat nge-frame kamera pas peta dibuka (FrameBuildingsOnce
+    // di TownMap3D.jsx) — supaya billboard dijamin masuk area yang ke-frame
+    // kamera, gak kepental ke terrain kosong di pinggir pulau. footprint
+    // (bounding-box seluruh pulau) cuma dipakai buat level tanah/laut.
+    const bounds = boundsFootprint || footprint
+    const maxDim = Math.max(bounds.size.x, bounds.size.z, 1)
     const panelWidth = maxDim * PANEL_WIDTH_FACTOR
     const panelHeight = panelWidth * PANEL_ASPECT
     const poleHeight = panelHeight * POLE_HEIGHT_FACTOR
     const poleRadius = panelWidth * 0.02
     const frameDepth = panelWidth * 0.03
     const groundY = footprint.center.y - footprint.size.y / 2 + maxDim * GROUND_OFFSET_FACTOR
-    // PENTING: offsetXFactor/offsetZFactor dikali SETENGAH ukuran pulau
-    // (jarak titik tengah -> tepi), bukan ukuran penuhnya. offsetZFactor
-    // -1 ≈ pas di tepi pulau, -1.2 ≈ dikit di luar tepi (di laut).
-    const x = footprint.center.x + (footprint.size.x / 2) * offsetXFactor
-    const z = footprint.center.z + (footprint.size.z / 2) * offsetZFactor
+    // PENTING: offsetXFactor/offsetZFactor dikali SETENGAH ukuran area
+    // bangunan (jarak titik tengah -> tepi), bukan ukuran penuhnya.
+    // offsetZFactor -1 ≈ pas di tepi kumpulan bangunan, -1.2 ≈ dikit di
+    // luar tepi situ.
+    const x = bounds.center.x + (bounds.size.x / 2) * offsetXFactor
+    const z = bounds.center.z + (bounds.size.z / 2) * offsetZFactor
     return { panelWidth, panelHeight, poleHeight, poleRadius, frameDepth, groundY, x, z }
-  }, [footprint, offsetXFactor, offsetZFactor])
+  }, [footprint, boundsFootprint, offsetXFactor, offsetZFactor])
 
   // Kepala billboard (frame + panel + lampu) diputer ulang tiap frame biar
   // selalu ngadep kamera — CUMA rotasi Y (yaw), tiangnya sendiri tetap diam
