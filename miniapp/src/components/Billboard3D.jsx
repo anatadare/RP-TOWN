@@ -101,8 +101,11 @@ export default function AdBillboard({ footprint, offsetXFactor = 0, offsetZFacto
     const poleRadius = panelWidth * 0.02
     const frameDepth = panelWidth * 0.03
     const groundY = footprint.center.y - footprint.size.y / 2 + maxDim * GROUND_OFFSET_FACTOR
-    const x = footprint.center.x + footprint.size.x * offsetXFactor
-    const z = footprint.center.z + footprint.size.z * offsetZFactor
+    // PENTING: offsetXFactor/offsetZFactor dikali SETENGAH ukuran pulau
+    // (jarak titik tengah -> tepi), bukan ukuran penuhnya. offsetZFactor
+    // -1 ≈ pas di tepi pulau, -1.2 ≈ dikit di luar tepi (di laut).
+    const x = footprint.center.x + (footprint.size.x / 2) * offsetXFactor
+    const z = footprint.center.z + (footprint.size.z / 2) * offsetZFactor
     return { panelWidth, panelHeight, poleHeight, poleRadius, frameDepth, groundY, x, z }
   }, [footprint, offsetXFactor, offsetZFactor])
 
