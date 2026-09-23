@@ -3,9 +3,10 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { unassignBuilding, createRoomForBuilding } from '../lib/rooms'
-import { MAPS } from '../lib/maps'
+import { MAPS, getMapByKey } from '../lib/maps'
 import { BUILDING_PREFIX } from '../lib/buildings'
 import { hapticSelect } from '../lib/telegram'
+import AdBillboard from './Billboard3D'
 
 // Warna highlight
 const COLOR_ASSIGNED = '#ffb454' // lantern, bangunan yang sudah jadi room
@@ -400,6 +401,7 @@ function TownModel({
   onBuildingClick,
   onBuildingsLoaded,
   onFootprintComputed,
+  onBuildingsFootprintComputed,
   focusedKey,
 }) {
   const { scene } = useGLTF(modelUrl)
@@ -440,7 +442,33 @@ function TownModel({
     if (onFootprintComputed) {
       onFootprintComputed({ size: centeredSize, center: centeredCenter })
     }
-  }, [scene, onFootprintComputed])
+
+    // Bounding-box KHUSUS bangunan (bukan seluruh pulau) — basis yang SAMA
+    // persis dipakai FrameBuildingsOnce buat nge-frame kamera pas peta
+    // pertama dibuka. Dipakai buat naro billboard (lihat AdBillboard),
+    // supaya posisinya dijamin selalu ada dalam area yang ke-frame kamera,
+    // gak kepental jauh ke terrain kosong di pinggir pulau kayak yang
+    // dipakai footprint di atas (beda peta bisa beda jauh lebar
+    // terrain-nya dari lebar kumpulan bangunannya).
+    if (onBuildingsFootprintComputed) {
+      const buildingsBox = new THREE.Box3()
+      let hasBuildings = false
+      rotatedGroupRef.current.traverse((obj) => {
+        if (obj.isMesh && obj.name.startsWith(BUILDING_PREFIX)) {
+          buildingsBox.expandByObject(obj)
+          hasBuildings = true
+        }
+      })
+      if (hasBuildings) {
+        const bSize = new THREE.Vector3()
+        const bCenter = new THREE.Vector3()
+        buildingsBox.getSize(bSize)
+        buildingsBox.getCenter(bCenter)
+        onBuildingsFootprintComputed({ size: bSize, center: bCenter })
+      }
+    }
+  }, [scene, onFootprintComputed, onBuildingsFootprintComputed])
+
 
   // Sungai/kanal kecil bawaan tiap peta disembunyiin — laut utamanya sekarang
   // dari OceanSurface (aset Google Poly), jadi mesh air lama ini gak perlu
@@ -794,6 +822,9 @@ export default function TownMap3D({
   const [hoveredKey, setHoveredKey] = useState(null)
   const [pickerBuilding, setPickerBuilding] = useState(null)
   const [islandFootprint, setIslandFootprint] = useState(null)
+  // Bounding-box khusus bangunan (subset dari islandFootprint) — basis yang
+  // dipakai buat naro billboard, lihat komentar di TownModel di atas.
+  const [buildingsFootprint, setBuildingsFootprint] = useState(null)
   // Dinaikin tiap kali peta perlu di-refresh (tombol refresh / auto-recover).
   // Ikut jadi bagian key <Canvas>, jadi Canvas di-remount bersih tanpa user
   // harus keluar dari miniapp.
@@ -801,6 +832,10 @@ export default function TownMap3D({
   const modelGroupRef = useRef()
 
   const refreshMap = useCallback(() => setRefreshNonce((n) => n + 1), [])
+
+  // Config billboard punya peta yang lagi aktif (posisi & imageUrl-nya diatur
+  // di lib/maps.js per-peta, lihat komentar di sana).
+  const billboardConfig = useMemo(() => getMapByKey(mapKey)?.billboard || {}, [mapKey])
 
   const assignedByKey = useMemo(() => {
     const map = {}
@@ -819,6 +854,7 @@ export default function TownMap3D({
     // di-reset lautnya bakal sempet "nyangkut" pake ukuran peta sebelumnya
     // sepersekian detik sebelum footprint peta baru kehitung ulang.
     setIslandFootprint(null)
+    setBuildingsFootprint(null)
   }, [mapKey])
 
   function handleBuildingClick(buildingKey) {
@@ -846,6 +882,13 @@ export default function TownMap3D({
         <CelestialSystem footprint={islandFootprint} />
         <Suspense fallback={null}>
           <OceanSurface footprint={islandFootprint} />
+          <AdBillboard
+            footprint={islandFootprint}
+            boundsFootprint={buildingsFootprint}
+            offsetXFactor={billboardConfig.offsetXFactor ?? 0}
+            offsetZFactor={billboardConfig.offsetZFactor ?? -1}
+            imageUrl={billboardConfig.imageUrl ?? null}
+          />
           <group ref={modelGroupRef}>
             <TownModel
               modelUrl={modelUrl}
@@ -856,6 +899,7 @@ export default function TownMap3D({
               onBuildingClick={handleBuildingClick}
               onBuildingsLoaded={onBuildingsLoaded}
               onFootprintComputed={setIslandFootprint}
+              onBuildingsFootprintComputed={setBuildingsFootprint}
               focusedKey={focusRequest?.buildingKey || null}
             />
           </group>
