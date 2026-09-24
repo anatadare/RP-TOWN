@@ -16,6 +16,18 @@ keep_vars = true
 [triggers]
 crons = ["* * * * *"]
 
+# Mode Jelajahi multiplayer: 1 Durable Object per peta (lihat src/walkRoom.js).
+# Posisi pemain cuma hidup di memori DO -- gak ada tabel database baru.
+# `new_sqlite_classes` = jenis DO yang tersedia di plan Workers gratis.
+# JANGAN ganti nama class-nya / hapus blok migrations ini sesudah ke-deploy.
+[[durable_objects.bindings]]
+name = "WALK_ROOM"
+class_name = "WalkRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WalkRoom"]
+
 # Semua nilai di bawah ini CONTOH/placeholder, bukan yang beneran dipakai --
 # di dashboard Cloudflare (Workers & Pages > rp-town-bot > Settings >
 # Variables and Secrets) isi manual, atau lewat `wrangler secret put NAMA`.
@@ -29,6 +41,8 @@ crons = ["* * * * *"]
 #   AI_API_KEY, AI_MODEL, KUA_GROUP_CHAT_ID,
 #   PENGHULU_1_TOKEN..PENGHULU_5_TOKEN (+ _NAME/_GROUP_IDS/_THREAD_IDS/_AI_API_KEY opsional per agent),
 #   ASSISTANT_1_TOKEN (= Naya, satu-satunya pegawai KUA; + opsional yang sama)
+#   WALK_MAX_PLAYERS (opsional) batas pemain per peta di mode Jelajahi
+#     multiplayer, default 40.
 #   KUA_GROUP_USERNAME (opsional -- isi kalau grup KUA-nya PUBLIC, dipakai
 #     buat bikin link https://t.me/<username>/<threadId> ke ruangan yang
 #     lagi kosong. Kalau grup privat, dikosongin aja, kodenya otomatis
