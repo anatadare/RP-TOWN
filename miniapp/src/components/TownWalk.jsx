@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useGLTF, useAnimations } from '@react-three/drei'
 import * as THREE from 'three'
 import { MAPS } from '../lib/maps'
+import { WalkBillboard } from './Billboard3D'
 import { buildWalkWorld, ROAD_LIFT } from '../lib/walkWorld'
 import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
 import {
@@ -146,6 +147,12 @@ const CAM_DEFAULT_DIST = 6.5
 const CAM_MIN_PITCH = 0.04
 const CAM_MAX_PITCH = 1.25
 const CAM_DEFAULT_PITCH = 0.42
+
+// Tiang billboard kecil dianggap penghalang bulat (kayak batang pohon) supaya
+// karakter gak tembus. Sengaja lebih lebar dari tiangnya yang tipis: panel
+// billboard menggantung ~1.25 m di atas tanah & lebarnya 2.7 m, jadi tanpa
+// jarak segini kepala karakter (1.75 m) bisa nembus ujung panel.
+const BILLBOARD_COLLIDER_RADIUS = 0.9
 
 const JOY_RADIUS = 54 // px, jarak geser maksimum knob joystick
 
@@ -610,8 +617,34 @@ function WalkPlayer({ world, spawn, character, inputRef, canopies, onReady }) {
 function WalkScene({ modelUrl, character, inputRef, sky, onReady }) {
   const { scene } = useGLTF(modelUrl)
   const built = useMemo(() => prepareWalkScene(scene), [scene])
-  const world = useMemo(() => buildWalkWorld(built.data), [built])
+  // Billboard kecil peta ini (posisi x/z diatur di lib/maps.js).
+  const billboardDefs = useMemo(
+    () => MAPS.find((m) => m.modelUrl === modelUrl)?.walkBillboards || [],
+    [modelUrl]
+  )
+  const world = useMemo(
+    () =>
+      buildWalkWorld({
+        ...built.data,
+        props: billboardDefs.map((b) => ({
+          x: b.x,
+          z: b.z,
+          r: BILLBOARD_COLLIDER_RADIUS,
+          y0: -1e4, // penghalang setinggi apa pun (tiang + panel)
+          y1: 1e4,
+        })),
+      }),
+    [built, billboardDefs]
+  )
   const spawn = useMemo(() => world.findSpawn(), [world])
+  // Tinggi tanah di kaki tiap billboard (kalau di luar daratan -> dilewati).
+  const billboards = useMemo(
+    () =>
+      billboardDefs
+        .map((b) => ({ ...b, y: world.groundY(b.x, b.z, Infinity) }))
+        .filter((b) => b.y !== null),
+    [billboardDefs, world]
+  )
 
   const groundGeo = useMemo(() => {
     const g = new THREE.BufferGeometry()
@@ -646,6 +679,9 @@ function WalkScene({ modelUrl, character, inputRef, sky, onReady }) {
         <planeGeometry args={[span * 10, span * 10]} />
         <meshBasicMaterial color="#2b86c9" />
       </mesh>
+      {billboards.map((b) => (
+        <WalkBillboard key={`${b.x},${b.z}`} x={b.x} y={b.y} z={b.z} imageUrl={b.imageUrl ?? null} />
+      ))}
       <WalkPlayer
         world={world}
         spawn={spawn}
