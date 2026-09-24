@@ -6,6 +6,9 @@ import { MAPS } from '../lib/maps'
 import { WalkBillboard } from './Billboard3D'
 import { buildWalkWorld, ROAD_LIFT } from '../lib/walkWorld'
 import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
+import { cloneSkinnedScene } from '../lib/skinnedClone'
+import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
+import RemotePlayers from './RemotePlayers'
 import {
   lockTelegramSwipe,
   unlockTelegramSwipe,
@@ -15,41 +18,6 @@ import {
   lockTelegramOrientation,
   unlockTelegramOrientation,
 } from '../lib/telegram'
-
-// Model karakter (Quaternius) punya skinned mesh + skeleton (tulang buat
-// animasi jalan/lari/lompat). `Object3D.clone()` bawaan three.js nge-clone
-// hierarki node-nya tapi TIDAK ngikutin ulang skeleton (bone) ke mesh yang
-// baru -- semua clone bakal numpuk gerak di 1 skeleton yang sama (skeleton
-// aslinya, gak ke-clone). Makanya perlu clone manual: clone tiap node satu-
-// satu (barengan, node asli & node clone jalan bareng), baru abis itu tiap
-// SkinnedMesh di-"pasang ulang" (bind) ke skeleton HASIL CLONE-nya sendiri.
-//
-// (Sengaja ditulis sendiri di sini, bukan import dari
-// 'three/examples/jsm/utils/SkeletonUtils.js', soalnya path itu gampang gak
-// ke-resolve pas `vite build` di beberapa versi three -- import dalem kayak
-// gitu gak dijamin ada di 'exports' map package.json-nya, jadi bikin build
-// production gagal walau di `npm run dev` lokal keliatan baik-baik saja.)
-function cloneSkinnedScene(source) {
-  const cloneOf = new Map()
-  const root = source.clone()
-
-  // Jalan bareng: node asli ke-N ketemu node hasil clone ke-N (urutan children
-  // dijamin sama persis karena baru aja di-clone dari source yang sama).
-  ;(function walkTogether(a, b) {
-    cloneOf.set(a, b)
-    for (let i = 0; i < a.children.length; i++) walkTogether(a.children[i], b.children[i])
-  })(source, root)
-
-  source.traverse((node) => {
-    if (!node.isSkinnedMesh) return
-    const cloned = cloneOf.get(node)
-    cloned.skeleton = node.skeleton.clone()
-    cloned.skeleton.bones = node.skeleton.bones.map((bone) => cloneOf.get(bone))
-    cloned.bind(cloned.skeleton, node.bindMatrix)
-  })
-
-  return root
-}
 
 // Mode Jelajahi paling enak dipakai landscape (kamera lebih lega, joystick &
 // tombol lompat gak numpuk di layar sempit). Pas komponen ini kepasang, coba
@@ -391,7 +359,7 @@ function prepareWalkScene(scene) {
 // Karakter + fisika + kamera. Semua di satu useFrame supaya urutannya pasti:
 // input -> fisika -> posisi model -> animasi -> kamera.
 // ---------------------------------------------------------------------------
-function WalkPlayer({ world, spawn, character, inputRef, canopies, onReady }) {
+function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onReady }) {
   const { scene: charScene, animations } = useGLTF(character.modelUrl)
   const { camera } = useThree()
 
@@ -499,6 +467,15 @@ function WalkPlayer({ world, spawn, character, inputRef, canopies, onReady }) {
     if (jumpedNow || (!p.grounded && p.airTime > 0.12)) next = 'Jump'
     else if (p.speed > 5.4) next = 'Run'
     else if (p.speed > 0.6) next = 'Walk'
+
+    // posisi/arah/animasi sendiri dibagikan ke walkNet.js (dikirim ke pemain lain)
+    const me = selfRef.current
+    me.x = p.x
+    me.y = p.y
+    me.z = p.z
+    me.yaw = p.yaw
+    me.anim = next === 'Jump' ? ANIM_JUMP : next === 'Run' ? ANIM_RUN : next === 'Walk' ? ANIM_WALK : ANIM_IDLE
+    me.ready = true
     if (next !== s.anim || jumpedNow) {
       const nextAction = actions?.[next] || actions?.Idle
       const prevAction = s.anim ? actions?.[s.anim] : null
@@ -614,7 +591,7 @@ function WalkPlayer({ world, spawn, character, inputRef, canopies, onReady }) {
 // ---------------------------------------------------------------------------
 // Isi scene: peta (salinan), tanah buatan, laut, dan pemain.
 // ---------------------------------------------------------------------------
-function WalkScene({ modelUrl, character, inputRef, sky, onReady }) {
+function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady }) {
   const { scene } = useGLTF(modelUrl)
   const built = useMemo(() => prepareWalkScene(scene), [scene])
   // Billboard kecil peta ini (posisi x/z diatur di lib/maps.js).
@@ -687,9 +664,11 @@ function WalkScene({ modelUrl, character, inputRef, sky, onReady }) {
         spawn={spawn}
         character={character}
         inputRef={inputRef}
+        selfRef={selfRef}
         canopies={built.canopies}
         onReady={onReady}
       />
+      <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} world={world} />
     </>
   )
 }
@@ -859,6 +838,10 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
       yaw: 0, pitch: CAM_DEFAULT_PITCH, dist: CAM_DEFAULT_DIST,
     }
   }
+  // Posisi karakter sendiri (ditulis WalkPlayer tiap frame, dibaca walkNet
+  // buat dikirim ke pemain lain di peta yang sama).
+  const selfRef = useRef({ ready: false, x: 0, y: 0, z: 0, yaw: 0, anim: 0 })
+  const net = useWalkNet({ mapKey, characterId: character?.id, selfRef })
   const sky = useMemo(getSky, [])
   const isLandscape = useLandscapeLock()
   const [ready, setReady] = useState(false)
@@ -892,6 +875,21 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
     return unlockTelegramSwipe
   }, [])
 
+  // Lencana status multiplayer di bawah pemilih peta. Kosong (gak tampil)
+  // kalau multiplayer gak tersedia -- mode Jelajahi tetap jalan solo.
+  const netBadge =
+    net.status === 'online'
+      ? `👥 ${net.peerIds.length + 1} di peta ini`
+      : net.status === 'connecting'
+        ? 'Menyambung…'
+        : net.status === 'offline'
+          ? 'Terputus, menyambung ulang…'
+          : net.status === 'replaced'
+            ? 'Akun ini dibuka di perangkat lain'
+            : net.status === 'full'
+              ? 'Peta lagi penuh (mode solo)'
+              : null
+
   function zoom(delta) {
     hapticSelect()
     const inp = inputRef.current
@@ -915,6 +913,8 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
             modelUrl={modelUrl}
             character={character}
             inputRef={inputRef}
+            selfRef={selfRef}
+            net={net}
             sky={sky}
             onReady={handleReady}
           />
@@ -950,6 +950,11 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
             </button>
           ))}
         </div>
+        {netBadge && (
+          <div className="walk-pill-btn" style={{ cursor: 'default', pointerEvents: 'none', fontSize: 11, padding: '6px 12px' }}>
+            {netBadge}
+          </div>
+        )}
       </div>
 
       <div className="walk-side">
