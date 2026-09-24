@@ -20,6 +20,13 @@ const PANEL_ASPECT = 0.42 // tinggi panel = 42% dari lebarnya (mirip billboard b
 const POLE_HEIGHT_FACTOR = 1.6 // tinggi tiang (dasar sampai bawah panel) = 1.6x tinggi panel
 const GROUND_OFFSET_FACTOR = 0.01 // jarak dasar tiang di atas titik terendah pulau (biar gak "tenggelam")
 
+// --- Billboard KECIL buat mode Jelajahi (TownWalk) ---------------------------
+// Ukuran DALAM METER (1 satuan peta = 1 m, karakter setinggi 1.75 m). Angka
+// ini diukur dari sketsa merah di screenshot: lebar panel ~2.7 m, tinggi
+// panel ~1.13 m, tiang ~1.2 m di bawah panel -> total ~2.4 m. Proporsi lain
+// (aspek panel, tinggi tiang, warna, lampu) SAMA dengan billboard besar.
+export const WALK_PANEL_WIDTH = 2.7
+
 // Load tekstur gambar billboard secara manual (bukan drei's useTexture)
 // supaya kalau imageUrl belum ada / gagal dimuat, komponen TETAP tampil
 // (fallback ke putih polos) alih-alih bikin <Suspense> di atasnya nge-throw.
@@ -88,6 +95,52 @@ function PoleBase({ poleRadius }) {
   )
 }
 
+// Badan billboard (fondasi + tiang + kepala berisi bingkai, 2 panel & lampu).
+// Dipakai bareng oleh AdBillboard (billboard besar di peta luar) dan
+// WalkBillboard (billboard kecil di mode Jelajahi) supaya bentuk & warnanya
+// SAMA persis -- beda mereka cuma di ukuran (`dims`).
+function BillboardStructure({ dims, headRef, texture }) {
+  const { panelWidth, panelHeight, poleHeight, poleRadius, frameDepth } = dims
+  return (
+    <>
+      <PoleBase poleRadius={poleRadius} />
+
+      <mesh position={[0, poleHeight / 2, 0]} castShadow>
+        <cylinderGeometry args={[poleRadius, poleRadius * 1.15, poleHeight, 8]} />
+        <meshStandardMaterial color="#5a6172" roughness={0.55} metalness={0.5} />
+      </mesh>
+
+      <group ref={headRef} position={[0, poleHeight, 0]}>
+        {/* Bingkai gelap di belakang, sedikit lebih gede dari panelnya */}
+        <mesh castShadow>
+          <boxGeometry args={[panelWidth * 1.06, panelHeight * 1.16, frameDepth]} />
+          <meshStandardMaterial color="#3a3f4a" roughness={0.6} metalness={0.4} />
+        </mesh>
+
+        {/* Panel depan — putih polos, siap ditempelin gambar order billboard
+            lewat prop imageUrl begitu fitur grup order-nya sudah jadi. */}
+        <mesh position={[0, 0, frameDepth / 2 + panelWidth * 0.003]} castShadow>
+          <boxGeometry args={[panelWidth, panelHeight, frameDepth * 0.3]} />
+          <meshStandardMaterial color="#ffffff" map={texture} roughness={0.45} metalness={0.05} />
+        </mesh>
+        {/* Panel belakang — sisi satunya, putih polos juga (billboard 2 muka) */}
+        <mesh position={[0, 0, -frameDepth / 2 - panelWidth * 0.003]} rotation={[0, Math.PI, 0]} castShadow>
+          <boxGeometry args={[panelWidth, panelHeight, frameDepth * 0.3]} />
+          <meshStandardMaterial color="#ffffff" map={texture} roughness={0.45} metalness={0.05} />
+        </mesh>
+
+        <BillboardLamps width={panelWidth} height={panelHeight} />
+
+        {/* Batang penyangga dari tiang ke tengah-bawah panel */}
+        <mesh position={[0, -panelHeight / 2 - poleRadius * 4, 0]}>
+          <cylinderGeometry args={[poleRadius * 0.9, poleRadius * 0.9, poleRadius * 8, 6]} />
+          <meshStandardMaterial color="#4b5160" roughness={0.6} metalness={0.5} />
+        </mesh>
+      </group>
+    </>
+  )
+}
+
 export default function AdBillboard({
   footprint,
   boundsFootprint = null,
@@ -138,44 +191,44 @@ export default function AdBillboard({
 
   if (!geo) return null
 
-  const { panelWidth, panelHeight, poleHeight, poleRadius, frameDepth, groundY, x, z } = geo
+  const { groundY, x, z } = geo
 
   return (
     <group position={[x, groundY, z]}>
-      <PoleBase poleRadius={poleRadius} />
+      <BillboardStructure dims={geo} headRef={headRef} texture={texture} />
+    </group>
+  )
+}
 
-      <mesh position={[0, poleHeight / 2, 0]} castShadow>
-        <cylinderGeometry args={[poleRadius, poleRadius * 1.15, poleHeight, 8]} />
-        <meshStandardMaterial color="#5a6172" roughness={0.55} metalness={0.5} />
-      </mesh>
+// ---------------------------------------------------------------------------
+// Billboard kecil buat mode Jelajahi. Bentuk & warna sama dengan AdBillboard
+// (pakai BillboardStructure yang sama), bedanya ukurannya tetap dalam meter
+// dan posisinya (x, y, z) sudah pasti dari luar (y = tinggi tanah di titik itu,
+// dihitung TownWalk lewat world.groundY). Kepalanya tetap muter ngadep kamera.
+// ---------------------------------------------------------------------------
+export function WalkBillboard({ x, y, z, imageUrl = null, panelWidth = WALK_PANEL_WIDTH }) {
+  const headRef = useRef()
+  const texture = useOptionalTexture(imageUrl)
 
-      <group ref={headRef} position={[0, poleHeight, 0]}>
-        {/* Bingkai gelap di belakang, sedikit lebih gede dari panelnya */}
-        <mesh castShadow>
-          <boxGeometry args={[panelWidth * 1.06, panelHeight * 1.16, frameDepth]} />
-          <meshStandardMaterial color="#3a3f4a" roughness={0.6} metalness={0.4} />
-        </mesh>
+  const dims = useMemo(() => {
+    const panelHeight = panelWidth * PANEL_ASPECT
+    return {
+      panelWidth,
+      panelHeight,
+      poleHeight: panelHeight * POLE_HEIGHT_FACTOR,
+      poleRadius: panelWidth * 0.02,
+      frameDepth: panelWidth * 0.03,
+    }
+  }, [panelWidth])
 
-        {/* Panel depan — putih polos, siap ditempelin gambar order billboard
-            lewat prop imageUrl begitu fitur grup order-nya sudah jadi. */}
-        <mesh position={[0, 0, frameDepth / 2 + panelWidth * 0.003]} castShadow>
-          <boxGeometry args={[panelWidth, panelHeight, frameDepth * 0.3]} />
-          <meshStandardMaterial color="#ffffff" map={texture} roughness={0.45} metalness={0.05} />
-        </mesh>
-        {/* Panel belakang — sisi satunya, putih polos juga (billboard 2 muka) */}
-        <mesh position={[0, 0, -frameDepth / 2 - panelWidth * 0.003]} rotation={[0, Math.PI, 0]} castShadow>
-          <boxGeometry args={[panelWidth, panelHeight, frameDepth * 0.3]} />
-          <meshStandardMaterial color="#ffffff" map={texture} roughness={0.45} metalness={0.05} />
-        </mesh>
+  useFrame(({ camera }) => {
+    if (!headRef.current) return
+    headRef.current.rotation.y = Math.atan2(camera.position.x - x, camera.position.z - z)
+  })
 
-        <BillboardLamps width={panelWidth} height={panelHeight} />
-
-        {/* Batang penyangga dari tiang ke tengah-bawah panel */}
-        <mesh position={[0, -panelHeight / 2 - poleRadius * 4, 0]}>
-          <cylinderGeometry args={[poleRadius * 0.9, poleRadius * 0.9, poleRadius * 8, 6]} />
-          <meshStandardMaterial color="#4b5160" roughness={0.6} metalness={0.5} />
-        </mesh>
-      </group>
+  return (
+    <group position={[x, y, z]}>
+      <BillboardStructure dims={dims} headRef={headRef} texture={texture} />
     </group>
   )
 }
