@@ -129,9 +129,12 @@ function smoothstep(t) {
 // Bangun dunia jalan.
 //   water, green, roads, buildings : array datar segitiga (koordinat dunia)
 //   trunks : [{ x, z, r, y0, y1 }]  batang pohon (lingkaran vertikal)
+//   props  : [{ x, z, r, y0, y1 }]  benda padat tambahan (mis. tiang billboard).
+//            Sama seperti batang pohon (jadi penghalang tabrakan), tapi TIDAK
+//            dipakai sebagai jangkar ketinggian tanah.
 //   cell   : ukuran sel grid tanah pengisi (meter)
 // ---------------------------------------------------------------------------
-export function buildWalkWorld({ water, green, roads, buildings, trunks = [], cell = 2 }) {
+export function buildWalkWorld({ water, green, roads, buildings, trunks = [], props = [], cell = 2 }) {
   // ---- jalan diangkat sedikit --------------------------------------------
   const roadTris = new Float32Array(roads)
   for (let i = 1; i < roadTris.length; i += 3) roadTris[i] += ROAD_LIFT
@@ -402,14 +405,15 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], ce
   }
   // batang pohon: disimpan di grid yang sama tapi dengan indeks negatif
   // (-1 - indeksBatang) supaya satu kali pindai mencakup keduanya.
-  trunks.forEach((t, idx) => {
+  const solids = props.length ? trunks.concat(props) : trunks
+  solids.forEach((t, idx) => {
     const ci0 = Math.floor((t.x - t.r) / WALL_CELL), ci1 = Math.floor((t.x + t.r) / WALL_CELL)
     const cj0 = Math.floor((t.z - t.r) / WALL_CELL), cj1 = Math.floor((t.z + t.r) / WALL_CELL)
     for (let cj = cj0; cj <= cj1; cj++) for (let ci = ci0; ci <= ci1; ci++) gridAdd(key(ci, cj), -1 - idx)
   })
 
   const wallStamp = new Int32Array(walls.count)
-  const trunkStamp = new Int32Array(trunks.length)
+  const trunkStamp = new Int32Array(solids.length)
   let stamp = 0
 
   // Dorong lingkaran (x,z,radius) keluar dari tembok & batang pohon yang
@@ -458,7 +462,7 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], ce
               const ti = -1 - id
               if (trunkStamp[ti] === stamp) continue
               trunkStamp[ti] = stamp
-              const tr = trunks[ti]
+              const tr = solids[ti]
               if (tr.y1 <= feetY + 0.3 || tr.y0 >= feetY + height) continue
               let dx = x - tr.x, dz = z - tr.z
               const rr = radius + tr.r
@@ -538,7 +542,7 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], ce
             t = t < 0 ? 0 : t > 1 ? 1 : t
             best = Math.min(best, Math.hypot(x - (ax + ex * t), z - (az + ez * t)))
           } else {
-            const tr = trunks[-1 - id]
+            const tr = solids[-1 - id]
             best = Math.min(best, Math.hypot(x - tr.x, z - tr.z) - tr.r)
           }
         }
