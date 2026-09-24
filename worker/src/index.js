@@ -14,6 +14,8 @@
 //   POST /webhooks/house-rented     -> webhook dari Supabase Database Webhooks
 //   POST /webhooks/bayargg          -> callback pembayaran dari bayar.gg (setor teller bank)
 //   POST /api/kua-invite            -> Mini App minta link masuk KUA sekali pakai
+//   GET  /ws/walk/:mapKey           -> WebSocket mode Jelajahi multiplayer (1 room per peta,
+//                                       lihat src/walkRoom.js -- Durable Object WalkRoom)
 //   GET  /                          -> health check
 //   GET  /debug/models              -> HAPUS SETELAH SELESAI DIPAKAI. Nampilin
 //                                       daftar model ID persis dari Jerouter
@@ -37,6 +39,11 @@ import { handleKuaInvite } from './kuaInvite.js'
 import { handleBayarGgWebhook } from './bayarWebhook.js'
 import { handleTellerMessage } from './teller.js'
 import { sweepQrMessages } from './qrSweep.js'
+import { handleWalkSocket } from './walkRoom.js'
+
+// Class Durable Object HARUS di-export dari entry file Worker (dibaca Wrangler
+// lewat binding WALK_ROOM di wrangler.toml).
+export { WalkRoom } from './walkRoom.js'
 
 export default {
   // Cron Trigger tiap menit: hapus QR setor yang sudah lewat 3 menit (lihat qrSweep.js).
@@ -57,6 +64,11 @@ export default {
 
     if (url.pathname === '/api/kua-invite' && (request.method === 'POST' || request.method === 'OPTIONS')) {
       return handleKuaInvite(request, env)
+    }
+
+    const walkMatch = url.pathname.match(/^\/ws\/walk\/([a-z0-9-]+)$/)
+    if (walkMatch && request.method === 'GET') {
+      return handleWalkSocket(request, env, walkMatch[1])
     }
 
     if (url.pathname === '/webhooks/house-rented' && request.method === 'POST') {
