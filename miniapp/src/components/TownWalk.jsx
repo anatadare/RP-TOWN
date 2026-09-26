@@ -109,8 +109,10 @@ const TRUNK_MAX_VERTS = 40
 const TREE_RAISE_MULT = 1.8
 const TREE_MIN_CLEARANCE = 8 // meter dari tanah ke bawah tajuk
 
-const CAM_MIN_DIST = 2.5
-const CAM_MAX_DIST = 16
+// Kamera dikunci di jarak ini terus (gak ada lagi tombol/scroll buat zoom).
+// curDist di WalkPlayer masih boleh lebih DEKAT dari angka ini kalau ada
+// obstacle/bangunan nutupin (lihat komentar di WalkPlayer), tapi gak akan
+// pernah lebih JAUH dari CAM_DEFAULT_DIST.
 const CAM_DEFAULT_DIST = 6.5
 const CAM_MIN_PITCH = 0.04
 const CAM_MAX_PITCH = 1.25
@@ -784,11 +786,10 @@ function WalkControls({ inputRef }) {
     if (ptr.role === 'move') hideJoystick()
   }
 
-  function handleWheel(e) {
-    const inp = inputRef.current
-    inp.dist = THREE.MathUtils.clamp(inp.dist * Math.exp(e.deltaY * 0.001), CAM_MIN_DIST, CAM_MAX_DIST)
-  }
-
+  // Kamera dikunci: inp.dist gak pernah diubah lagi di sini (jarak zoom
+  // "wanted" tetap di CAM_DEFAULT_DIST selamanya). Yang tetap jalan adalah
+  // logic curDist di WalkPlayer, yang narik kamera lebih deket kalau ada
+  // bangunan/obstacle nutupin pandangan -- itu gak disentuh sama sekali.
   return (
     <>
       <div
@@ -798,7 +799,6 @@ function WalkControls({ inputRef }) {
         onPointerMove={handleMove}
         onPointerUp={handleUp}
         onPointerCancel={handleUp}
-        onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()}
       >
         <div ref={baseRef} className="walk-joy-base">
@@ -851,6 +851,9 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
   // masih dipegang tegak (browser cuma ngerender kontennya "miring"), jadi
   // gak bisa cuma ngandelin `!isLandscape` doang buat mutusin nampilin hint.
   const [showRotateHint, setShowRotateHint] = useState(true)
+  // Popup daftar peta -- gantiin tab map-switcher yang dulu nongkrong di
+  // topbar, sekarang dipanggil dari tombol bulat kecil di kiri bawah.
+  const [showMapPicker, setShowMapPicker] = useState(false)
   const handleReady = useCallback(() => setReady(true), [])
 
   // Ganti peta = Canvas remount (key) -> tampilkan loading lagi.
@@ -890,12 +893,6 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
               ? 'Peta lagi penuh (mode solo)'
               : null
 
-  function zoom(delta) {
-    hapticSelect()
-    const inp = inputRef.current
-    inp.dist = THREE.MathUtils.clamp(inp.dist + delta, CAM_MIN_DIST, CAM_MAX_DIST)
-  }
-
   return (
     <div className="walk-root">
       <Canvas
@@ -934,22 +931,6 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
         <button type="button" className="walk-pill-btn" onClick={onExit}>
           ← Keluar
         </button>
-        <div className="map-switcher walk-map-switcher">
-          {MAPS.map((m) => (
-            <button
-              key={m.key}
-              type="button"
-              className={`map-switcher-item${m.key === mapKey ? ' is-active' : ''}`}
-              onClick={() => {
-                if (m.key === mapKey) return
-                hapticSelect()
-                onChangeMap(m.key)
-              }}
-            >
-              {m.name}
-            </button>
-          ))}
-        </div>
         {netBadge && (
           <div className="walk-pill-btn" style={{ cursor: 'default', pointerEvents: 'none', fontSize: 11, padding: '6px 12px' }}>
             {netBadge}
@@ -958,12 +939,6 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
       </div>
 
       <div className="walk-side">
-        <button type="button" className="walk-round-btn" aria-label="Zoom dekat" onClick={() => zoom(-1.5)}>
-          +
-        </button>
-        <button type="button" className="walk-round-btn" aria-label="Zoom jauh" onClick={() => zoom(1.5)}>
-          −
-        </button>
         <button
           type="button"
           className="walk-round-btn"
@@ -975,6 +950,47 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
         >
           ↺
         </button>
+      </div>
+
+      {/* Tombol pilih peta -- bulat kecil merah, kiri bawah. Tap buka popup
+          yang ngegulir ke bawah nampilin daftar peta (gantiin tab lama di
+          topbar). Ada backdrop transparan biar tap di luar popup nutup. */}
+      <div className="walk-map-picker">
+        {showMapPicker && (
+          <div className="walk-map-backdrop" onClick={() => setShowMapPicker(false)} />
+        )}
+        <button
+          type="button"
+          className="walk-map-btn"
+          aria-label="Pilih peta"
+          aria-expanded={showMapPicker}
+          onClick={() => {
+            hapticSelect()
+            setShowMapPicker((v) => !v)
+          }}
+        >
+          <img src="/icons/map-pin.png" alt="" className="walk-map-btn-icon" />
+        </button>
+        {showMapPicker && (
+          <div className="walk-map-popup">
+            {MAPS.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                className={`walk-map-popup-item${m.key === mapKey ? ' is-active' : ''}`}
+                onClick={() => {
+                  if (m.key !== mapKey) {
+                    hapticSelect()
+                    onChangeMap(m.key)
+                  }
+                  setShowMapPicker(false)
+                }}
+              >
+                {m.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {showHint && ready && (
