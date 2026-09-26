@@ -1,19 +1,49 @@
-import { Suspense, useEffect, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useGLTF, useAnimations, Bounds } from '@react-three/drei'
+import { cloneSkinnedScene } from '../lib/skinnedClone'
+import { applyPhonePose, LowPolyPhone } from './PhonePose'
 
 // Model karakter Quaternius diekspor standar Y-up (beda dari model peta
 // yang Z-up), jadi gak perlu AXIS_FIX_ROTATION kayak TownMap3D.
-function CharacterModel({ url, animation, spin, rotationRef }) {
+//
+// `pose="phone"`: mode statis (BUKAN animasi) -- karakter dibekukan di
+// bind pose lalu lengan kanannya ditekuk manual (lihat PhonePose.jsx),
+// terus HP low-poly di-attach ke tangannya. Scene di-clone dulu (lewat
+// cloneSkinnedScene, sama kayak yang dipakai TownWalk) supaya bone yang
+// kita tekuk gak numpuk ke cache useGLTF bareng -- kalau gak di-clone,
+// karakter yang sama bakal "ke-bawa" lengan bengkok ini pas dipreview
+// di tempat lain yang animasi biasa.
+function CharacterModel({ url, animation, spin, rotationRef, pose }) {
   const group = useRef()
-  const { scene, animations } = useGLTF(url)
+  const phoneGroup = useRef()
+  const { scene: cachedScene, animations } = useGLTF(url)
+
+  const scene = useMemo(
+    () => (pose === 'phone' ? cloneSkinnedScene(cachedScene) : cachedScene),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cachedScene, pose === 'phone']
+  )
+
   const { actions } = useAnimations(animations, group)
 
   useEffect(() => {
+    if (pose === 'phone') return undefined // bind pose statis, gak main animasi
     const action = actions?.[animation] || actions?.Idle || Object.values(actions || {})[0]
     action?.reset().fadeIn(0.25).play()
     return () => action?.fadeOut(0.25)
-  }, [actions, animation])
+  }, [actions, animation, pose])
+
+  // Tekuk lengan + attach HP -- sekali aja tiap kali scene (hasil clone)
+  // berubah, bukan tiap frame (posenya statis, gak perlu diulang-ulang).
+  useEffect(() => {
+    if (pose !== 'phone') return
+    const fist = applyPhonePose(scene)
+    if (fist && phoneGroup.current) fist.add(phoneGroup.current)
+    return () => {
+      if (fist && phoneGroup.current) fist.remove(phoneGroup.current)
+    }
+  }, [pose, scene])
 
   useFrame((_, delta) => {
     if (!group.current) return
@@ -27,7 +57,15 @@ function CharacterModel({ url, animation, spin, rotationRef }) {
     if (spin) group.current.rotation.y += delta * 0.5
   })
 
-  return <primitive ref={group} object={scene} />
+  return (
+    <primitive ref={group} object={scene}>
+      {pose === 'phone' && (
+        <group ref={phoneGroup}>
+          <LowPolyPhone />
+        </group>
+      )}
+    </primitive>
+  )
 }
 
 // Panel render 3D generik: dipakai buat carousel pilih karakter maupun hero
@@ -46,6 +84,8 @@ export default function CharacterPreview({
   spin = true,
   draggable = false,
   className,
+  // 'phone' = pose statis megang HP (lihat PhonePose.jsx), gantiin animasi.
+  pose,
 }) {
   const rotationRef = useRef(0)
   const dragState = useRef({ dragging: false, startX: 0, startRotation: 0 })
@@ -97,6 +137,7 @@ export default function CharacterPreview({
               animation={animation}
               spin={spin}
               rotationRef={draggable ? rotationRef : null}
+              pose={pose}
             />
           </Bounds>
         </Suspense>
