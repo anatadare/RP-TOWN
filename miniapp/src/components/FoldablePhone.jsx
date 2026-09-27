@@ -92,7 +92,13 @@ function Shell({ w, h, t, bodyColor, frameColor, hasCamera, camera, lensRing, ma
   )
 }
 
-export default function FoldablePhone({ variant, foldT = 1, scale = 1 }) {
+// Default scale dinaikin dari 1 -- dimensi HP di phoneVariants.js (mis.
+// openW/openH ~0.04-0.08) itu di ruang lokal bone tangan, yang KEIKUT
+// ke-scale kecil lagi sama faktor normalisasi tinggi badan karakter.
+// Hasilnya, di scale=1, HP-nya beneran cuma beberapa cm -- gampang
+// "tenggelam" ketutupan mesh kepalan tangan. 1.7x bikin dia jelas
+// kelihatan sebagai HP tanpa mengubah proporsi/desain tiap variannya.
+export default function FoldablePhone({ variant, foldT = 1, scale = 1.7 }) {
   const dims = useMemo(() => dimsForVariant(variant), [variant])
   const { openW, openH, shellT, hingeGap } = dims
   const clampedT = THREE.MathUtils.clamp(foldT, 0, 1)
