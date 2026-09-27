@@ -415,7 +415,10 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
   // berikutnya.
   useEffect(() => {
     setPhoneAttached(false)
-    const fist = model.getObjectByName('Fist.R')
+    // "Fist.R" di file .glb jadi "FistR" pas diparse GLTFLoader (titik
+    // dibuang dari nama node) -- ini penyebab asli HP-nya gak pernah
+    // nempel ke tangan (getObjectByName selalu balikin null).
+    const fist = model.getObjectByName('FistR')
     const group = phoneGroupRef.current
     if (!fist || !group) return undefined
     fist.add(group)
@@ -437,7 +440,7 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
   // jadi walau kejadian race-nya, paling lama ke-detect & kebenerin 1 frame
   // doang (gak keliatan mata).
   useFrame(() => {
-    const fist = model.getObjectByName('Fist.R')
+    const fist = model.getObjectByName('FistR')
     const group = phoneGroupRef.current
     if (fist && group && group.parent !== fist) {
       fist.add(group)
