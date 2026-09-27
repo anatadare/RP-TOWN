@@ -7,7 +7,7 @@ import { WalkBillboard } from './Billboard3D'
 import { buildWalkWorld, ROAD_LIFT } from '../lib/walkWorld'
 import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
-import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT } from './PhonePose'
+import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, applyPhonePose } from './PhonePose'
 import FoldablePhone from './FoldablePhone'
 import { getPhoneVariant } from './phoneVariants'
 import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
@@ -396,14 +396,18 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
   const stateRef = useRef(null)
 
   // ---- HP di tangan (equip) ------------------------------------------------
-  // Beda dari pose statis "phone" di CharacterPreview.jsx: di sini karakter
-  // TERUS bergerak (Idle/Walk/Run/Jump lewat AnimationMixer), jadi lengannya
-  // TIDAK ditekuk manual (applyPhonePose gak dipanggil -- kalau dipanggil,
-  // bakal ke-overwrite tiap frame sama animasi lagian). HP-nya cukup
-  // di-attach sebagai child object3D ke bone Fist.R; karena bone itu
-  // digerakkan tiap frame sama animation mixer, HP-nya otomatis ikut
-  // ngikutin ke mana pun tangan itu gerak (jalan/lari/lompat) -- ini teknik
-  // standar "attach prop ke bone" di three.js, gak butuh app logic tambahan.
+  // Karakter ini TERUS bergerak (Idle/Walk/Run/Jump lewat AnimationMixer),
+  // jadi HP-nya di-attach sebagai child object3D ke bone Fist.R (lihat effect
+  // di bawah) SEKALIGUS lengannya ditekuk ulang TIAP FRAME (lihat pemanggilan
+  // applyPhonePose() di useFrame utama, bagian animasi) -- soalnya kalau
+  // cuma di-attach doang tanpa ditekuk, tangan natural pas Idle/Walk itu
+  // ngegantung di samping badan, jadi HP-nya keglued di tempat yang
+  // ketutupan badan/kaki dari sudut kamera manapun (bukan hilang, cuma gak
+  // kelihatan). Nekuk ulang tiap frame (bukan sekali di awal, beda dari
+  // pose statis di CharacterPreview.jsx) perlu soalnya animation mixer
+  // nge-reset rotasi bone itu tiap frame -- kalau ditekuk cuma sekali,
+  // "ketekuknya" bakal ke-timpa lagi sama animasi Idle/Walk di frame
+  // berikutnya.
   useEffect(() => {
     const fist = model.getObjectByName('Fist.R')
     const group = phoneGroupRef.current
@@ -518,6 +522,12 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
       else if (s.anim === 'Jump') act.timeScale = 1.6
       else act.timeScale = 1
     }
+
+    // ---- lengan kanan ditekuk buat megang HP (kalau lagi equip) --------------
+    // Ditekuk ULANG tiap frame, SETELAH animation mixer (di atas) ngatur pose
+    // Idle/Walk/Run/Jump-nya -- lihat komentar panjang di deklarasi
+    // phoneGroupRef di atas kenapa ini gak bisa cuma sekali di awal.
+    if (equippedPhone) applyPhonePose(model)
 
     // ---- bayangan bulat di tanah -------------------------------------------------
     const shadow = shadowRef.current
