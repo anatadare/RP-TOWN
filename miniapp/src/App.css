@@ -2011,6 +2011,159 @@ body {
   color: var(--lantern-soft);
 }
 
+/* Tombol tas (inventory) -- persis di atas tombol pilih peta (44px + 12px
+   gap = 56px lebih tinggi). Ikon dikasih putih (bukan mix-blend-mode kayak
+   PNG map-pin) karena ini SVG langsung, bukan gambar. */
+.walk-inv-picker {
+  position: absolute;
+  left: 20px;
+  bottom: 236px;
+  z-index: 6;
+}
+
+.walk-inv-btn {
+  color: #fff;
+}
+
+.walk-inv-popup {
+  min-width: 140px;
+}
+
+.walk-inv-popup-wide {
+  width: 220px;
+  max-width: 70vw;
+}
+
+.walk-inv-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.walk-inv-item-count {
+  opacity: 0.6;
+  font-size: 10.5px;
+}
+
+.walk-inv-back {
+  opacity: 0.85;
+}
+
+.walk-inv-phone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.walk-inv-phone-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.walk-inv-phone-item:active {
+  background: rgba(34, 228, 255, 0.14);
+}
+
+.walk-inv-phone-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(234, 246, 255, 0.35);
+  flex: none;
+}
+
+.walk-inv-phone-name {
+  flex: 1;
+}
+
+.walk-inv-phone-type {
+  opacity: 0.5;
+  font-size: 10px;
+}
+
+/* Modal preview HP -- overlay penuh layar, panel di tengah. */
+.walk-inv-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.walk-inv-preview-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 10, 20, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.walk-inv-preview-panel {
+  position: relative;
+  z-index: 1;
+  width: min(80vw, 420px);
+  height: min(70vh, 420px);
+  background: rgba(11, 18, 32, 0.85);
+  border: 1px solid rgba(234, 246, 255, 0.2);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.walk-inv-preview-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(234, 246, 255, 0.25);
+  background: rgba(6, 10, 20, 0.6);
+  color: var(--paper);
+  cursor: pointer;
+}
+
+.walk-inv-preview-canvas {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+.walk-inv-preview-controls {
+  flex: none;
+  padding: 10px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.walk-inv-preview-label {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: center;
+}
+
+.walk-inv-preview-slider {
+  width: 100%;
+}
+
 .walk-hint {
   position: absolute;
   left: 50%;
