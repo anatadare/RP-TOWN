@@ -42,29 +42,26 @@ const POSE_DEGREES = {
 // (lihat FoldablePhone.jsx + phoneVariants.js) bisa dikalibrasi ke telapak
 // tangan yang SAMA persis, biar posisinya konsisten mau pakai HP polos lama
 // atau salah satu dari 15 varian lipat yang baru.
-export const PHONE_OFFSET_POS = [0, 0.045, 0.035]
+// Digeser lebih jauh dari titik tengah telapak (dulu 0.045/0.035) --
+// jarak lama itu lebih pendek dari "jari-jari" mesh kepalan tangannya
+// sendiri, jadi HP-nya nongol TEPAT DI DALAM mesh tangan (ketutupan/
+// nembus, bukan hilang beneran, cuma gak kelihatan sama sekali dari
+// luar). Kalau masih ketutupan, ini dulu yang digedein lagi.
+export const PHONE_OFFSET_POS = [0, 0.075, 0.065]
 export const PHONE_OFFSET_ROT = [Math.PI / 2.4, 0, 0]
 
-const v1 = new THREE.Vector3()
-const v2 = new THREE.Vector3()
-const hingeAxis = new THREE.Vector3()
 const parentWorldQuat = new THREE.Quaternion()
 const currentWorldQuat = new THREE.Quaternion()
 const deltaQuat = new THREE.Quaternion()
 
-// Nekuk satu sendi (`bone`) supaya lengan dari `bone` ke `child`
-// "naik" ke arah `upWorld`, sebesar `degrees`. World-space delta
-// rotation, dikonversi balik ke local quaternion bone-nya.
-function flexToward(bone, child, upWorld, degrees) {
-  if (!bone || !child || !bone.parent) return
+// Nekuk satu sendi (`bone`) sebesar `degrees` di sekitar `axis` (world
+// space, FIXED -- lihat catatan di applyPhonePose soal kenapa axis-nya
+// gak dihitung dari arah lengan lagi). World-space delta rotation,
+// dikonversi balik ke local quaternion bone-nya.
+function flexToward(bone, axis, degrees) {
+  if (!bone || !bone.parent) return
   bone.getWorldQuaternion(currentWorldQuat)
-  v1.setFromMatrixPosition(bone.matrixWorld)
-  v2.setFromMatrixPosition(child.matrixWorld)
-  v2.sub(v1).normalize() // arah lengan saat ini, dunia
-  hingeAxis.crossVectors(v2, upWorld)
-  if (hingeAxis.lengthSq() < 1e-6) return // lengan udah sejajar "atas", gak ada sumbu tekuk yang jelas
-  hingeAxis.normalize()
-  deltaQuat.setFromAxisAngle(hingeAxis, THREE.MathUtils.degToRad(degrees))
+  deltaQuat.setFromAxisAngle(axis, THREE.MathUtils.degToRad(degrees))
   deltaQuat.multiply(currentWorldQuat) // = quaternion dunia yang baru
   bone.parent.getWorldQuaternion(parentWorldQuat)
   parentWorldQuat.invert()
@@ -88,17 +85,31 @@ export function applyPhonePose(root, degrees = POSE_DEGREES) {
   const upperArm = root.getObjectByName('UpperArmR')
   const lowerArm = root.getObjectByName('LowerArmR')
   const fist = root.getObjectByName('FistR')
-  const head = root.getObjectByName('Head')
-  const hips = root.getObjectByName('Hips')
-  if (!upperArm || !lowerArm || !fist || !head || !hips) return null
+  const shoulderL = root.getObjectByName('ShoulderL')
+  const shoulderR = root.getObjectByName('ShoulderR')
+  if (!upperArm || !lowerArm || !fist || !shoulderL || !shoulderR) return null
 
-  const upWorld = new THREE.Vector3()
-    .setFromMatrixPosition(head.matrixWorld)
-    .sub(new THREE.Vector3().setFromMatrixPosition(hips.matrixWorld))
+  // Sumbu tekuk dulu dihitung dari cross(arah-lengan, "atas") -- masalahnya
+  // pas lengan lagi ngegantung (posisi Idle normal), arah lengan itu HAMPIR
+  // SEJAJAR sama "atas", jadi cross product-nya nyaris nol vektor. Abis
+  // dinormalisasi, arah hasilnya jadi nyaris ACAK (kepeleset ke arah mana
+  // aja tergantung noise angka desimal kecil) -- makanya lengannya kebuka
+  // ke SAMPING, bukan ke DEPAN kayak orang megang HP.
+  //
+  // Sumbu yang gak degenerate & selalu benar buat "kiri-kanan tubuh" (arah
+  // sendi bahu & siku alaminya nekuk): garis dari bahu kiri ke bahu kanan,
+  // dari posisi bone yang BENERAN ada di model (bukan tebakan sumbu
+  // lokal). Sumbu ini otomatis ikut arah hadap karakter (dihitung di world
+  // space), dan dicek langsung (skrip terpisah, bandingin ke arah "depan"
+  // dari pole target lutut) kalau muter ke arah POSITIF di sumbu ini bikin
+  // lengan maju ke depan tubuh -- bukan ke belakang.
+  const rightWorld = new THREE.Vector3()
+    .setFromMatrixPosition(shoulderR.matrixWorld)
+    .sub(new THREE.Vector3().setFromMatrixPosition(shoulderL.matrixWorld))
     .normalize()
 
-  flexToward(upperArm, lowerArm, upWorld, degrees.shoulderLift)
-  flexToward(lowerArm, fist, upWorld, degrees.elbowBend)
+  flexToward(upperArm, rightWorld, degrees.shoulderLift)
+  flexToward(lowerArm, rightWorld, degrees.elbowBend)
 
   // Puntiran pergelangan -- lihat catatan "MASIH TEBAKAN" di atas.
   const twist = new THREE.Quaternion().setFromAxisAngle(
