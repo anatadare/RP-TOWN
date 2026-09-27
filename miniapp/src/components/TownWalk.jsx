@@ -394,6 +394,11 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
   const phoneGroupRef = useRef(null)
   const { actions } = useAnimations(animations, animRef)
   const stateRef = useRef(null)
+  // HP baru dirender kalau udah kepastian nempel ke bone Fist.R (lihat efek
+  // di bawah) -- kalau nggak, sebelum nempel itu grup-nya masih ada di
+  // parent React biasa (origin model, deket kaki/tanah), jadi kalau HP-nya
+  // langsung dirender dari awal, sempet keliatan sekilas kecil & di tanah.
+  const [phoneAttached, setPhoneAttached] = useState(false)
 
   // ---- HP di tangan (equip) ------------------------------------------------
   // Karakter ini TERUS bergerak (Idle/Walk/Run/Jump lewat AnimationMixer),
@@ -409,10 +414,12 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
   // "ketekuknya" bakal ke-timpa lagi sama animasi Idle/Walk di frame
   // berikutnya.
   useEffect(() => {
+    setPhoneAttached(false)
     const fist = model.getObjectByName('Fist.R')
     const group = phoneGroupRef.current
     if (!fist || !group) return undefined
     fist.add(group)
+    setPhoneAttached(true)
     return () => {
       // Kalau modelnya udah kebuang duluan (ganti karakter / unmount),
       // bone lama gak boleh dipanggil metodnya lagi -- makanya cek
@@ -432,7 +439,10 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
   useFrame(() => {
     const fist = model.getObjectByName('Fist.R')
     const group = phoneGroupRef.current
-    if (fist && group && group.parent !== fist) fist.add(group)
+    if (fist && group && group.parent !== fist) {
+      fist.add(group)
+      setPhoneAttached(true)
+    }
   })
 
   const init = useCallback(() => {
@@ -629,7 +639,7 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
                 React Three Fiber cuma butuh node-nya ke-mount sekali, abis itu
                 posisi beneran di scene graph ditentuin oleh fist.add() di atas. */}
             <group ref={phoneGroupRef}>
-              {equippedPhone && (
+              {equippedPhone && phoneAttached && (
                 <group position={PHONE_OFFSET_POS} rotation={PHONE_OFFSET_ROT}>
                   <FoldablePhone variant={getPhoneVariant(equippedPhone)} foldT={phoneFoldT ?? 1} />
                 </group>
