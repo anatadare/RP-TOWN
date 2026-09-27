@@ -2023,6 +2023,18 @@ body {
 
 .walk-inv-btn {
   color: #fff;
+  position: relative;
+}
+
+.walk-inv-btn-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #22e4ff;
+  border: 1.5px solid rgba(11, 18, 32, 0.9);
 }
 
 .walk-inv-popup {
@@ -2045,10 +2057,38 @@ body {
 .walk-inv-item-count {
   opacity: 0.6;
   font-size: 10.5px;
+  text-align: right;
 }
 
 .walk-inv-back {
   opacity: 0.85;
+}
+
+.walk-inv-equipped-row {
+  display: flex;
+  gap: 4px;
+  padding: 2px 4px 6px;
+  border-bottom: 1px solid rgba(234, 246, 255, 0.12);
+  margin-bottom: 4px;
+}
+
+.walk-inv-fold-btn,
+.walk-inv-unequip-btn {
+  flex: 1;
+  border: 1px solid rgba(234, 246, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.walk-inv-unequip-btn {
+  flex: none;
+  color: #ff8a7a;
 }
 
 .walk-inv-phone-list {
@@ -2078,6 +2118,11 @@ body {
   background: rgba(34, 228, 255, 0.14);
 }
 
+.walk-inv-phone-item.is-active {
+  background: rgba(34, 228, 255, 0.12);
+  color: var(--lantern-soft);
+}
+
 .walk-inv-phone-swatch {
   width: 12px;
   height: 12px;
@@ -2095,73 +2140,9 @@ body {
   font-size: 10px;
 }
 
-/* Modal preview HP -- overlay penuh layar, panel di tengah. */
-.walk-inv-preview-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.walk-inv-preview-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(6, 10, 20, 0.72);
-  backdrop-filter: blur(4px);
-}
-
-.walk-inv-preview-panel {
-  position: relative;
-  z-index: 1;
-  width: min(80vw, 420px);
-  height: min(70vh, 420px);
-  background: rgba(11, 18, 32, 0.85);
-  border: 1px solid rgba(234, 246, 255, 0.2);
-  border-radius: 20px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.walk-inv-preview-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 2;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 1px solid rgba(234, 246, 255, 0.25);
-  background: rgba(6, 10, 20, 0.6);
-  color: var(--paper);
-  cursor: pointer;
-}
-
-.walk-inv-preview-canvas {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-}
-
-.walk-inv-preview-controls {
-  flex: none;
-  padding: 10px 16px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.walk-inv-preview-label {
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  text-align: center;
-}
-
-.walk-inv-preview-slider {
-  width: 100%;
+.walk-inv-phone-check {
+  color: var(--lantern-soft);
+  font-size: 12px;
 }
 
 .walk-hint {
