@@ -61,7 +61,7 @@ function flexToward(bone, child, upWorld, degrees) {
   v1.setFromMatrixPosition(bone.matrixWorld)
   v2.setFromMatrixPosition(child.matrixWorld)
   v2.sub(v1).normalize() // arah lengan saat ini, dunia
-  hingeAxis.crossVectors(upWorld, v2)
+  hingeAxis.crossVectors(v2, upWorld)
   if (hingeAxis.lengthSq() < 1e-6) return // lengan udah sejajar "atas", gak ada sumbu tekuk yang jelas
   hingeAxis.normalize()
   deltaQuat.setFromAxisAngle(hingeAxis, THREE.MathUtils.degToRad(degrees))
