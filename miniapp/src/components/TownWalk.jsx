@@ -9,6 +9,7 @@ import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
 import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
 import RemotePlayers from './RemotePlayers'
+import PhoneInventory from './PhoneInventory'
 import {
   lockTelegramSwipe,
   unlockTelegramSwipe,
@@ -951,6 +952,11 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
           ↺
         </button>
       </div>
+
+      {/* Tombol tas (inventory) -- persis di atas tombol pilih peta. Isinya
+          HP yang udah kita bikin (lihat phoneVariants.js); klik salah satu
+          buka modal preview karakter megang HP itu. */}
+      <PhoneInventory modelUrl={modelUrl} />
 
       {/* Tombol pilih peta -- bulat kecil merah, kiri bawah. Tap buka popup
           yang ngegulir ke bawah nampilin daftar peta (gantiin tab lama di
