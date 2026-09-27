@@ -7,6 +7,9 @@ import { WalkBillboard } from './Billboard3D'
 import { buildWalkWorld, ROAD_LIFT } from '../lib/walkWorld'
 import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
+import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT } from './PhonePose'
+import FoldablePhone from './FoldablePhone'
+import { getPhoneVariant } from './phoneVariants'
 import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
 import RemotePlayers from './RemotePlayers'
 import PhoneInventory from './PhoneInventory'
@@ -362,7 +365,7 @@ function prepareWalkScene(scene) {
 // Karakter + fisika + kamera. Semua di satu useFrame supaya urutannya pasti:
 // input -> fisika -> posisi model -> animasi -> kamera.
 // ---------------------------------------------------------------------------
-function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onReady }) {
+function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onReady, equippedPhone, phoneFoldT }) {
   const { scene: charScene, animations } = useGLTF(character.modelUrl)
   const { camera } = useThree()
 
@@ -388,8 +391,28 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
   const rootRef = useRef(null)
   const animRef = useRef(null)
   const shadowRef = useRef(null)
+  const phoneGroupRef = useRef(null)
   const { actions } = useAnimations(animations, animRef)
   const stateRef = useRef(null)
+
+  // ---- HP di tangan (equip) ------------------------------------------------
+  // Beda dari pose statis "phone" di CharacterPreview.jsx: di sini karakter
+  // TERUS bergerak (Idle/Walk/Run/Jump lewat AnimationMixer), jadi lengannya
+  // TIDAK ditekuk manual (applyPhonePose gak dipanggil -- kalau dipanggil,
+  // bakal ke-overwrite tiap frame sama animasi lagian). HP-nya cukup
+  // di-attach sebagai child object3D ke bone Fist.R; karena bone itu
+  // digerakkan tiap frame sama animation mixer, HP-nya otomatis ikut
+  // ngikutin ke mana pun tangan itu gerak (jalan/lari/lompat) -- ini teknik
+  // standar "attach prop ke bone" di three.js, gak butuh app logic tambahan.
+  useEffect(() => {
+    const fist = model.getObjectByName('Fist.R')
+    const group = phoneGroupRef.current
+    if (!fist || !group) return undefined
+    fist.add(group)
+    return () => {
+      fist.remove(group)
+    }
+  }, [model])
 
   const init = useCallback(() => {
     const inp = inputRef.current
@@ -572,6 +595,19 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
         <group scale={scale}>
           <group ref={animRef}>
             <primitive object={model} />
+            {/* phoneGroupRef di-attach ke bone Fist.R lewat useEffect di atas
+                (bukan lewat parent-child JSX biasa, soalnya Fist.R itu bone
+                di DALAM model .glb, bukan node yang kita tulis manual di sini).
+                Naruhnya di sini (bukan di luar <primitive>) gak masalah --
+                React Three Fiber cuma butuh node-nya ke-mount sekali, abis itu
+                posisi beneran di scene graph ditentuin oleh fist.add() di atas. */}
+            <group ref={phoneGroupRef}>
+              {equippedPhone && (
+                <group position={PHONE_OFFSET_POS} rotation={PHONE_OFFSET_ROT}>
+                  <FoldablePhone variant={getPhoneVariant(equippedPhone)} foldT={phoneFoldT ?? 1} />
+                </group>
+              )}
+            </group>
           </group>
         </group>
       </group>
@@ -594,7 +630,7 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
 // ---------------------------------------------------------------------------
 // Isi scene: peta (salinan), tanah buatan, laut, dan pemain.
 // ---------------------------------------------------------------------------
-function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady }) {
+function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT }) {
   const { scene } = useGLTF(modelUrl)
   const built = useMemo(() => prepareWalkScene(scene), [scene])
   // Billboard kecil peta ini (posisi x/z diatur di lib/maps.js).
@@ -670,6 +706,8 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady }
         selfRef={selfRef}
         canopies={built.canopies}
         onReady={onReady}
+        equippedPhone={equippedPhone}
+        phoneFoldT={phoneFoldT}
       />
       <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} world={world} />
     </>
@@ -855,6 +893,13 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
   // Popup daftar peta -- gantiin tab map-switcher yang dulu nongkrong di
   // topbar, sekarang dipanggil dari tombol bulat kecil di kiri bawah.
   const [showMapPicker, setShowMapPicker] = useState(false)
+  // HP yang lagi dipasang di tangan karakter (id dari phoneVariants.js,
+  // atau null = gak pegang apa-apa) + status buka/tutupnya. Statenya di
+  // sini (bukan di dalam PhoneInventory) supaya bisa diteruskan ke
+  // WalkPlayer (lewat WalkScene) -- itu yang beneran nempelin HP-nya ke
+  // bone tangan karakter yang jalan di peta.
+  const [equippedPhone, setEquippedPhone] = useState(null)
+  const [phoneFoldT, setPhoneFoldT] = useState(1)
   const handleReady = useCallback(() => setReady(true), [])
 
   // Ganti peta = Canvas remount (key) -> tampilkan loading lagi.
@@ -915,6 +960,8 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
             net={net}
             sky={sky}
             onReady={handleReady}
+            equippedPhone={equippedPhone}
+            phoneFoldT={phoneFoldT}
           />
         </Suspense>
       </Canvas>
@@ -953,10 +1000,17 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
         </button>
       </div>
 
-      {/* Tombol tas (inventory) -- persis di atas tombol pilih peta. Isinya
-          HP yang udah kita bikin (lihat phoneVariants.js); klik salah satu
-          buka modal preview karakter megang HP itu. */}
-      <PhoneInventory modelUrl={modelUrl} />
+      {/* Tombol tas (inventory) -- persis di atas tombol pilih peta. Pilih
+          salah satu dari 15 HP di phoneVariants.js buat langsung dipasang
+          ke tangan karakter yang jalan di peta (lihat equippedPhone di atas
+          + WalkPlayer). */}
+      <PhoneInventory
+        equippedId={equippedPhone}
+        foldT={phoneFoldT}
+        onEquip={setEquippedPhone}
+        onUnequip={() => setEquippedPhone(null)}
+        onSetFold={setPhoneFoldT}
+      />
 
       {/* Tombol pilih peta -- bulat kecil merah, kiri bawah. Tap buka popup
           yang ngegulir ke bawah nampilin daftar peta (gantiin tab lama di
