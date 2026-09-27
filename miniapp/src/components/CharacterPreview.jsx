@@ -2,7 +2,9 @@ import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useGLTF, useAnimations, Bounds } from '@react-three/drei'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
-import { applyPhonePose, LowPolyPhone } from './PhonePose'
+import { applyPhonePose, LowPolyPhone, PHONE_OFFSET_POS, PHONE_OFFSET_ROT } from './PhonePose'
+import FoldablePhone from './FoldablePhone'
+import { getPhoneVariant } from './phoneVariants'
 
 // Model karakter Quaternius diekspor standar Y-up (beda dari model peta
 // yang Z-up), jadi gak perlu AXIS_FIX_ROTATION kayak TownMap3D.
@@ -14,7 +16,15 @@ import { applyPhonePose, LowPolyPhone } from './PhonePose'
 // kita tekuk gak numpuk ke cache useGLTF bareng -- kalau gak di-clone,
 // karakter yang sama bakal "ke-bawa" lengan bengkok ini pas dipreview
 // di tempat lain yang animasi biasa.
-function CharacterModel({ url, animation, spin, rotationRef, pose }) {
+// `phoneVariant`: id dari salah satu 15 varian di phoneVariants.js
+// (mis. "flip-01".."flip-07", "book-01".."book-08"). Kalau kosong,
+// tetap pakai <LowPolyPhone/> polos yang lama (backward-compatible,
+// gak ngerusak pemakaian yang udah ada).
+// `foldT`: 0 = tertutup, 1 = terbuka (default 1 -- "lagi dipakai lihat
+// layar"). Untuk varian book yang terbuka lebar (~2x lebar HP biasa),
+// pertimbangkan foldT < 1 (mis. 0.85) kalau HP-nya kelihatan nembus
+// terlalu jauh ke arah badan/lengan karakter.
+function CharacterModel({ url, animation, spin, rotationRef, pose, phoneVariant, foldT }) {
   const group = useRef()
   const phoneGroup = useRef()
   const { scene: cachedScene, animations } = useGLTF(url)
@@ -61,7 +71,16 @@ function CharacterModel({ url, animation, spin, rotationRef, pose }) {
     <primitive ref={group} object={scene}>
       {pose === 'phone' && (
         <group ref={phoneGroup}>
-          <LowPolyPhone />
+          {phoneVariant ? (
+            // FoldablePhone gak nge-apply offset sendiri (beda dari LowPolyPhone),
+            // jadi dibungkus manual di sini pakai kalibrasi telapak tangan yang
+            // sama (PHONE_OFFSET_POS/ROT) biar posisinya konsisten.
+            <group position={PHONE_OFFSET_POS} rotation={PHONE_OFFSET_ROT}>
+              <FoldablePhone variant={getPhoneVariant(phoneVariant)} foldT={foldT ?? 1} />
+            </group>
+          ) : (
+            <LowPolyPhone />
+          )}
         </group>
       )}
     </primitive>
@@ -86,6 +105,9 @@ export default function CharacterPreview({
   className,
   // 'phone' = pose statis megang HP (lihat PhonePose.jsx), gantiin animasi.
   pose,
+  // Lihat komentar phoneVariant/foldT di CharacterModel di atas.
+  phoneVariant,
+  foldT,
 }) {
   const rotationRef = useRef(0)
   const dragState = useRef({ dragging: false, startX: 0, startRotation: 0 })
@@ -138,6 +160,8 @@ export default function CharacterPreview({
               spin={spin}
               rotationRef={draggable ? rotationRef : null}
               pose={pose}
+              phoneVariant={phoneVariant}
+              foldT={foldT}
             />
           </Bounds>
         </Suspense>
