@@ -414,9 +414,26 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
     if (!fist || !group) return undefined
     fist.add(group)
     return () => {
-      fist.remove(group)
+      // Kalau modelnya udah kebuang duluan (ganti karakter / unmount),
+      // bone lama gak boleh dipanggil metodnya lagi -- makanya cek
+      // `fist.parent` masih ada sebelum manggil `remove()`.
+      if (fist.parent) fist.remove(group)
     }
   }, [model])
+
+  // ---- jaga-jaga: pastiin grup HP TETEP nempel ke Fist.R tiap frame --------
+  // Effect di atas cuma jalan SEKALI pas `model` pertama kali siap. Kalau
+  // gara-gara race condition/urutan render grup itu balik ke parent lamanya
+  // (`animRef`, lewat JSX biasa) -- makanya taro HP di posisi ASLI si model
+  // (deket kaki/tanah, karena situ origin (0,0,0) rig-nya), PERSIS gejala
+  // "HP nyangkut di tanah deket kaki" -- baris ini benerin ulang tiap frame,
+  // jadi walau kejadian race-nya, paling lama ke-detect & kebenerin 1 frame
+  // doang (gak keliatan mata).
+  useFrame(() => {
+    const fist = model.getObjectByName('Fist.R')
+    const group = phoneGroupRef.current
+    if (fist && group && group.parent !== fist) fist.add(group)
+  })
 
   const init = useCallback(() => {
     const inp = inputRef.current
