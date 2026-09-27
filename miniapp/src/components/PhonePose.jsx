@@ -78,9 +78,16 @@ function flexToward(bone, child, upWorld, degrees) {
 // gak nge-crash, cuma HP-nya gak kepasang).
 export function applyPhonePose(root, degrees = POSE_DEGREES) {
   root.updateMatrixWorld(true)
-  const upperArm = root.getObjectByName('UpperArm.R')
-  const lowerArm = root.getObjectByName('LowerArm.R')
-  const fist = root.getObjectByName('Fist.R')
+  // CATATAN: nama bone di file .blend/.glb aslinya pakai titik (mis.
+  // "Fist.R"), TAPI three.js GLTFLoader otomatis MEMBUANG titik dari
+  // nama node pas parsing (titik dipakai buat pemisah path animasi,
+  // jadi dianggap karakter gak valid di nama node) -- "Fist.R" jadi
+  // "FistR" pas sampai di sini. Ini sempat bikin seluruh fungsi ini gagal
+  // diam-diam (selalu return null) karena getObjectByName nyari nama yang
+  // gak akan pernah ketemu. Dicek langsung ke output GLTFLoader buat mastiin.
+  const upperArm = root.getObjectByName('UpperArmR')
+  const lowerArm = root.getObjectByName('LowerArmR')
+  const fist = root.getObjectByName('FistR')
   const head = root.getObjectByName('Head')
   const hips = root.getObjectByName('Hips')
   if (!upperArm || !lowerArm || !fist || !head || !hips) return null
