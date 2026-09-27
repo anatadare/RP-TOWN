@@ -38,8 +38,12 @@ const POSE_DEGREES = {
 // model karakter). Digeser dikit ke "depan" telapak tangan pake tebakan
 // sumbu lokal juga -- kalau HP-nya nongol nembus telapak/ke arah salah,
 // ini yang paling gampang diubah (cuma 3 angka posisi + 3 rotasi).
-const PHONE_OFFSET_POS = [0, 0.045, 0.035]
-const PHONE_OFFSET_ROT = [Math.PI / 2.4, 0, 0]
+// Diekspor (bukan cuma dipakai internal LowPolyPhone) supaya FoldablePhone
+// (lihat FoldablePhone.jsx + phoneVariants.js) bisa dikalibrasi ke telapak
+// tangan yang SAMA persis, biar posisinya konsisten mau pakai HP polos lama
+// atau salah satu dari 15 varian lipat yang baru.
+export const PHONE_OFFSET_POS = [0, 0.045, 0.035]
+export const PHONE_OFFSET_ROT = [Math.PI / 2.4, 0, 0]
 
 const v1 = new THREE.Vector3()
 const v2 = new THREE.Vector3()
