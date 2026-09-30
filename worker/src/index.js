@@ -38,6 +38,7 @@ import { registerMainBotHandlers } from './mainBot.js'
 import { handleKuaInvite } from './kuaInvite.js'
 import { handleBayarGgWebhook } from './bayarWebhook.js'
 import { handleTellerMessage } from './teller.js'
+import { handleHouseMarketMessage } from './houseMarket.js'
 import { sweepQrMessages } from './qrSweep.js'
 import { handleWalkSocket } from './walkRoom.js'
 
@@ -129,8 +130,11 @@ async function handleMainBotWebhook(request, env) {
 }
 
 async function handleAgentWebhook(request, env, agentKey) {
-  const { allAgents, tellerAgents, penghuluAgents, assistantAgents } = loadAgents(env)
-  const agent = allAgents.find((a) => a.key === agentKey) || tellerAgents.find((a) => a.key === agentKey)
+  const { allAgents, tellerAgents, houseMarketAgents, penghuluAgents, assistantAgents } = loadAgents(env)
+  const agent =
+    allAgents.find((a) => a.key === agentKey) ||
+    tellerAgents.find((a) => a.key === agentKey) ||
+    houseMarketAgents.find((a) => a.key === agentKey)
 
   if (!agent) {
     // Diagnostik teller: kasih tahu env mana yang kosong (kelihatan di log Worker).
@@ -141,6 +145,15 @@ async function handleAgentWebhook(request, env, agentKey) {
       if (!env[`TELLER_${n}_GROUP_IDS`] && !env.BANK_GROUP_CHAT_ID) missing.push('BANK_GROUP_CHAT_ID')
       if (!env[`TELLER_${n}_GEMINI_API_KEY`] && !env.GEMINI_API_KEY) missing.push('GEMINI_API_KEY')
       console.warn(`[${agentKey}] agent belum terkonfigurasi. Env kosong: ${missing.join(', ') || '(tidak ada; cek nomor teller di URL webhook)'}`)
+    }
+    // Diagnostik Pak Darma: sama seperti teller di atas.
+    if (agentKey.startsWith('housemarket-')) {
+      const n = agentKey.split('-')[1]
+      const missing = []
+      if (!env[`HOUSE_MARKET_${n}_TOKEN`]) missing.push(`HOUSE_MARKET_${n}_TOKEN`)
+      if (!env[`HOUSE_MARKET_${n}_GROUP_IDS`] && !env.HOUSE_MARKET_GROUP_CHAT_ID) missing.push('HOUSE_MARKET_GROUP_CHAT_ID')
+      if (!env[`HOUSE_MARKET_${n}_GEMINI_API_KEY`] && !env.GEMINI_API_KEY) missing.push('GEMINI_API_KEY')
+      console.warn(`[${agentKey}] agent belum terkonfigurasi. Env kosong: ${missing.join(', ') || '(tidak ada; cek nomor housemarket di URL webhook)'}`)
     }
     // Agent ini belum dikonfigurasi lengkap (token/grup/API key kosong di
     // env) -- balikin 200 kosong (bukan error) biar Telegram gak nganggep
@@ -164,19 +177,19 @@ async function handleAgentWebhook(request, env, agentKey) {
 
       const threadId = botCtx.message.message_thread_id ?? null
 
-      // Diagnostik teller: log ID asli yang diterima, biar gampang dicocokkan
-      // dengan BANK_GROUP_CHAT_ID / TELLER_1_THREAD_IDS di env.
-      if (agent.kind === 'teller') {
+      // Diagnostik teller/housemarket: log ID asli yang diterima, biar gampang
+      // dicocokkan dengan BANK_GROUP_CHAT_ID/HOUSE_MARKET_GROUP_CHAT_ID + THREAD_IDS di env.
+      if (agent.kind === 'teller' || agent.kind === 'housemarket') {
         console.log(`[${agent.key}] pesan masuk chat=${botCtx.chat.id} thread=${threadId ?? 'none'} dari=${botCtx.from?.id}`)
       }
 
       if (!groupIdSet.has(String(botCtx.chat.id))) {
-        if (agent.kind === 'teller') console.warn(`[${agent.key}] DIABAIKAN: chat ${botCtx.chat.id} tidak ada di grup yang diizinkan (${[...groupIdSet].join(',')})`)
+        if (agent.kind === 'teller' || agent.kind === 'housemarket') console.warn(`[${agent.key}] DIABAIKAN: chat ${botCtx.chat.id} tidak ada di grup yang diizinkan (${[...groupIdSet].join(',')})`)
         return
       }
 
       if (threadIdSet && !threadIdSet.has(String(threadId))) {
-        if (agent.kind === 'teller') console.warn(`[${agent.key}] DIABAIKAN: thread ${threadId ?? 'none'} tidak ada di TELLER_THREAD_IDS (${[...threadIdSet].join(',')})`)
+        if (agent.kind === 'teller' || agent.kind === 'housemarket') console.warn(`[${agent.key}] DIABAIKAN: thread ${threadId ?? 'none'} tidak ada di THREAD_IDS (${[...threadIdSet].join(',')})`)
         return
       }
 
@@ -185,6 +198,11 @@ async function handleAgentWebhook(request, env, agentKey) {
 
       if (agent.kind === 'teller') {
         await handleTellerMessage(supabaseAdmin, agent, botCtx, text, threadId, { env })
+        return
+      }
+
+      if (agent.kind === 'housemarket') {
+        await handleHouseMarketMessage(supabaseAdmin, agent, botCtx, text, threadId, { env })
         return
       }
 
@@ -210,6 +228,18 @@ async function handleAgentWebhook(request, env, agentKey) {
         // Teller: jangan pakai template "pergi sebentar" milik Pegawai KUA.
         try {
           await botCtx.reply('Maaf, sistem bank lagi sibuk. Coba kirim lagi sebentar lagi ya 🙏', {
+            ...(fallbackThreadId ? { message_thread_id: fallbackThreadId } : {}),
+          })
+        } catch (replyErr) {
+          console.error(`[${agent.key}] gagal kirim fallback reply:`, replyErr)
+        }
+        return
+      }
+
+      if (agent.kind === 'housemarket') {
+        // Pak Darma: sama alasannya seperti teller, jangan pakai template "pergi sebentar" milik Pegawai KUA.
+        try {
+          await botCtx.reply('Maaf, catatan propertinya lagi sibuk dicek. Coba kirim lagi sebentar lagi ya 🙏', {
             ...(fallbackThreadId ? { message_thread_id: fallbackThreadId } : {}),
           })
         } catch (replyErr) {
