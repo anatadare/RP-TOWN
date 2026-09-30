@@ -145,7 +145,11 @@ export async function handleHouseMarketMessage(supabaseAdmin, agent, ctx, text, 
       case 'list_active_listings': {
         const { data, error } = await supabaseAdmin
           .from('house_listings')
-          .select('id, price, created_at, house:houses(name, plot_number, map_key), seller:citizens(display_name, username)')
+          // 'seller:citizens!house_listings_seller_citizen_id_fkey(...)' -- WAJIB
+          // pakai nama constraint eksplisit. house_listings punya 2 kolom yang
+          // sama-sama menunjuk ke citizens (seller_citizen_id & buyer_citizen_id),
+          // jadi 'citizens(...)' polos bikin PostgREST bingung dan query gagal total.
+          .select('id, price, created_at, house:houses(name, plot_number, map_key), seller:citizens!house_listings_seller_citizen_id_fkey(display_name, username)')
           .eq('status', 'active')
           .order('created_at', { ascending: false })
           .limit(20)
