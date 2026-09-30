@@ -171,6 +171,61 @@ export function buildHouseMarketAgents(env, count = 1) {
   return list
 }
 
+// Agent "Kirana" (grup RP Town Civil Registry, topik "pembuatan ktp").
+// Beda dari Teller/Pak Darma: Kirana pakai jalur AI yang SAMA dengan
+// Penghulu/Pegawai (Jerouter dulu, Gemini cadangan -- lihat aiClient.js),
+// bukan Gemini function-calling langsung, karena alur KTP 100% dijalankan
+// tombol inline + kode (lihat ktp.js); AI cuma dipakai buat kalimat
+// komentar & obrolan bebas. Sengaja TIDAK dimasukkan ke `allAgents` --
+// bukan bagian dari grup KUA, sama seperti Teller/Pak Darma.
+//
+// Env per agent (i = 1, 2, ...):
+//   KIRANA_i_TOKEN            token bot dari BotFather (WAJIB bot sendiri).
+//   KTP_i_GROUP_IDS           id grup Catatan Sipil (koma-pisah). Default: KTP_GROUP_CHAT_ID
+//   KTP_i_THREAD_IDS          (opsional) id topic "pembuatan ktp" yang dilayani
+//   KIRANA_i_NAME             (opsional) default "Kirana"
+//   KIRANA_i_AI_API_KEY       (opsional) default AI_API_KEY (Jerouter)
+//   KIRANA_i_AI_MODEL         (opsional) default AI_MODEL
+//   KIRANA_i_GEMINI_API_KEY   (opsional) default GEMINI_API_KEY (cadangan fase 2)
+//   KIRANA_i_GEMINI_MODEL     (opsional) default GEMINI_MODEL
+export function buildKtpAgents(env, count = 1) {
+  const list = []
+  for (let i = 1; i <= count; i += 1) {
+    const token = env[`KIRANA_${i}_TOKEN`]
+    if (!token) continue
+
+    const groupIdsRaw = env[`KTP_${i}_GROUP_IDS`]
+    const groupIds = groupIdsRaw
+      ? groupIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : (env.KTP_GROUP_CHAT_ID ? [env.KTP_GROUP_CHAT_ID] : [])
+    if (groupIds.length === 0) continue
+
+    const threadIdsRaw = env[`KTP_${i}_THREAD_IDS`]
+    const threadIds = threadIdsRaw
+      ? threadIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : null
+
+    const aiApiKey = env[`KIRANA_${i}_AI_API_KEY`] || env.AI_API_KEY
+    const geminiApiKey = env[`KIRANA_${i}_GEMINI_API_KEY`] || env.GEMINI_API_KEY || null
+    const geminiModel = env[`KIRANA_${i}_GEMINI_MODEL`] || env.GEMINI_MODEL || null
+    if (!aiApiKey && !geminiApiKey) continue
+
+    list.push({
+      key: `ktp-${i}`,
+      kind: 'ktp',
+      token,
+      name: env[`KIRANA_${i}_NAME`] || 'Kirana',
+      groupIds,
+      threadIds,
+      aiApiKey,
+      aiModel: env[`KIRANA_${i}_AI_MODEL`] || env.AI_MODEL || 'qwen3.8-flash',
+      geminiApiKey,
+      geminiModel,
+    })
+  }
+  return list
+}
+
 // Bangun seluruh daftar agent sekali per request, dari `env` yang dikirim
 // Workers. Dipanggil dari src/index.js tiap ada request masuk (bukan
 // sekali pas cold start global scope, biar selalu baca env yang terbaru).
@@ -179,11 +234,13 @@ export function loadAgents(env) {
   const assistantAgents = buildAgentList(env, 'ASSISTANT', 'assistant', ASSISTANT_COUNT, ASSISTANT_DEFAULT_NAMES)
   const tellerAgents = buildTellerAgents(env)
   const houseMarketAgents = buildHouseMarketAgents(env)
+  const ktpAgents = buildKtpAgents(env)
   return {
     penghuluAgents,
     assistantAgents,
     tellerAgents,
     houseMarketAgents,
+    ktpAgents,
     allAgents: [...penghuluAgents, ...assistantAgents],
     aiModel: env.AI_MODEL || 'qwen3.8-flash',
   }
