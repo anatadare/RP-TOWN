@@ -3,6 +3,7 @@ import './App.css'
 import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSuccess } from './lib/telegram'
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms, updateCitizenCharacter } from './lib/rooms'
 import { getHouseByOwner, getIslandName } from './lib/houses'
+import Market from './components/Market'
 import { requestKuaInvite, kuaInviteErrorMessage } from './lib/kua'
 import TownMap3D from './components/TownMap3D'
 import TownWalk from './components/TownWalk'
@@ -112,6 +113,28 @@ function ProfileIcon({ active }) {
         strokeWidth="1.6"
         strokeLinecap="round"
       />
+    </svg>
+  )
+}
+
+function MarketIcon({ active }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 9.5l1.2-4.5h13.6L20 9.5"
+        stroke={active ? 'var(--lantern)' : 'currentColor'}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4.5 9.5V19h15V9.5"
+        stroke={active ? 'var(--lantern)' : 'currentColor'}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M9.5 19v-5h5v5" stroke={active ? 'var(--lantern)' : 'currentColor'} strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M4 9.5h16" stroke={active ? 'var(--lantern)' : 'currentColor'} strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   )
 }
@@ -529,6 +552,10 @@ export default function App() {
         />
       )}
 
+      {!loading && !error && screen === 'market' && (
+        <Market citizen={citizen} />
+      )}
+
       {!loading && !error && screen === 'profile' && (
         <div className="profile-page">
           <div className="profile-page-header">
@@ -670,6 +697,17 @@ export default function App() {
           >
             <MapIcon active={screen === 'map'} />
             <span>Peta</span>
+          </button>
+          <button
+            className={`bottom-nav-item${screen === 'market' ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => {
+              if (screen !== 'market') hapticSelect()
+              setScreen('market')
+            }}
+          >
+            <MarketIcon active={screen === 'market'} />
+            <span>Market</span>
           </button>
           <button
             className={`bottom-nav-item${screen === 'profile' ? ' is-active' : ''}`}
