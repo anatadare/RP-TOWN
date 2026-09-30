@@ -129,7 +129,9 @@ export function buildTellerAgents(env, count = 2) {
 // seperti teller, bukan bagian dari grup KUA.
 //
 // Env per agent (i = 1, 2, ...):
-//   HOUSE_MARKET_i_TOKEN            token bot dari BotFather (WAJIB bot sendiri)
+//   PAKDHARMA_i_TOKEN                token bot dari BotFather (WAJIB bot sendiri).
+//                                    Sengaja dinamai PAKDHARMA (bukan HOUSE_MARKET) biar
+//                                    langsung ketauan punya siapa pas lihat daftar env.
 //   HOUSE_MARKET_i_GROUP_IDS        id grup market (koma-pisah). Default: HOUSE_MARKET_GROUP_CHAT_ID
 //   HOUSE_MARKET_i_THREAD_IDS       (opsional) id topic "Jual Property" yang dilayani
 //   HOUSE_MARKET_i_NAME             (opsional) default "Pak Darma"
@@ -138,7 +140,7 @@ export function buildTellerAgents(env, count = 2) {
 export function buildHouseMarketAgents(env, count = 1) {
   const list = []
   for (let i = 1; i <= count; i += 1) {
-    const token = env[`HOUSE_MARKET_${i}_TOKEN`]
+    const token = env[`PAKDHARMA_${i}_TOKEN`]
     if (!token) continue
 
     const groupIdsRaw = env[`HOUSE_MARKET_${i}_GROUP_IDS`]
