@@ -902,6 +902,170 @@ body {
 }
 
 /* ============================================
+   MARKET PAGE — etalase listing rumah (read-only,
+   aksi jual/beli/batal tetap lewat chat Pak Darma)
+   ============================================ */
+.market-page {
+  position: relative;
+  z-index: 2;
+  height: 100vh;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px 16px 96px;
+  overflow-y: auto;
+}
+
+.market-page-header {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.market-page-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.3px;
+  color: var(--paper);
+  margin: 0 0 4px;
+  text-shadow: 0 0 24px rgba(34, 228, 255, 0.25);
+}
+
+.market-page-subtitle {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  opacity: 0.75;
+  margin: 0;
+}
+
+.market-empty {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  opacity: 0.7;
+  background: rgba(234, 246, 255, 0.05);
+  border: 1px solid rgba(234, 246, 255, 0.12);
+  border-radius: 12px;
+  padding: 20px 12px;
+  margin: 0 0 16px;
+}
+
+.market-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.market-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(234, 246, 255, 0.14);
+  background: rgba(234, 246, 255, 0.05);
+}
+
+.market-card-mine {
+  border-color: rgba(255, 61, 203, 0.5);
+  background: rgba(255, 61, 203, 0.08);
+}
+
+.market-card-icon {
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.market-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.market-card-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--paper);
+  margin: 0 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-card-mine-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--accent-soft);
+  border: 1px solid rgba(255, 61, 203, 0.4);
+  border-radius: 999px;
+  padding: 1px 7px;
+  flex-shrink: 0;
+}
+
+.market-card-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  opacity: 0.75;
+  margin: 0 0 6px;
+}
+
+.market-card-seller {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.market-card-seller-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--moss);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8.5px;
+  font-weight: 600;
+  color: var(--paper);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.market-card-seller-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.market-card-price {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--lantern);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.market-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  opacity: 0.7;
+  text-align: center;
+  line-height: 1.5;
+  margin: 4px 0 0;
+}
+
+/* ============================================
    PROFILE PAGE (halaman penuh, bukan popup lagi)
    ============================================ */
 .profile-page {
