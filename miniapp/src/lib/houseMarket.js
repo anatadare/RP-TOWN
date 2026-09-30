@@ -14,7 +14,12 @@ export async function getActiveListings() {
   const { data, error } = await supabase
     .from('house_listings')
     .select(
-      'id, price, created_at, seller_citizen_id, house:houses(name, plot_number, map_key), seller:citizens(display_name, username, avatar_url)'
+      // 'seller:citizens!house_listings_seller_citizen_id_fkey(...)' -- WAJIB pakai
+      // nama constraint eksplisit di sini. house_listings punya 2 kolom yang
+      // sama-sama menunjuk ke citizens (seller_citizen_id & buyer_citizen_id),
+      // jadi kalau ditulis 'citizens(...)' polos, PostgREST bingung mau pakai
+      // FK yang mana dan query ini gagal total (bukan cuma salah data).
+      'id, price, created_at, seller_citizen_id, house:houses(name, plot_number, map_key), seller:citizens!house_listings_seller_citizen_id_fkey(display_name, username, avatar_url)'
     )
     .eq('status', 'active')
     .order('created_at', { ascending: false })
