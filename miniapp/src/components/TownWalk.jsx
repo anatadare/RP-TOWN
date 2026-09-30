@@ -9,7 +9,8 @@ import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
 import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, applyPhonePose } from './PhonePose'
 import FoldablePhone from './FoldablePhone'
-import { getPhoneVariant } from './phoneVariants'
+import BarPhone from './BarPhone'
+import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
 import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
 import RemotePlayers from './RemotePlayers'
 import PhoneInventory from './PhoneInventory'
@@ -642,11 +643,18 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
                 React Three Fiber cuma butuh node-nya ke-mount sekali, abis itu
                 posisi beneran di scene graph ditentuin oleh fist.add() di atas. */}
             <group ref={phoneGroupRef}>
-              {equippedPhone && phoneAttached && (
-                <group position={PHONE_OFFSET_POS} rotation={PHONE_OFFSET_ROT}>
-                  <FoldablePhone variant={getPhoneVariant(equippedPhone)} foldT={phoneFoldT ?? 1} />
-                </group>
-              )}
+              {equippedPhone && phoneAttached && (() => {
+                const variant = getAnyPhoneVariant(equippedPhone)
+                return (
+                  <group position={PHONE_OFFSET_POS} rotation={PHONE_OFFSET_ROT}>
+                    {isBarPhone(variant) ? (
+                      <BarPhone variant={variant} />
+                    ) : (
+                      <FoldablePhone variant={variant} foldT={phoneFoldT ?? 1} />
+                    )}
+                  </group>
+                )
+              })()}
             </group>
           </group>
         </group>
