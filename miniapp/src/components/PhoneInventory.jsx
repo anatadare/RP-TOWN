@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { PHONE_VARIANTS, getPhoneVariant } from './phoneVariants'
+import { ALL_PHONE_VARIANTS, getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
 import { hapticSelect } from '../lib/telegram'
 
 // ============================================================
@@ -28,7 +28,10 @@ export default function PhoneInventory({ equippedId, foldT, onEquip, onUnequip, 
   // 'closed' | 'items' | 'phones'
   const [screen, setScreen] = useState('closed')
   const isOpen = screen !== 'closed'
-  const equipped = equippedId ? getPhoneVariant(equippedId) : null
+  const equipped = equippedId ? getAnyPhoneVariant(equippedId) : null
+  // HP bar (39 varian .glb) gak bisa dilipat -- sembunyiin tombol
+  // buka/tutup HP kalau yang lagi dipasang jenisnya bar.
+  const equippedIsBar = equipped ? isBarPhone(equipped) : false
 
   function toggleOpen() {
     hapticSelect()
@@ -63,7 +66,7 @@ export default function PhoneInventory({ equippedId, foldT, onEquip, onUnequip, 
               setScreen('phones')
             }}
           >
-            📱 HP <span className="walk-inv-item-count">{equipped ? equipped.label : `${PHONE_VARIANTS.length}`}</span>
+            📱 HP <span className="walk-inv-item-count">{equipped ? equipped.label : `${ALL_PHONE_VARIANTS.length}`}</span>
           </button>
         </div>
       )}
@@ -83,16 +86,18 @@ export default function PhoneInventory({ equippedId, foldT, onEquip, onUnequip, 
 
           {equipped && (
             <div className="walk-inv-equipped-row">
-              <button
-                type="button"
-                className="walk-inv-fold-btn"
-                onClick={() => {
-                  hapticSelect()
-                  onSetFold?.(foldT > 0.5 ? 0 : 1)
-                }}
-              >
-                {foldT > 0.5 ? '📴 Tutup HP' : '📱 Buka HP'}
-              </button>
+              {!equippedIsBar && (
+                <button
+                  type="button"
+                  className="walk-inv-fold-btn"
+                  onClick={() => {
+                    hapticSelect()
+                    onSetFold?.(foldT > 0.5 ? 0 : 1)
+                  }}
+                >
+                  {foldT > 0.5 ? '📴 Tutup HP' : '📱 Buka HP'}
+                </button>
+              )}
               <button
                 type="button"
                 className="walk-inv-unequip-btn"
@@ -107,8 +112,9 @@ export default function PhoneInventory({ equippedId, foldT, onEquip, onUnequip, 
           )}
 
           <div className="walk-inv-phone-list">
-            {PHONE_VARIANTS.map((v) => {
+            {ALL_PHONE_VARIANTS.map((v) => {
               const active = v.id === equippedId
+              const isBar = isBarPhone(v)
               return (
                 <button
                   key={v.id}
@@ -121,7 +127,13 @@ export default function PhoneInventory({ equippedId, foldT, onEquip, onUnequip, 
                 >
                   <span className="walk-inv-phone-swatch" style={{ background: v.colors.body }} />
                   <span className="walk-inv-phone-name">{v.label}</span>
-                  <span className="walk-inv-phone-type">{v.foldType === 'flip' ? 'Flip' : 'Buku'}</span>
+                  {/* HP bar gak punya foldType flip/book -- tampilin rarity-nya
+                      di situ (common/rare/epic/legendary) alih-alih Flip/Buku,
+                      soalnya 15 HP lipat lama belum punya field rarity sama
+                      sekali (belum ada box gatcha buat mereka). */}
+                  <span className={`walk-inv-phone-type${isBar ? ` rarity-${v.rarity}` : ''}`}>
+                    {isBar ? v.rarity : v.foldType === 'flip' ? 'Flip' : 'Buku'}
+                  </span>
                   {active && <span className="walk-inv-phone-check">✓</span>}
                 </button>
               )
