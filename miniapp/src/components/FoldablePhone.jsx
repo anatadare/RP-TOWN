@@ -97,10 +97,15 @@ function Shell({ w, h, t, bodyColor, frameColor, hasCamera, camera, lensRing, ma
 // ke-scale kecil lagi sama faktor normalisasi tinggi badan karakter.
 // Hasilnya, di scale=1, HP-nya beneran cuma beberapa cm -- gampang
 // "tenggelam" ketutupan mesh kepalan tangan. Sempet dinaikin ke 1.7x,
-// masih dilaporin "kecil banget" dari jarak kamera default RP Town --
-// naik lagi ke 2.6x. Kalau masih kurang gede/malah kegedean, ini satu-
-// satunya angka yang perlu diubah (gak ngubah proporsi tiap varian).
-export default function FoldablePhone({ variant, foldT = 1, scale = 2.6 }) {
+// lalu 2.6x, masih dilaporin "kecil banget" -- minta 100x, tapi itu
+// secara harfiah bakal bikin HP-nya LEBIH GEDE DARI SELURUH KARAKTER
+// (dims ~0.04-0.08 x 100 = 4-8 satuan, sedangkan tinggi karakter cuma
+// ~3.3 satuan) -- pasti keliatan rusak/gak masuk akal, bukan "gede tapi
+// jelas". Jadi dinaikin drastis ke 8x (~3x lompatan lagi dari 2.6x,
+// lebih dari cukup buat jelas banget kelihatan) sebagai titik tengah.
+// Kalau masih kurang gede/malah kegedean, ini satu-satunya angka yang
+// perlu diubah (gak ngubah proporsi tiap varian).
+export default function FoldablePhone({ variant, foldT = 1, scale = 8 }) {
   const dims = useMemo(() => dimsForVariant(variant), [variant])
   const { openW, openH, shellT, hingeGap } = dims
   const clampedT = THREE.MathUtils.clamp(foldT, 0, 1)
