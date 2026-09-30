@@ -150,7 +150,7 @@ async function handleAgentWebhook(request, env, agentKey) {
     if (agentKey.startsWith('housemarket-')) {
       const n = agentKey.split('-')[1]
       const missing = []
-      if (!env[`HOUSE_MARKET_${n}_TOKEN`]) missing.push(`HOUSE_MARKET_${n}_TOKEN`)
+      if (!env[`PAKDHARMA_${n}_TOKEN`]) missing.push(`PAKDHARMA_${n}_TOKEN`)
       if (!env[`HOUSE_MARKET_${n}_GROUP_IDS`] && !env.HOUSE_MARKET_GROUP_CHAT_ID) missing.push('HOUSE_MARKET_GROUP_CHAT_ID')
       if (!env[`HOUSE_MARKET_${n}_GEMINI_API_KEY`] && !env.GEMINI_API_KEY) missing.push('GEMINI_API_KEY')
       console.warn(`[${agentKey}] agent belum terkonfigurasi. Env kosong: ${missing.join(', ') || '(tidak ada; cek nomor housemarket di URL webhook)'}`)
