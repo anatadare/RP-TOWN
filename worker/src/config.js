@@ -123,6 +123,52 @@ export function buildTellerAgents(env, count = 2) {
   return list
 }
 
+// Agent "Pak Darma" (grup RP Town market, topik "Jual Property"). Sama
+// pola dengan Teller: pakai Gemini LANGSUNG (function calling), jadi wajib
+// punya Gemini key. Sengaja TIDAK dimasukkan ke `allAgents` -- sama alasan
+// seperti teller, bukan bagian dari grup KUA.
+//
+// Env per agent (i = 1, 2, ...):
+//   HOUSE_MARKET_i_TOKEN            token bot dari BotFather (WAJIB bot sendiri)
+//   HOUSE_MARKET_i_GROUP_IDS        id grup market (koma-pisah). Default: HOUSE_MARKET_GROUP_CHAT_ID
+//   HOUSE_MARKET_i_THREAD_IDS       (opsional) id topic "Jual Property" yang dilayani
+//   HOUSE_MARKET_i_NAME             (opsional) default "Pak Darma"
+//   HOUSE_MARKET_i_GEMINI_API_KEY   (opsional) default GEMINI_API_KEY
+//   HOUSE_MARKET_i_GEMINI_MODEL     (opsional) default GEMINI_MODEL / gemini-2.5-flash-lite
+export function buildHouseMarketAgents(env, count = 1) {
+  const list = []
+  for (let i = 1; i <= count; i += 1) {
+    const token = env[`HOUSE_MARKET_${i}_TOKEN`]
+    if (!token) continue
+
+    const groupIdsRaw = env[`HOUSE_MARKET_${i}_GROUP_IDS`]
+    const groupIds = groupIdsRaw
+      ? groupIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : (env.HOUSE_MARKET_GROUP_CHAT_ID ? [env.HOUSE_MARKET_GROUP_CHAT_ID] : [])
+    if (groupIds.length === 0) continue
+
+    const threadIdsRaw = env[`HOUSE_MARKET_${i}_THREAD_IDS`]
+    const threadIds = threadIdsRaw
+      ? threadIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      : null
+
+    const geminiApiKey = env[`HOUSE_MARKET_${i}_GEMINI_API_KEY`] || env.GEMINI_API_KEY || null
+    if (!geminiApiKey) continue
+
+    list.push({
+      key: `housemarket-${i}`,
+      kind: 'housemarket',
+      token,
+      name: env[`HOUSE_MARKET_${i}_NAME`] || 'Pak Darma',
+      groupIds,
+      threadIds,
+      geminiApiKey,
+      geminiModel: env[`HOUSE_MARKET_${i}_GEMINI_MODEL`] || env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
+    })
+  }
+  return list
+}
+
 // Bangun seluruh daftar agent sekali per request, dari `env` yang dikirim
 // Workers. Dipanggil dari src/index.js tiap ada request masuk (bukan
 // sekali pas cold start global scope, biar selalu baca env yang terbaru).
@@ -130,10 +176,12 @@ export function loadAgents(env) {
   const penghuluAgents = buildAgentList(env, 'PENGHULU', 'penghulu', PENGHULU_COUNT, PENGHULU_DEFAULT_NAMES)
   const assistantAgents = buildAgentList(env, 'ASSISTANT', 'assistant', ASSISTANT_COUNT, ASSISTANT_DEFAULT_NAMES)
   const tellerAgents = buildTellerAgents(env)
+  const houseMarketAgents = buildHouseMarketAgents(env)
   return {
     penghuluAgents,
     assistantAgents,
     tellerAgents,
+    houseMarketAgents,
     allAgents: [...penghuluAgents, ...assistantAgents],
     aiModel: env.AI_MODEL || 'qwen3.8-flash',
   }
