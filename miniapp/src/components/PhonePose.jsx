@@ -28,9 +28,18 @@ import { RoundedBox } from '@react-three/drei'
 // - Posisi/rotasi HP relatif ke telapak tangan (lihat PHONE_OFFSET
 //   di bawah).
 // ============================================================
+// GANTI PENDEKATAN (lihat catatan panjang di applyPhonePose): sebelumnya
+// lengan cuma ditekuk ke DEPAN (ke arah dada), yang berarti tangannya
+// berakhir tepat di belakang badan/kepala sendiri kalau dilihat dari
+// kamera yang selalu ada di BELAKANG karakter (kayak di RP Town) --
+// ketutupan total, keliatannya kayak "gak nempel/gak muncul". Sekarang
+// lengannya diangkat ke SAMPING dulu (abduksi, kayak mau lambaian),
+// baru siku ditekuk muter sumbu VERTIKAL -- hasilnya tangan/HP-nya ada
+// di samping bahu/kepala, nongol jelas dari sudut manapun termasuk dari
+// belakang.
 const POSE_DEGREES = {
-  shoulderLift: 16, // lengan atas terangkat dikit ke arah "atas badan"
-  elbowBend: 92, // fleksi siku -- ini yang paling kerasa efeknya
+  shoulderAbduct: 55, // lengan atas ke samping+naik (menjauh dari badan)
+  elbowBend: 90, // tekuk siku muter sumbu vertikal, bawa telapak ke depan bahu
   wristTwistDeg: -15, // puntiran pergelangan (sumbu lokal Fist.R, tebakan)
 }
 
@@ -89,27 +98,35 @@ export function applyPhonePose(root, degrees = POSE_DEGREES) {
   const shoulderR = root.getObjectByName('ShoulderR')
   if (!upperArm || !lowerArm || !fist || !shoulderL || !shoulderR) return null
 
-  // Sumbu tekuk dulu dihitung dari cross(arah-lengan, "atas") -- masalahnya
-  // pas lengan lagi ngegantung (posisi Idle normal), arah lengan itu HAMPIR
-  // SEJAJAR sama "atas", jadi cross product-nya nyaris nol vektor. Abis
-  // dinormalisasi, arah hasilnya jadi nyaris ACAK (kepeleset ke arah mana
-  // aja tergantung noise angka desimal kecil) -- makanya lengannya kebuka
-  // ke SAMPING, bukan ke DEPAN kayak orang megang HP.
-  //
-  // Sumbu yang gak degenerate & selalu benar buat "kiri-kanan tubuh" (arah
-  // sendi bahu & siku alaminya nekuk): garis dari bahu kiri ke bahu kanan,
-  // dari posisi bone yang BENERAN ada di model (bukan tebakan sumbu
-  // lokal). Sumbu ini otomatis ikut arah hadap karakter (dihitung di world
-  // space), dan dicek langsung (skrip terpisah, bandingin ke arah "depan"
-  // dari pole target lutut) kalau muter ke arah POSITIF di sumbu ini bikin
-  // lengan maju ke depan tubuh -- bukan ke belakang.
+  // Sumbu "kiri-kanan tubuh": garis dari bahu kiri ke bahu kanan, dari
+  // posisi bone yang BENERAN ada di model (bukan tebakan sumbu lokal).
+  // Otomatis ikut arah hadap karakter (dihitung di world space).
   const rightWorld = new THREE.Vector3()
     .setFromMatrixPosition(shoulderR.matrixWorld)
     .sub(new THREE.Vector3().setFromMatrixPosition(shoulderL.matrixWorld))
     .normalize()
 
-  flexToward(upperArm, rightWorld, degrees.shoulderLift)
-  flexToward(lowerArm, rightWorld, degrees.elbowBend)
+  // Sumbu "depan-belakang tubuh": tegak lurus dari "atas dunia" (gravitasi,
+  // selalu (0,1,0), gak butuh Head/Hips) dan sumbu kiri-kanan di atas.
+  // Muter lengan atas di sekitar sumbu INI (bukan sumbu kiri-kanan) itu
+  // gerakan "abduksi" -- ngangkat lengan dari nggantung ke samping badan,
+  // BUKAN ke depan dada. Ini kuncinya biar tangan gak ketutupan badan
+  // sendiri pas dilihat dari kamera belakang karakter.
+  const upWorld = new THREE.Vector3(0, 1, 0)
+  const forwardWorld = new THREE.Vector3().crossVectors(upWorld, rightWorld).normalize()
+
+  // Arah "keluar" dari badan buat lengan KANAN itu kebalik dari rightWorld
+  // (rightWorld nunjuk dari bahu KIRI ke KANAN, tapi buat ngejauhin lengan
+  // kanan dari badan, rotasinya harus ke arah negatif sumbu depan-belakang
+  // -- dicek langsung angkanya, lihat catatan di bawah kalau nanti mau
+  // dipakein ke lengan KIRI juga, tanda minusnya perlu dibalik).
+  flexToward(upperArm, forwardWorld, -degrees.shoulderAbduct)
+  // Siku ditekuk muter sumbu VERTIKAL (bukan lagi sumbu kiri-kanan) --
+  // begitu lengan atas udah nunjuk ke samping (horizontal), muter siku di
+  // sumbu vertikal bawa telapak tangan ke DEPAN BAHU (bukan makin jauh ke
+  // depan dada/tembus ke belakang kepala kayak sebelumnya), jadi tetep di
+  // ketinggian bahu/dekat kepala -- kelihatan dari kamera manapun.
+  flexToward(lowerArm, upWorld, degrees.elbowBend)
 
   // Puntiran pergelangan -- lihat catatan "MASIH TEBAKAN" di atas.
   const twist = new THREE.Quaternion().setFromAxisAngle(
