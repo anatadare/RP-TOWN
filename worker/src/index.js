@@ -39,6 +39,7 @@ import { handleKuaInvite } from './kuaInvite.js'
 import { handleBayarGgWebhook } from './bayarWebhook.js'
 import { handleTellerMessage } from './teller.js'
 import { handleHouseMarketMessage } from './houseMarket.js'
+import { handleKtpMessage, handleKtpCallback } from './ktp.js'
 import { sweepQrMessages } from './qrSweep.js'
 import { handleWalkSocket } from './walkRoom.js'
 
@@ -130,11 +131,12 @@ async function handleMainBotWebhook(request, env) {
 }
 
 async function handleAgentWebhook(request, env, agentKey) {
-  const { allAgents, tellerAgents, houseMarketAgents, penghuluAgents, assistantAgents } = loadAgents(env)
+  const { allAgents, tellerAgents, houseMarketAgents, ktpAgents, penghuluAgents, assistantAgents } = loadAgents(env)
   const agent =
     allAgents.find((a) => a.key === agentKey) ||
     tellerAgents.find((a) => a.key === agentKey) ||
-    houseMarketAgents.find((a) => a.key === agentKey)
+    houseMarketAgents.find((a) => a.key === agentKey) ||
+    ktpAgents.find((a) => a.key === agentKey)
 
   if (!agent) {
     // Diagnostik teller: kasih tahu env mana yang kosong (kelihatan di log Worker).
@@ -154,6 +156,15 @@ async function handleAgentWebhook(request, env, agentKey) {
       if (!env[`HOUSE_MARKET_${n}_GROUP_IDS`] && !env.HOUSE_MARKET_GROUP_CHAT_ID) missing.push('HOUSE_MARKET_GROUP_CHAT_ID')
       if (!env[`HOUSE_MARKET_${n}_GEMINI_API_KEY`] && !env.GEMINI_API_KEY) missing.push('GEMINI_API_KEY')
       console.warn(`[${agentKey}] agent belum terkonfigurasi. Env kosong: ${missing.join(', ') || '(tidak ada; cek nomor housemarket di URL webhook)'}`)
+    }
+    // Diagnostik Kirana (KTP): sama seperti teller/housemarket di atas.
+    if (agentKey.startsWith('ktp-')) {
+      const n = agentKey.split('-')[1]
+      const missing = []
+      if (!env[`KIRANA_${n}_TOKEN`]) missing.push(`KIRANA_${n}_TOKEN`)
+      if (!env[`KTP_${n}_GROUP_IDS`] && !env.KTP_GROUP_CHAT_ID) missing.push('KTP_GROUP_CHAT_ID')
+      if (!env[`KIRANA_${n}_AI_API_KEY`] && !env.AI_API_KEY && !env[`KIRANA_${n}_GEMINI_API_KEY`] && !env.GEMINI_API_KEY) missing.push('AI_API_KEY (atau GEMINI_API_KEY)')
+      console.warn(`[${agentKey}] agent belum terkonfigurasi. Env kosong: ${missing.join(', ') || '(tidak ada; cek nomor kirana di URL webhook)'}`)
     }
     // Agent ini belum dikonfigurasi lengkap (token/grup/API key kosong di
     // env) -- balikin 200 kosong (bukan error) biar Telegram gak nganggep
@@ -190,6 +201,15 @@ async function handleAgentWebhook(request, env, agentKey) {
 
       if (threadIdSet && !threadIdSet.has(String(threadId))) {
         if (agent.kind === 'teller' || agent.kind === 'housemarket') console.warn(`[${agent.key}] DIABAIKAN: thread ${threadId ?? 'none'} tidak ada di THREAD_IDS (${[...threadIdSet].join(',')})`)
+        return
+      }
+
+      // Kirana (KTP): dispatch DULUAN, sebelum early-return "tanpa teks" di
+      // bawah -- formulir KTP butuh nerima pesan FOTO tanpa caption juga
+      // (tahap "kirim foto sendiri"), bukan cuma teks.
+      if (agent.kind === 'ktp') {
+        const ktpText = botCtx.message.text || botCtx.message.caption || null
+        await handleKtpMessage(supabaseAdmin, agent, botCtx, ktpText, threadId, { env })
         return
       }
 
@@ -248,6 +268,20 @@ async function handleAgentWebhook(request, env, agentKey) {
         return
       }
 
+      if (agent.kind === 'ktp') {
+        // Kirana: sama alasannya seperti teller/Pak Darma. Formulir warga
+        // (ktp_sessions) TIDAK hilang walau balasan ini gagal -- warga bisa
+        // lanjut lagi dari tahap yang sama begitu kirim pesan berikutnya.
+        try {
+          await botCtx.reply('Maaf, catatannya lagi sibuk dicek. Coba kirim lagi sebentar lagi ya 🙏', {
+            ...(fallbackThreadId ? { message_thread_id: fallbackThreadId } : {}),
+          })
+        } catch (replyErr) {
+          console.error(`[${agent.key}] gagal kirim fallback reply:`, replyErr)
+        }
+        return
+      }
+
       if (agent.kind === 'penghulu') {
         // Cuma nyimpen marker recovery konteks (lihat penghuluTimeoutState.js
         // + handlePenghuluTimeout) -- TIDAK menggantikan fallback generik di
@@ -291,6 +325,24 @@ async function handleAgentWebhook(request, env, agentKey) {
       }
     }
   })
+
+  // Tombol inline formulir KTP (gender/usia/pekerjaan/foto/konfirmasi) --
+  // cuma didaftarkan buat agent Kirana, bot NPC lain gak pakai tombol.
+  if (agent.kind === 'ktp') {
+    bot.on('callback_query:data', async (botCtx) => {
+      try {
+        const cbThreadId = botCtx.callbackQuery.message?.message_thread_id ?? null
+        await handleKtpCallback(supabaseAdmin, agent, botCtx, cbThreadId, { env })
+      } catch (err) {
+        console.error(`[${agent.key}] error callback_query:`, err)
+        try {
+          await botCtx.answerCallbackQuery({ text: 'Ada gangguan, coba lagi ya 🙏', show_alert: true })
+        } catch (answerErr) {
+          console.error(`[${agent.key}] gagal answerCallbackQuery fallback:`, answerErr)
+        }
+      }
+    })
+  }
 
   return webhookCallback(bot, 'cloudflare-mod', WEBHOOK_OPTIONS)(request)
 }
