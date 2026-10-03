@@ -14,6 +14,7 @@ import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
 import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
 import RemotePlayers from './RemotePlayers'
 import PhoneInventory from './PhoneInventory'
+import { getMyItems, equipItem, unequipItem } from '../lib/items'
 import {
   lockTelegramSwipe,
   unlockTelegramSwipe,
@@ -915,7 +916,7 @@ function WalkControls({ inputRef }) {
 // ---------------------------------------------------------------------------
 // Komponen utama
 // ---------------------------------------------------------------------------
-export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit, onChangeMap }) {
+export default function TownWalk({ mapKey, mapName, modelUrl, character, citizenId, initialEquippedItemId, onExit, onChangeMap }) {
   const inputRef = useRef(null)
   if (!inputRef.current) {
     inputRef.current = {
@@ -941,13 +942,54 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
   // Popup daftar peta -- gantiin tab map-switcher yang dulu nongkrong di
   // topbar, sekarang dipanggil dari tombol bulat kecil di kiri bawah.
   const [showMapPicker, setShowMapPicker] = useState(false)
-  // HP yang lagi dipasang di tangan karakter (id dari phoneVariants.js,
-  // atau null = gak pegang apa-apa) + status buka/tutupnya. Statenya di
-  // sini (bukan di dalam PhoneInventory) supaya bisa diteruskan ke
-  // WalkPlayer (lewat WalkScene) -- itu yang beneran nempelin HP-nya ke
-  // bone tangan karakter yang jalan di peta.
-  const [equippedPhone, setEquippedPhone] = useState(null)
+  // Daftar HP yang BENERAN dimiliki warga ini (tabel citizen_items lewat
+  // Supabase, migration-009-items.sql) -- bukan lagi "pilih bebas dari 54
+  // varian yang ada di kode". `equippedCitizenItemId` nyimpen id BARIS
+  // citizen_items yang lagi dipasang (bukan id varian), biar sinkron sama
+  // kolom citizens.equipped_item_id di database. `equippedPhone` di bawah
+  // tetap id VARIAN (diturunkan dari ownedItems) -- dipertahankan sebagai
+  // nama variabel yang sama persis karena WalkPlayer/WalkScene di bawah
+  // masih dapetin HP lewat getAnyPhoneVariant(id varian), gak perlu diubah.
+  const [ownedItems, setOwnedItems] = useState([])
+  const [equippedCitizenItemId, setEquippedCitizenItemId] = useState(initialEquippedItemId ?? null)
   const [phoneFoldT, setPhoneFoldT] = useState(1)
+  const equippedPhone = ownedItems.find((it) => it.id === equippedCitizenItemId)?.item_type_id ?? null
+
+  // Ambil kepemilikan HP sekali pas TownWalk dimount (atau citizenId-nya
+  // ganti -- harusnya gak pernah ganti dalam 1 sesi, tapi dijaga aja).
+  useEffect(() => {
+    if (!citizenId) return
+    let cancelled = false
+    getMyItems(citizenId)
+      .then((rows) => { if (!cancelled) setOwnedItems(rows) })
+      .catch((err) => console.error('[RP Town] gagal ambil daftar HP:', err))
+    return () => { cancelled = true }
+  }, [citizenId])
+
+  // Equip/unequip: update tampilan DULUAN (optimistic) biar HP langsung
+  // nempel di tangan tanpa nunggu round-trip ke server, baru panggil
+  // Supabase di belakang layar. Kalau request-nya gagal, balikin lagi ke
+  // keadaan semula + kasih tau di console (gak ada toast system di app
+  // ini sekarang, jadi baru sebatas log -- cukup buat ketauan pas development).
+  function handleEquip(citizenItemId) {
+    const prev = equippedCitizenItemId
+    setEquippedCitizenItemId(citizenItemId)
+    if (!citizenId) return
+    equipItem(citizenId, citizenItemId).catch((err) => {
+      console.error('[RP Town] gagal pasang HP:', err)
+      setEquippedCitizenItemId(prev)
+    })
+  }
+
+  function handleUnequip() {
+    const prev = equippedCitizenItemId
+    setEquippedCitizenItemId(null)
+    if (!citizenId) return
+    unequipItem(citizenId).catch((err) => {
+      console.error('[RP Town] gagal lepas HP:', err)
+      setEquippedCitizenItemId(prev)
+    })
+  }
   const handleReady = useCallback(() => setReady(true), [])
 
   // Ganti peta = Canvas remount (key) -> tampilkan loading lagi.
@@ -1049,14 +1091,15 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, onExit,
       </div>
 
       {/* Tombol tas (inventory) -- persis di atas tombol pilih peta. Pilih
-          salah satu dari 15 HP di phoneVariants.js buat langsung dipasang
-          ke tangan karakter yang jalan di peta (lihat equippedPhone di atas
-          + WalkPlayer). */}
+          salah satu HP yang BENERAN dimiliki warga (ownedItems di atas)
+          buat langsung dipasang ke tangan karakter yang jalan di peta
+          (lihat equippedPhone di atas + WalkPlayer). */}
       <PhoneInventory
-        equippedId={equippedPhone}
+        items={ownedItems}
+        equippedId={equippedCitizenItemId}
         foldT={phoneFoldT}
-        onEquip={setEquippedPhone}
-        onUnequip={() => setEquippedPhone(null)}
+        onEquip={handleEquip}
+        onUnequip={handleUnequip}
         onSetFold={setPhoneFoldT}
       />
 
