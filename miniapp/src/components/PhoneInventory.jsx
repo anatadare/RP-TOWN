@@ -28,7 +28,17 @@ import { hapticSelect } from '../lib/telegram'
 //  - onEquip(citizenItemId), onUnequip(), onSetFold(value)
 // ============================================================
 
-export default function PhoneInventory({ items, equippedId, foldT, onEquip, onUnequip, onSetFold }) {
+export default function PhoneInventory({
+  items,
+  equippedId,
+  foldT,
+  onEquip,
+  onUnequip,
+  onSetFold,
+  onClaimStarterBox,
+  claimingStarterBox,
+  claimStarterBoxError,
+}) {
   // 'closed' | 'items' | 'phones'
   const [screen, setScreen] = useState('closed')
   const isOpen = screen !== 'closed'
@@ -123,7 +133,28 @@ export default function PhoneInventory({ items, equippedId, foldT, onEquip, onUn
 
           <div className="walk-inv-phone-list">
             {owned.length === 0 && (
-              <p className="walk-inv-empty">Belum punya HP. Buka box awal atau beli dari Juno di topik jual item.</p>
+              <div className="walk-inv-empty">
+                <p>Belum punya HP.</p>
+                {/* Jaring pengaman: box pembuka pertama biasanya otomatis
+                    pas pilih karakter, tapi warga yang character_id-nya
+                    udah keisi dari sebelum fitur ini ada gak pernah lewat
+                    momen itu lagi -- tombol ini biar mereka (atau siapa
+                    pun yang box-nya somehow gagal ke-trigger) tetap bisa
+                    klaim manual. Server tetap yang nolak kalau ternyata
+                    udah pernah dibuka. */}
+                <button
+                  type="button"
+                  className="walk-inv-claim-box-btn"
+                  disabled={claimingStarterBox}
+                  onClick={() => {
+                    hapticSelect()
+                    onClaimStarterBox?.()
+                  }}
+                >
+                  {claimingStarterBox ? 'Membuka...' : '🎁 Buka Box HP'}
+                </button>
+                {claimStarterBoxError && <p className="walk-inv-claim-box-error">{claimStarterBoxError}</p>}
+              </div>
             )}
             {owned.map(({ citizenItemId, variant: v }) => {
               const active = citizenItemId === equippedId
