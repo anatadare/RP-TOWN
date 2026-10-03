@@ -20,10 +20,12 @@ const MAX_MESSAGE_LENGTH = 500
 function buildSystemInstruction(agent) {
   return `Kamu adalah ${agent.name}, agen properti RP Town di grup Telegram RP Town market, topik "Jual Property". Gaya bicara ramah, sedikit formal seperti agen properti sungguhan, tapi tetap hangat (bahasa Indonesia sehari-hari). Balasan maksimal 3-4 kalimat.
 
-TUGASMU: (1) memasang listing rumah milik warga yang sedang chat, (2) menampilkan rumah yang sedang dijual, (3) memberi info detail satu rumah termasuk riwayat pemilik sebelumnya, (4) membatalkan listing milik warga yang sedang chat, (5) memproses pembelian rumah kalau ada warga yang mau beli listing tertentu.
+TUGASMU: (1) memasang listing rumah milik warga yang sedang chat, (2) menampilkan rumah yang sedang dijual, (3) memberi info detail satu rumah termasuk riwayat pemilik sebelumnya, (4) membatalkan listing milik warga yang sedang chat, (5) memproses pembelian rumah kalau ada warga yang mau beli listing tertentu, (6) mengecek apakah warga yang sedang chat sudah punya rumah, (7) merekomendasikan rumah buat warga yang belum punya.
 
 ATURAN KETAT:
 - Kamu SELALU lebih tahu soal properti dibanding penjual atau pembeli, karena kamu satu-satunya yang punya akses ke seluruh riwayat data. Kalau warga tanya soal rumah tertentu, gunakan tool, jangan menebak.
+- Kamu SELALU bisa langsung tahu identitas warga yang sedang chat dari Telegram, TANPA perlu dia sebutkan nomor bangunan atau namanya. Kalau warga tanya "saya punya rumah gak?" atau semacamnya, WAJIB panggil tool get_my_houses dulu -- JANGAN minta dia sebutkan nomor bangunan untuk pertanyaan ini, karena justru itu yang sedang dia tanyakan.
+- Kalau warga bilang mau cari/beli rumah tapi belum tau rumah mana (misal "ada rumah kosong gak", "mau punya rumah", "rekomendasiin rumah dong"), panggil tool recommend_house. Kalau ada petak kosong, tawarkan itu duluan. Kalau tidak ada petak kosong sama sekali, tawarkan listing dengan harga termurah yang sedang dijual sebagai alternatif, dan jelaskan bahwa itu bukan gratis (harus beli dari penjualnya).
 - Untuk memasang listing, WAJIB panggil tool create_listing. Kalau warga belum sebut harga atau rumah mana yang mau dijual, tanyakan dulu.
 - Untuk melihat rumah yang dijual, panggil tool list_active_listings.
 - Untuk detail satu rumah (termasuk riwayat pemilik), panggil tool get_house_detail.
@@ -86,6 +88,21 @@ const TOOLS = [
             plot_number: { type: 'INTEGER', description: 'Nomor bangunan/petak rumah yang mau dibeli' },
           },
           required: ['plot_number'],
+        },
+      },
+      {
+        name: 'get_my_houses',
+        description: 'Cek rumah apa saja yang dimiliki warga yang SEDANG CHAT saat ini. Identitasnya sudah otomatis diketahui dari Telegram, tidak perlu nomor bangunan atau nama dari warga.',
+        parameters: { type: 'OBJECT', properties: {} },
+      },
+      {
+        name: 'recommend_house',
+        description: 'Cari rekomendasi rumah buat warga yang belum punya rumah: utamakan petak yang masih kosong (belum ada pemilik) di pulau yang diminta, kalau tidak ada petak kosong sama sekali baru kasih rekomendasi listing jual dengan harga termurah.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            island: { type: 'STRING', description: 'Opsional. Pulau yang diminta warga, misalnya "kawasan-pantai" atau "lpm". Kosongkan kalau warga tidak menyebut pulau tertentu.' },
+          },
         },
       },
     ],
@@ -277,6 +294,88 @@ export async function handleHouseMarketMessage(supabaseAdmin, agent, ctx, text, 
           rumah: formatHouseLabel(house),
           harga_koin: data.price,
           note: 'Pembelian berhasil, kepemilikan dan koin sudah dipindahkan otomatis oleh sistem.',
+        }
+      }
+
+      case 'get_my_houses': {
+        const { data, error } = await supabaseAdmin
+          .from('houses')
+          .select('name, plot_number, map_key')
+          .eq('owner_citizen_id', citizen.id)
+          .order('plot_number', { ascending: true })
+        if (error) throw error
+
+        if (!data || data.length === 0) {
+          return { ok: true, punya_rumah: false, note: 'Warga ini belum memiliki rumah apa pun.' }
+        }
+
+        return {
+          ok: true,
+          punya_rumah: true,
+          rumah: data.map((h) => ({
+            nama_rumah: h.name || null,
+            nomor_bangunan: h.plot_number,
+            pulau: getIslandName(h.map_key),
+          })),
+        }
+      }
+
+      case 'recommend_house': {
+        const island = args?.island || null
+
+        let emptyQuery = supabaseAdmin
+          .from('houses')
+          .select('name, plot_number, map_key')
+          .is('owner_citizen_id', null)
+          .order('plot_number', { ascending: true })
+          .limit(1)
+        if (island) emptyQuery = emptyQuery.eq('map_key', island)
+
+        const { data: emptyHouses, error: emptyError } = await emptyQuery
+        if (emptyError) throw emptyError
+
+        if (emptyHouses && emptyHouses.length > 0) {
+          const h = emptyHouses[0]
+          return {
+            ok: true,
+            jenis: 'petak_kosong',
+            nama_rumah: h.name || null,
+            nomor_bangunan: h.plot_number,
+            pulau: getIslandName(h.map_key),
+            note: 'Petak ini masih kosong, belum ada pemilik.',
+          }
+        }
+
+        // Tidak ada petak kosong -- cari listing jual termurah sebagai alternatif.
+        const { data: listings, error: listingError } = await supabaseAdmin
+          .from('house_listings')
+          .select('price, house:houses(name, plot_number, map_key), seller:citizens!house_listings_seller_citizen_id_fkey(display_name, username)')
+          .eq('status', 'active')
+          .order('price', { ascending: true })
+        if (listingError) throw listingError
+
+        const filtered = island ? (listings || []).filter((l) => l.house?.map_key === island) : (listings || [])
+
+        if (filtered.length === 0) {
+          return {
+            ok: true,
+            jenis: 'tidak_ada',
+            note: island
+              ? 'Tidak ada petak kosong maupun listing jual di pulau itu saat ini.'
+              : 'Tidak ada petak kosong maupun listing jual saat ini.',
+          }
+        }
+
+        const cheapest = filtered[0]
+        return {
+          ok: true,
+          jenis: 'listing_termurah',
+          nama_rumah: cheapest.house?.name || null,
+          nomor_bangunan: cheapest.house?.plot_number,
+          pulau: getIslandName(cheapest.house?.map_key),
+          harga_koin: cheapest.price,
+          penjual: cheapest.seller?.display_name || cheapest.seller?.username || 'Warga',
+          note: 'Tidak ada petak kosong, ini listing jual termurah yang tersedia. Harus dibeli dari penjualnya, bukan gratis.',
         }
       }
 
