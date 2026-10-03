@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ALL_PHONE_VARIANTS, getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
+import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
 import { hapticSelect } from '../lib/telegram'
 
 // ============================================================
@@ -11,24 +11,34 @@ import { hapticSelect } from '../lib/telegram'
 // itu kerjaannya <WalkPlayer> di TownWalk.jsx (attach ke bone
 // Fist.R punya karakter yang lagi jalan, lihat komentar di sana).
 //
-// Kenapa dirombak: versi sebelumnya munculin modal <CharacterPreview>
-// terpisah yang butuh `modelUrl` KARAKTER -- tapi kepasangnya kebalik
-// (kepasang `modelUrl` PETA dari TownWalk), jadi yang muncul malah
-// gambar jalan/pohon. Daripada nambal itu, lebih pas emang di-skip aja
-// preview terpisahnya (sesuai yang diminta) dan HP-nya nempel LANGSUNG
-// di karakter yang keliatan jalan di map.
+// BEDA LAGI (setelah migration-009-items.sql): dulu daftar di sini
+// nampilin SEMUA 54 HP yang ada di kode (ALL_PHONE_VARIANTS), sekarang
+// cuma nampilin HP yang BENERAN DIMILIKI warga (dari tabel
+// citizen_items lewat Supabase, di-fetch di TownWalk.jsx). Makanya
+// `equippedId` sekarang id BARIS citizen_items (instance yang dimiliki),
+// BUKAN lagi id varian di phoneVariants.js/barPhoneVariants.js -- kalau
+// warga punya 2 unit HP yang sama, itu 2 tombol terpisah di daftar ini
+// (bisa diequip salah satu doang), bukan digabung jadi 1 baris.
 //
 // Props:
-//  - equippedId : id varian yang lagi dipasang (atau null)
-//  - foldT      : 0..1, state buka/tutup HP yang lagi dipasang
-//  - onEquip(id), onUnequip(), onSetFold(value)
+//  - items       : array kepemilikan warga, tiap elemen
+//                   { id: <citizen_items.id>, item_type_id: <id varian> }
+//  - equippedId  : citizen_items.id yang lagi dipasang (atau null)
+//  - foldT       : 0..1, state buka/tutup HP yang lagi dipasang
+//  - onEquip(citizenItemId), onUnequip(), onSetFold(value)
 // ============================================================
 
-export default function PhoneInventory({ equippedId, foldT, onEquip, onUnequip, onSetFold }) {
+export default function PhoneInventory({ items, equippedId, foldT, onEquip, onUnequip, onSetFold }) {
   // 'closed' | 'items' | 'phones'
   const [screen, setScreen] = useState('closed')
   const isOpen = screen !== 'closed'
-  const equipped = equippedId ? getAnyPhoneVariant(equippedId) : null
+
+  const owned = (items || []).map((it) => ({
+    citizenItemId: it.id,
+    variant: getAnyPhoneVariant(it.item_type_id),
+  }))
+  const equippedEntry = equippedId ? owned.find((o) => o.citizenItemId === equippedId) : null
+  const equipped = equippedEntry?.variant || null
   // HP bar (39 varian .glb) gak bisa dilipat -- sembunyiin tombol
   // buka/tutup HP kalau yang lagi dipasang jenisnya bar.
   const equippedIsBar = equipped ? isBarPhone(equipped) : false
@@ -66,7 +76,7 @@ export default function PhoneInventory({ equippedId, foldT, onEquip, onUnequip, 
               setScreen('phones')
             }}
           >
-            📱 HP <span className="walk-inv-item-count">{equipped ? equipped.label : `${ALL_PHONE_VARIANTS.length}`}</span>
+            📱 HP <span className="walk-inv-item-count">{equipped ? equipped.label : `${owned.length}`}</span>
           </button>
         </div>
       )}
@@ -112,17 +122,20 @@ export default function PhoneInventory({ equippedId, foldT, onEquip, onUnequip, 
           )}
 
           <div className="walk-inv-phone-list">
-            {ALL_PHONE_VARIANTS.map((v) => {
-              const active = v.id === equippedId
+            {owned.length === 0 && (
+              <p className="walk-inv-empty">Belum punya HP. Buka box awal atau beli dari Juno di topik jual item.</p>
+            )}
+            {owned.map(({ citizenItemId, variant: v }) => {
+              const active = citizenItemId === equippedId
               const isBar = isBarPhone(v)
               return (
                 <button
-                  key={v.id}
+                  key={citizenItemId}
                   type="button"
                   className={`walk-inv-phone-item${active ? ' is-active' : ''}`}
                   onClick={() => {
                     hapticSelect()
-                    onEquip?.(v.id)
+                    onEquip?.(citizenItemId)
                   }}
                 >
                   <span className="walk-inv-phone-swatch" style={{ background: v.colors.body }} />
