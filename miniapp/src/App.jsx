@@ -3,6 +3,7 @@ import './App.css'
 import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSuccess } from './lib/telegram'
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms, updateCitizenCharacter } from './lib/rooms'
 import { getHouseByOwner, getIslandName } from './lib/houses'
+import { claimStarterBox } from './lib/items'
 import Market from './components/Market'
 import { requestKuaInvite, kuaInviteErrorMessage } from './lib/kua'
 import TownMap3D from './components/TownMap3D'
@@ -393,6 +394,19 @@ export default function App() {
   async function handleConfirmCharacter(characterId) {
     const updated = await updateCitizenCharacter(citizen.id, characterId)
     setCitizen(updated)
+
+    // Box pembuka pertama -- sekali per warga, ditegakkan di server
+    // (claim_starter_box nolak kalau starter_box_opened_at udah keisi).
+    // Sengaja gak bikin layar ini NUNGGU/GAGAL kalau klaimnya error --
+    // pilih karakter harus tetap lanjut walau box-nya kenapa-napa, HP
+    // hasilnya baru keliatan pas warga buka tas (PhoneInventory) di
+    // mode Jelajahi, jadi gak ada UI tambahan yang WAJIB ditambal di sini.
+    try {
+      await claimStarterBox(citizen.id)
+      hapticSuccess()
+    } catch (err) {
+      console.error('[RP Town] gagal klaim box awal:', err)
+    }
   }
 
   function handleOpenHouseChat() {
@@ -471,6 +485,8 @@ export default function App() {
         mapName={activeMap.name}
         modelUrl={activeMap.modelUrl}
         character={walkCharacter}
+        citizenId={citizen?.id}
+        initialEquippedItemId={citizen?.equipped_item_id}
         onExit={() => {
           hapticSelect()
           setScreen('map')
