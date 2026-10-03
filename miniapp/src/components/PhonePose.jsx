@@ -30,13 +30,21 @@ const POSE_DEGREES = {
 // (lihat FoldablePhone.jsx + phoneVariants.js) bisa dikalibrasi ke telapak
 // tangan yang SAMA persis, biar posisinya konsisten mau pakai HP polos lama
 // atau salah satu dari 15 varian lipat yang baru.
-// Digeser lebih jauh dari titik tengah telapak (dulu 0.045/0.035) --
-// jarak lama itu lebih pendek dari "jari-jari" mesh kepalan tangannya
-// sendiri, jadi HP-nya nongol TEPAT DI DALAM mesh tangan (ketutupan/
-// nembus, bukan hilang beneran, cuma gak kelihatan sama sekali dari
-// luar). Kalau masih ketutupan, ini dulu yang digedein lagi.
-export const PHONE_OFFSET_POS = [0, 0.075, 0.065]
-export const PHONE_OFFSET_ROT = [Math.PI / 2.4, 0, 0]
+// KALIBRASI ULANG (lihat screenshot terbaru): angka 0.075/0.065 + tilt
+// 75° di bawah ini awalnya dikalibrasi buat pose tangan yang BEDA
+// (sebelum lengan ditekuk ke dada). Begitu pose lengannya berubah,
+// orientasi dasar Fist.R ikut berubah, tapi offset ini masih yang lama
+// -- hasilnya HP malah NGAMBANG di samping kepalan (jaraknya kejauhan)
+// dan kebaring (landscape, harusnya portrait/tegak). Dua perubahan:
+// 1) jarak dari pusat kepalan DIKECILIN lagi (biar nempel, gak ngambang)
+// 2) ditambah puntiran 90° di sumbu Z (`Math.PI/2` di komponen ke-3)
+//    buat ngebalikin landscape -> portrait.
+// CATATAN JUJUR: ini kalibrasi 3D yang susah dipastiin 100% tanpa liat
+// render asli -- kalau abis ini masih kurang pas, kirim screenshot lagi,
+// 3 angka pertama (posisi) & 3 angka kedua (rotasi) di sini yang paling
+// gampang di-nudge dikit-dikit sampai pas.
+export const PHONE_OFFSET_POS = [0, 0.05, 0.04]
+export const PHONE_OFFSET_ROT = [Math.PI / 2.4, 0, Math.PI / 2]
 
 const parentWorldQuat = new THREE.Quaternion()
 const currentWorldQuat = new THREE.Quaternion()
