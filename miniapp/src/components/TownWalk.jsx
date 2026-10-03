@@ -14,7 +14,7 @@ import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
 import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
 import RemotePlayers from './RemotePlayers'
 import PhoneInventory from './PhoneInventory'
-import { getMyItems, equipItem, unequipItem } from '../lib/items'
+import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/items'
 import {
   lockTelegramSwipe,
   unlockTelegramSwipe,
@@ -990,6 +990,30 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
       setEquippedCitizenItemId(prev)
     })
   }
+
+  // Tombol manual "Buka Box HP" di PhoneInventory (cuma muncul kalau
+  // ownedItems masih kosong) -- jaring pengaman buat warga yang
+  // character_id-nya udah keisi DARI SEBELUM fitur box ini ada, jadi
+  // gak pernah lewat CharacterSelect lagi (satu-satunya tempat box ini
+  // otomatis kepanggil di App.jsx). Server (claim_starter_box) tetap
+  // yang nolak kalau ternyata udah pernah diklaim -- pesan errornya
+  // ditangkep & ditampilin apa adanya, gak ditebak-tebak di sini.
+  const [boxClaiming, setBoxClaiming] = useState(false)
+  const [boxClaimError, setBoxClaimError] = useState(null)
+
+  function handleClaimStarterBox() {
+    if (!citizenId || boxClaiming) return
+    setBoxClaiming(true)
+    setBoxClaimError(null)
+    claimStarterBox(citizenId)
+      .then(() => getMyItems(citizenId))
+      .then((rows) => setOwnedItems(rows))
+      .catch((err) => {
+        console.error('[RP Town] gagal buka box awal:', err)
+        setBoxClaimError(err.message || 'Gagal buka box, coba lagi.')
+      })
+      .finally(() => setBoxClaiming(false))
+  }
   const handleReady = useCallback(() => setReady(true), [])
 
   // Ganti peta = Canvas remount (key) -> tampilkan loading lagi.
@@ -1101,6 +1125,9 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         onEquip={handleEquip}
         onUnequip={handleUnequip}
         onSetFold={setPhoneFoldT}
+        onClaimStarterBox={handleClaimStarterBox}
+        claimingStarterBox={boxClaiming}
+        claimStarterBoxError={boxClaimError}
       />
 
       {/* Tombol pilih peta -- bulat kecil merah, kiri bawah. Tap buka popup
