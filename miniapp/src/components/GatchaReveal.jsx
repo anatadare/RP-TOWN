@@ -269,7 +269,12 @@ export default function GatchaReveal({ itemType, onClose }) {
             tengahnya ~0.4 -- itu yang dipakai jadi tinggi kamera. Jarak
             (Z) dimundurin dari 2.3 ke 3.1 + fov dinaikin dikit ke 36
             biar ada margin ekstra, gak mepet persis di tepi. */}
-        <Canvas dpr={[1, 1.5]} camera={{ fov: 36, position: [0, 0.4, 3.1] }}>
+        {/* Masih kurang turun dikit (laporan dari screenshot) -- Y
+            kamera diturunin lagi 0.4 -> 0.25 (geser "jendela lihat"-nya
+            ke bawah, jadi area atas yang tadi kepotong ikut masuk
+            frame), sekalian jarak dimundurin lagi 3.1 -> 3.4 + fov naik
+            dikit ke 38 biar ada margin lega, bukan pas-pasan lagi. */}
+        <Canvas dpr={[1, 1.5]} camera={{ fov: 38, position: [0, 0.25, 3.4] }}>
           <ambientLight intensity={0.8} />
           <directionalLight position={[3, 5, 4]} intensity={1.1} />
           <directionalLight position={[-3, 2, -4]} intensity={0.35} />
