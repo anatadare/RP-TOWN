@@ -15,6 +15,7 @@ import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/wa
 import RemotePlayers from './RemotePlayers'
 import PhoneInventory from './PhoneInventory'
 import GatchaReveal from './GatchaReveal'
+import PhoneOverlay from './phone/PhoneOverlay'
 import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/items'
 import {
   lockTelegramSwipe,
@@ -967,6 +968,8 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   const [ownedItems, setOwnedItems] = useState([])
   const [equippedCitizenItemId, setEquippedCitizenItemId] = useState(initialEquippedItemId ?? null)
   const [phoneFoldT, setPhoneFoldT] = useState(1)
+  // Layar HP (UI per brand) lagi terbuka atau nggak -- lihat components/phone/.
+  const [phoneScreenOpen, setPhoneScreenOpen] = useState(false)
   const equippedPhone = ownedItems.find((it) => it.id === equippedCitizenItemId)?.item_type_id ?? null
 
   // Ambil kepemilikan HP sekali pas TownWalk dimount (atau citizenId-nya
@@ -997,6 +1000,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
 
   function handleUnequip() {
     const prev = equippedCitizenItemId
+    setPhoneScreenOpen(false)
     setEquippedCitizenItemId(null)
     if (!citizenId) return
     unequipItem(citizenId).catch((err) => {
@@ -1144,11 +1148,21 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         foldT={phoneFoldT}
         onEquip={handleEquip}
         onUnequip={handleUnequip}
+        onOpenScreen={() => setPhoneScreenOpen(true)}
         onSetFold={setPhoneFoldT}
         onClaimStarterBox={handleClaimStarterBox}
         claimingStarterBox={boxClaiming}
         claimStarterBoxError={boxClaimError}
       />
+
+      {/* Layar HP: popup penuh di Telegram HP, panel melayang di kanan untuk PC. */}
+      {phoneScreenOpen && equippedPhone && (
+        <PhoneOverlay
+          variant={getAnyPhoneVariant(equippedPhone)}
+          citizenId={citizenId}
+          onClose={() => setPhoneScreenOpen(false)}
+        />
+      )}
 
       {/* Overlay animasi box -- posisinya fixed/inset:0 (lihat CSS),
           jadi aman ditaruh di mana aja di tree ini, nutupin semua UI
