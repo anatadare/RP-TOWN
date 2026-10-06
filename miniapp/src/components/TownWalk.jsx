@@ -7,7 +7,7 @@ import { WalkBillboard } from './Billboard3D'
 import { buildWalkWorld, ROAD_LIFT } from '../lib/walkWorld'
 import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
-import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, applyPhonePose } from './PhonePose'
+import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, PHONE_GRIP_SHIFT, applyPhonePose } from './PhonePose'
 import FoldablePhone from './FoldablePhone'
 import BarPhone from './BarPhone'
 import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
@@ -648,11 +648,18 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
                 const variant = getAnyPhoneVariant(equippedPhone)
                 return (
                   <group position={PHONE_OFFSET_POS} rotation={PHONE_OFFSET_ROT}>
-                    {isBarPhone(variant) ? (
-                      <BarPhone variant={variant} />
-                    ) : (
-                      <FoldablePhone variant={variant} foldT={phoneFoldT ?? 1} />
-                    )}
+                    {/* Grup bersarang TAMBAHAN -- geser titik genggam ke
+                        deket ujung bawah HP (bukan tengah), di sepanjang
+                        sumbu Y si HP SENDIRI (SETELAH rotasi di atas
+                        diterapkan). Lihat catatan panjang soal
+                        PHONE_GRIP_SHIFT di PhonePose.jsx buat alasannya. */}
+                    <group position={[0, PHONE_GRIP_SHIFT, 0]}>
+                      {isBarPhone(variant) ? (
+                        <BarPhone variant={variant} />
+                      ) : (
+                        <FoldablePhone variant={variant} foldT={phoneFoldT ?? 1} />
+                      )}
+                    </group>
                   </group>
                 )
               })()}
