@@ -50,7 +50,10 @@ const POSE_DEGREES = {
 // (tanpa koreksi apa pun) -- dari situ koreksinya bisa dihitung LANGSUNG
 // dari satu screenshot, bukan nebak lagi. Posisi (jarak dari kepalan)
 // TETAP dipertahanin (udah pas, gak ada masalah soal itu).
-export const PHONE_OFFSET_POS = [0, 0.05, 0.04]
+// Rotasi TETAP [0,0,0] (baseline) -- posisinya dinaikin (komponen ke-2,
+// sumbu Y lokal Fist.R) dari 0.05 ke 0.09, soalnya HP-nya masih separo
+// kebenem di dalam mesh kepalan tangan (lihat screenshot baseline).
+export const PHONE_OFFSET_POS = [0, 0.09, 0.04]
 export const PHONE_OFFSET_ROT = [0, 0, 0]
 
 const parentWorldQuat = new THREE.Quaternion()
