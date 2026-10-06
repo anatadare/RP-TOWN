@@ -85,3 +85,15 @@ export function lockTelegramOrientation() {
 export function unlockTelegramOrientation() {
   tg?.unlockOrientation?.()
 }
+
+// Mode tampilan layar HP (lihat components/phone/PhoneOverlay.jsx):
+//  'full'     = popup penuh (Telegram Android/iOS, atau layar sentuh di luar Telegram)
+//  'floating' = panel besar melayang di kanan (Telegram Desktop/Web, atau PC biasa)
+export function getPhoneUiMode() {
+  const platform = tg?.platform
+  if (platform) {
+    return platform === 'android' || platform === 'android_x' || platform === 'ios' ? 'full' : 'floating'
+  }
+  if (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches) return 'full'
+  return 'floating'
+}
