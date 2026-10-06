@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadPhotos, savePhotos } from '../../../lib/phoneApps'
+import { loadPhotos, savePhotos, setPendingShare } from '../../../lib/phoneApps'
 import { hapticSelect, hapticSuccess } from '../../../lib/telegram'
-import { IconSwap, IconTrash, IconClose } from '../PhoneIcons'
+import { IconSwap, IconTrash, IconClose, IconSocial } from '../PhoneIcons'
 
 // Kecilkan gambar ke max 720px sisi terpanjang -> jpeg, biar muat di localStorage.
 function shrinkToDataUrl(source, sw, sh) {
@@ -14,7 +14,7 @@ function shrinkToDataUrl(source, sw, sh) {
   return c.toDataURL('image/jpeg', 0.7)
 }
 
-export default function CameraApp() {
+export default function CameraApp({ onOpenApp }) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const fileRef = useRef(null)
@@ -119,6 +119,14 @@ export default function CameraApp() {
           <div className="ph-photo-viewer">
             <img src={openPhoto.src} alt="" />
             <div className="ph-photo-actions">
+              <button
+                type="button"
+                className="ph-round"
+                aria-label="Bagikan ke Sosmed"
+                onClick={() => { hapticSelect(); setPendingShare(openPhoto.src); onOpenApp?.('social') }}
+              >
+                <IconSocial width={20} height={20} />
+              </button>
               <button type="button" className="ph-round" aria-label="Hapus foto" onClick={() => remove(openPhoto.id)}>
                 <IconTrash width={20} height={20} />
               </button>
