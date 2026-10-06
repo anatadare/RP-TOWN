@@ -2357,3 +2357,131 @@ body {
     margin: 0 auto;
   }
 }
+
+/* ============================================================
+   GatchaReveal -- modal animasi multi-tahap box HP (starter box +
+   gatcha box reguler nanti). Warna rarity di sini SENGAJA angka yang
+   sama persis kayak GLOW_COLOR di GatchaReveal.jsx (#b36bff epic,
+   #ffb23f legendary) -- kalau salah satu diubah, yang satu lagi ikut
+   diubah manual, gak ada satu sumber kebenaran buat warna ini.
+   ============================================================ */
+.gatcha-reveal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: radial-gradient(circle at 50% 30%, var(--sky-dusk-2), var(--sky-dusk-1) 75%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+}
+
+.gatcha-reveal-canvas-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  height: 46vh;
+  min-height: 260px;
+}
+
+.gatcha-reveal-canvas-wrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.gatcha-tap-btn {
+  margin-top: 1.5rem;
+  background: transparent;
+  border: 1px solid var(--lantern);
+  color: var(--lantern-soft);
+  border-radius: 999px;
+  padding: 0.7rem 1.8rem;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  animation: gatchaPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes gatchaPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 228, 255, 0.35); }
+  50% { box-shadow: 0 0 0 10px rgba(34, 228, 255, 0); }
+}
+
+.gatcha-result-card {
+  margin-top: 1.75rem;
+  background: rgba(10, 16, 28, 0.85);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+  text-align: center;
+  min-width: 220px;
+  opacity: 0;
+  transform: translateY(14px) scale(0.96);
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(.2,.8,.2,1), border-color 0.35s ease, box-shadow 0.35s ease;
+  pointer-events: none;
+}
+
+.gatcha-result-card.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.gatcha-result-card.rarity-common.show,
+.gatcha-result-card.rarity-rare.show { border-color: #cfd3d8; box-shadow: 0 0 28px -8px rgba(207, 211, 216, 0.5); }
+.gatcha-result-card.rarity-epic.show { border-color: #b36bff; box-shadow: 0 0 32px -6px rgba(179, 107, 255, 0.6); }
+.gatcha-result-card.rarity-legendary.show { border-color: #ffb23f; box-shadow: 0 0 36px -4px rgba(255, 178, 63, 0.7); }
+
+.gatcha-result-rarity {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  opacity: 0.75;
+  margin-bottom: 6px;
+}
+
+.gatcha-result-name {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--paper);
+  margin: 0 0 1rem;
+}
+
+.gatcha-result-close {
+  background: var(--lantern);
+  color: var(--ink);
+  border: none;
+  border-radius: 999px;
+  padding: 0.55rem 1.6rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.gatcha-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.gatcha-confetti span {
+  position: absolute;
+  top: -8px;
+  width: 6px;
+  height: 11px;
+  opacity: 0.9;
+  animation: gatchaFall 1.3s linear forwards;
+}
+
+.gatcha-confetti-epic span { background: #b36bff; }
+.gatcha-confetti-legendary span { background: #ffb23f; }
+
+@keyframes gatchaFall {
+  to { transform: translateY(46vh) rotate(480deg); opacity: 0.15; }
+}
