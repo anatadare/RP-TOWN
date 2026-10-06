@@ -23,7 +23,7 @@ export async function getContacts(selfCitizenId) {
 export async function getFeed() {
   const { data, error } = await supabase
     .from('social_posts')
-    .select('id, body, image_url, likes_count, comments_count, created_at, citizen_id, author:citizens(display_name, username, avatar_url)')
+    .select('id, body, image_url, likes_count, comments_count, created_at, citizen_id, author:citizens!social_posts_citizen_id_fkey(display_name, username, avatar_url)')
     .order('created_at', { ascending: false })
     .limit(60)
   if (error) throw error
@@ -77,7 +77,7 @@ export async function toggleLike(citizenId, postId) {
 export async function getComments(postId) {
   const { data, error } = await supabase
     .from('social_comments')
-    .select('id, body, created_at, citizen_id, author:citizens(display_name, username, avatar_url)')
+    .select('id, body, created_at, citizen_id, author:citizens!social_comments_citizen_id_fkey(display_name, username, avatar_url)')
     .eq('post_id', postId)
     .order('created_at', { ascending: true })
     .limit(100)
