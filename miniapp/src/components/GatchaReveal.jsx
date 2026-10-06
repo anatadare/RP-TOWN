@@ -258,7 +258,18 @@ export default function GatchaReveal({ itemType, onClose }) {
   return (
     <div className="gatcha-reveal-overlay">
       <div className="gatcha-reveal-canvas-wrap">
-        <Canvas dpr={[1, 1.5]} camera={{ fov: 32, position: [0, 0.55, 2.3] }}>
+        {/* Kamera default react-three-fiber TIDAK auto nunjuk ke origin --
+            dia cuma duduk di `position` dengan rotasi netral (ngadep -Z
+            lurus, gak nunduk/nengadah). Jadi tinggi (Y) kamera di sini
+            HARUS disetel ke tengah vertikal konten (box + HP yang naik
+            ke atas pas reveal), bukan ditebak -- sebelumnya y=0.55 bikin
+            framing-nya mepet ke box doang, HP yang naik ke atas jadi
+            kepotong di luar frame. Konten totalnya kira-kira dari
+            y=-0.35 (dasar box) sampai y=1.15 (puncak HP pas full reveal),
+            tengahnya ~0.4 -- itu yang dipakai jadi tinggi kamera. Jarak
+            (Z) dimundurin dari 2.3 ke 3.1 + fov dinaikin dikit ke 36
+            biar ada margin ekstra, gak mepet persis di tepi. */}
+        <Canvas dpr={[1, 1.5]} camera={{ fov: 36, position: [0, 0.4, 3.1] }}>
           <ambientLight intensity={0.8} />
           <directionalLight position={[3, 5, 4]} intensity={1.1} />
           <directionalLight position={[-3, 2, -4]} intensity={0.35} />
