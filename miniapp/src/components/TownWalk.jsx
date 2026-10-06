@@ -14,6 +14,7 @@ import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
 import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
 import RemotePlayers from './RemotePlayers'
 import PhoneInventory from './PhoneInventory'
+import GatchaReveal from './GatchaReveal'
 import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/items'
 import {
   lockTelegramSwipe,
@@ -1013,13 +1014,19 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // ditangkep & ditampilin apa adanya, gak ditebak-tebak di sini.
   const [boxClaiming, setBoxClaiming] = useState(false)
   const [boxClaimError, setBoxClaimError] = useState(null)
+  // Hasil klaim (row item_types) -- dilempar ke GatchaReveal (dirender
+  // di bawah) buat di-animasiin, sama persis polanya kayak di App.jsx.
+  const [gatchaResult, setGatchaResult] = useState(null)
 
   function handleClaimStarterBox() {
     if (!citizenId || boxClaiming) return
     setBoxClaiming(true)
     setBoxClaimError(null)
     claimStarterBox(citizenId)
-      .then(() => getMyItems(citizenId))
+      .then((result) => {
+        setGatchaResult(result)
+        return getMyItems(citizenId)
+      })
       .then((rows) => setOwnedItems(rows))
       .catch((err) => {
         console.error('[RP Town] gagal buka box awal:', err)
@@ -1142,6 +1149,11 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         claimingStarterBox={boxClaiming}
         claimStarterBoxError={boxClaimError}
       />
+
+      {/* Overlay animasi box -- posisinya fixed/inset:0 (lihat CSS),
+          jadi aman ditaruh di mana aja di tree ini, nutupin semua UI
+          Jelajahi pas lagi tampil. */}
+      <GatchaReveal itemType={gatchaResult} onClose={() => setGatchaResult(null)} />
 
       {/* Tombol pilih peta -- bulat kecil merah, kiri bawah. Tap buka popup
           yang ngegulir ke bawah nampilin daftar peta (gantiin tab lama di
