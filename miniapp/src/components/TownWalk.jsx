@@ -7,7 +7,7 @@ import { WalkBillboard } from './Billboard3D'
 import { buildWalkWorld, ROAD_LIFT } from '../lib/walkWorld'
 import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
-import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, PHONE_GRIP_SHIFT, applyPhonePose } from './PhonePose'
+import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, PHONE_GRIP_SHIFT, PHONE_BACK_SHIFT, applyPhonePose, alignPhoneUpright } from './PhonePose'
 import FoldablePhone from './FoldablePhone'
 import BarPhone from './BarPhone'
 import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
@@ -559,7 +559,13 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
     // Ditekuk ULANG tiap frame, SETELAH animation mixer (di atas) ngatur pose
     // Idle/Walk/Run/Jump-nya -- lihat komentar panjang di deklarasi
     // phoneGroupRef di atas kenapa ini gak bisa cuma sekali di awal.
-    if (equippedPhone) applyPhonePose(model)
+    if (equippedPhone) {
+      const phoneFist = applyPhonePose(model)
+      // HP diorientasikan di world space (lihat PhonePose.jsx) --
+      // dipanggil SETELAH mixer & tiap frame biar tetap tegak walau tangan
+      // berayun pas Walk/Run.
+      alignPhoneUpright(phoneGroupRef.current, phoneFist, model)
+    }
 
     // ---- bayangan bulat di tanah -------------------------------------------------
     const shadow = shadowRef.current
@@ -653,7 +659,7 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
                         sumbu Y si HP SENDIRI (SETELAH rotasi di atas
                         diterapkan). Lihat catatan panjang soal
                         PHONE_GRIP_SHIFT di PhonePose.jsx buat alasannya. */}
-                    <group position={[0, PHONE_GRIP_SHIFT, 0]}>
+                    <group position={[0, PHONE_GRIP_SHIFT, PHONE_BACK_SHIFT]}>
                       {isBarPhone(variant) ? (
                         <BarPhone variant={variant} />
                       ) : (
