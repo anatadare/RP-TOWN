@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
 import { hapticSelect } from '../lib/telegram'
+import './phone/phone.css'
 
 // ============================================================
 // PhoneInventory -- tombol tas (inventory) di mode Jelajahi.
@@ -26,6 +27,7 @@ import { hapticSelect } from '../lib/telegram'
 //  - equippedId  : citizen_items.id yang lagi dipasang (atau null)
 //  - foldT       : 0..1, state buka/tutup HP yang lagi dipasang
 //  - onEquip(citizenItemId), onUnequip(), onSetFold(value)
+//  - onOpenScreen() : buka layar HP (UI per brand, lihat components/phone/)
 // ============================================================
 
 export default function PhoneInventory({
@@ -34,6 +36,7 @@ export default function PhoneInventory({
   foldT,
   onEquip,
   onUnequip,
+  onOpenScreen,
   onSetFold,
   onClaimStarterBox,
   claimingStarterBox,
@@ -106,6 +109,17 @@ export default function PhoneInventory({
 
           {equipped && (
             <div className="walk-inv-equipped-row">
+              <button
+                type="button"
+                className="walk-inv-screen-btn"
+                onClick={() => {
+                  hapticSelect()
+                  setScreen('closed')
+                  onOpenScreen?.()
+                }}
+              >
+                📲 Buka Layar
+              </button>
               {!equippedIsBar && (
                 <button
                   type="button"
