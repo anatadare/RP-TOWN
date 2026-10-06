@@ -19,11 +19,11 @@ export async function getContacts(selfCitizenId) {
   return data || []
 }
 
-// ---- Sosmed (database/migration-011-social.sql) ---------------------------
+// ---- Sosmed (database/migration-011 + migration-012-social-media.sql) -----
 export async function getFeed() {
   const { data, error } = await supabase
     .from('social_posts')
-    .select('id, body, likes_count, created_at, citizen_id, author:citizens(display_name, username, avatar_url)')
+    .select('id, body, image_url, likes_count, comments_count, created_at, citizen_id, author:citizens(display_name, username, avatar_url)')
     .order('created_at', { ascending: false })
     .limit(60)
   if (error) throw error
@@ -41,10 +41,24 @@ export async function getMyLikes(citizenId) {
   return new Set((data || []).map((r) => r.post_id))
 }
 
-export async function createPost(citizenId, body) {
+// Foto (data URL dari kamera/galeri) -> Supabase Storage bucket 'social-photos'
+// -> URL publik. Return null kalau gak ada foto.
+export async function uploadPhoto(citizenId, dataUrl) {
+  if (!dataUrl) return null
+  const blob = await (await fetch(dataUrl)).blob()
+  const path = `${citizenId}/${Date.now()}.jpg`
+  const { error } = await supabase.storage
+    .from('social-photos')
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: false })
+  if (error) throw error
+  return supabase.storage.from('social-photos').getPublicUrl(path).data.publicUrl
+}
+
+export async function createPost(citizenId, body, imageUrl = null) {
   const { data, error } = await supabase.rpc('create_social_post', {
     p_citizen_id: citizenId,
     p_body: body,
+    p_image_url: imageUrl,
   })
   if (error) throw error
   return data
@@ -58,6 +72,37 @@ export async function toggleLike(citizenId, postId) {
   })
   if (error) throw error
   return data
+}
+
+export async function getComments(postId) {
+  const { data, error } = await supabase
+    .from('social_comments')
+    .select('id, body, created_at, citizen_id, author:citizens(display_name, username, avatar_url)')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true })
+    .limit(100)
+  if (error) throw error
+  return data || []
+}
+
+export async function addComment(citizenId, postId, body) {
+  const { data, error } = await supabase.rpc('create_social_comment', {
+    p_citizen_id: citizenId,
+    p_post_id: postId,
+    p_body: body,
+  })
+  if (error) throw error
+  return data
+}
+
+// Foto yang lagi "dibagikan" dari app Kamera ke app Sosmed (cukup variabel
+// modul -- cuma hidup selama sesi, gak perlu disimpan ke mana-mana).
+let pendingSharePhoto = null
+export function setPendingShare(dataUrl) { pendingSharePhoto = dataUrl }
+export function takePendingShare() {
+  const p = pendingSharePhoto
+  pendingSharePhoto = null
+  return p
 }
 
 // ---- Foto kamera: disimpan lokal di perangkat (thumbnail kecil) -------------
