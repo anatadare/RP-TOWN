@@ -50,11 +50,23 @@ const POSE_DEGREES = {
 // (tanpa koreksi apa pun) -- dari situ koreksinya bisa dihitung LANGSUNG
 // dari satu screenshot, bukan nebak lagi. Posisi (jarak dari kepalan)
 // TETAP dipertahanin (udah pas, gak ada masalah soal itu).
-// Rotasi TETAP [0,0,0] (baseline) -- posisinya dinaikin (komponen ke-2,
-// sumbu Y lokal Fist.R) dari 0.05 ke 0.09, soalnya HP-nya masih separo
-// kebenem di dalam mesh kepalan tangan (lihat screenshot baseline).
-export const PHONE_OFFSET_POS = [0, 0.09, 0.04]
-export const PHONE_OFFSET_ROT = [0, 0, 0]
+// Posisi (udah pas, dari screenshot sebelumnya -- gak diubah lagi).
+//
+// Rotasi: dari screenshot baseline [0,0,0] (zoom in ke tangan), tepi
+// layarnya diukur LANGSUNG dari pixel (bukan kira-kira) -- miring ~27°
+// dari horizontal, padahal maunya tegak (~90°). Jadi diputer +63° di
+// sumbu Z LOKAL si grup HP (ini muter HP di tempat dia berdiri, di
+// "bidang layarnya" sendiri -- gak geser arah hadap layarnya sama
+// sekali, cuma muterin kayak jarum jam/berlawanan di bidang datarnya).
+// CATATAN: arah puterannya (+63° vs -63°) ditebak dari sudut pandang
+// kamera di screenshot itu -- kalau pas dites malah muter ke arah
+// SALAH (tambah miring, bukan tambah tegak), tinggal ganti angka 63
+// di bawah jadi -63 (satu-satunya kemungkinan yang perlu dicoba).
+// Komponen ke-3 (Z, "depan" telapak tangan) dimajuin 60% (0.04 -> 0.064)
+// -- itu yang salah kemarin, bukan komponen ke-2 (Y), HP-nya masih
+// kebenem ke DALAM tangan karena kurang maju, bukan kurang naik.
+export const PHONE_OFFSET_POS = [0, 0.09, 0.064]
+export const PHONE_OFFSET_ROT = [0, 0, (63 * Math.PI) / 180]
 
 const parentWorldQuat = new THREE.Quaternion()
 const currentWorldQuat = new THREE.Quaternion()
