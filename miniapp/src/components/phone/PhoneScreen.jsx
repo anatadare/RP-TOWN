@@ -171,7 +171,7 @@ export default function PhoneScreen({ variant, citizenId, onClose }) {
             <h1>{app.label}</h1>
           </header>
           <div className="ph-app-body">
-            <app.Component citizenId={citizenId} />
+            <app.Component citizenId={citizenId} onOpenApp={open} />
           </div>
         </div>
       )}
