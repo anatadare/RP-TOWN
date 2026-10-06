@@ -1,0 +1,333 @@
+/* ============================================================
+   phone.css -- layar HP (PhoneOverlay/PhoneScreen).
+   Tema per brand diatur lewat CSS variable --ph-* (inline dari
+   phoneThemes.js) + atribut data-* di .ph-screen.
+   ============================================================ */
+
+/* ---------- wadah: popup penuh (Telegram HP) / floating kanan (PC) ---------- */
+.ph-overlay { position: fixed; z-index: 60; }
+
+.ph-overlay-full {
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  animation: ph-fade 0.18s ease-out;
+}
+.ph-overlay-full .ph-frame { position: relative; width: 100%; height: 100%; }
+.ph-overlay-full .ph-screen { border-radius: 0; }
+
+.ph-overlay-floating {
+  right: 64px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: min(90vh, 900px);
+  aspect-ratio: 9 / 19.5;
+  animation: ph-pop 0.2s ease-out;
+}
+.ph-overlay-floating .ph-frame { position: relative; width: 100%; height: 100%; }
+.ph-overlay-floating .ph-screen {
+  border-radius: 40px;
+  border: 9px solid #0b0b0e;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 0 0 1.5px rgba(255, 255, 255, 0.14);
+}
+
+@keyframes ph-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ph-pop { from { opacity: 0; transform: translateY(-48%) scale(0.96) } to { opacity: 1; transform: translateY(-50%) scale(1) } }
+
+.ph-close {
+  position: absolute;
+  z-index: 12;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: none;
+  display: grid; place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+}
+.ph-overlay-full .ph-close { top: 6px; right: 8px; }
+.ph-overlay-floating .ph-close { left: -46px; top: 14px; background: rgba(11, 18, 32, 0.85); }
+
+/* ---------- layar ---------- */
+.ph-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--ph-wall);
+  color: var(--ph-home-ink, #fff);
+  font-family: var(--ph-font);
+  -webkit-font-smoothing: antialiased;
+  box-sizing: border-box;
+}
+.ph-screen *, .ph-screen *::before, .ph-screen *::after { box-sizing: border-box; }
+.ph-screen button { font-family: inherit; }
+.ph-screen[data-app="camera"] { --ph-app-bg: #000 !important; --ph-text: #fff !important; --ph-sub: #a0a0a8 !important; --ph-surface: #16161a !important; --ph-line: rgba(255,255,255,0.14) !important; }
+
+/* ---------- status bar ---------- */
+.ph-status {
+  position: relative;
+  flex: none;
+  height: 36px;
+  padding: 0 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; font-weight: 600;
+  z-index: 2;
+}
+.ph-overlay-full .ph-status { padding-right: 52px; }
+.ph-status-icons { display: flex; align-items: center; gap: 6px; }
+.ph-screen[data-in-app="1"] .ph-status { background: var(--ph-app-bg); color: var(--ph-text); }
+.ph-island {
+  position: absolute; left: 50%; top: 9px; transform: translateX(-50%);
+  width: 92px; height: 26px; border-radius: 20px; background: #000;
+}
+.ph-punch {
+  position: absolute; left: 50%; top: 11px; transform: translateX(-50%);
+  width: 13px; height: 13px; border-radius: 50%; background: #000;
+}
+
+/* ---------- home ---------- */
+.ph-home {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  padding: 6px 18px 6px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.ph-screen[data-brand="google"] .ph-home,
+.ph-screen[data-brand="nothing"] .ph-home { text-shadow: none; }
+.ph-home-spacer { flex: 1; }
+.ph-os-name { text-align: center; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.5; margin: 4px 0 2px; }
+
+.ph-widget { margin-top: 14px; }
+.ph-widget-clock { font-size: 60px; font-weight: 300; line-height: 1.05; letter-spacing: -0.02em; }
+.ph-widget-date { font-size: 14px; opacity: 0.88; margin-top: 4px; text-transform: capitalize; }
+.ph-widget-center { text-align: center; }
+.ph-widget-left .ph-widget-clock, .ph-widget-xmode .ph-widget-clock { font-weight: 600; font-size: 52px; }
+.ph-widget-none { height: 10px; }
+
+.ph-widget-glance { margin-top: 18px; }
+.ph-glance-date { font-size: 26px; font-weight: 400; text-transform: capitalize; }
+.ph-glance-sub { font-size: 14px; margin-top: 6px; opacity: 0.8; }
+
+.ph-widget-dot {
+  background: #000; border: 1px solid var(--ph-line); border-radius: 30px;
+  padding: 18px 20px; text-shadow: none;
+}
+.ph-widget-dot .ph-widget-clock {
+  font-family: var(--ph-font); font-weight: 700; font-size: 54px; letter-spacing: 0.06em;
+  background-image: radial-gradient(circle, #fff 1.1px, transparent 1.5px);
+  background-size: 4px 4px;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+.ph-widget-dot .ph-widget-date { color: var(--ph-sub); }
+
+.ph-xmode {
+  display: inline-block; font-size: 10px; letter-spacing: 0.16em; padding: 3px 8px;
+  border: 1px solid var(--ph-accent); color: var(--ph-accent); margin-bottom: 6px;
+}
+.ph-widget-cards .ph-widget-clock { font-size: 46px; font-weight: 500; }
+.ph-cards-row { display: flex; gap: 10px; margin-top: 12px; }
+.ph-mini-card {
+  flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 18px;
+  background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(8px); font-size: 12px;
+}
+.ph-mini-card b { font-size: 13px; }
+
+.ph-widget-ios { display: flex; gap: 14px; margin-top: 18px; }
+.ph-ios-card {
+  flex: 1; aspect-ratio: 1; border-radius: 26px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;
+  background: rgba(255, 255, 255, 0.24); backdrop-filter: blur(16px); font-size: 12px; text-shadow: none;
+}
+.ph-ios-card b { font-size: 12px; letter-spacing: 0.04em; }
+.ph-ios-big { font-size: 44px; font-weight: 300; line-height: 1; }
+
+/* ---------- ikon aplikasi ---------- */
+.ph-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 6px; margin-top: 28px; }
+.ph-app { display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: none; padding: 0; cursor: pointer; color: inherit; }
+.ph-app:active .ph-app-icon { transform: scale(0.92); }
+.ph-app-label { font-size: 11px; font-weight: 500; color: var(--ph-home-ink, #fff); max-width: 100%; }
+.ph-screen[data-brand="nothing"] .ph-app-label,
+.ph-screen[data-brand="asus"] .ph-app-label { text-transform: uppercase; letter-spacing: 0.08em; font-size: 9.5px; }
+
+.ph-app-icon {
+  width: 58px; height: 58px; display: grid; place-items: center;
+  color: var(--ic-ink, #fff); transition: transform 0.12s;
+}
+.ph-screen[data-icon-shape="squircle"] .ph-app-icon { border-radius: 27%; }
+.ph-screen[data-icon-shape="circle"] .ph-app-icon { border-radius: 50%; }
+.ph-screen[data-icon-shape="round"] .ph-app-icon { border-radius: 34%; }
+.ph-screen[data-icon-shape="chamfer"] .ph-app-icon { clip-path: polygon(22% 0, 100% 0, 100% 78%, 78% 100%, 0 100%, 0 22%); }
+
+.ph-screen[data-icon-style="gradient"] .ph-app-icon { background: linear-gradient(160deg, var(--ic1), var(--ic2)); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22); }
+.ph-screen[data-icon-style="flat"] .ph-app-icon { background: var(--ic1); }
+.ph-screen[data-icon-style="glass"] .ph-app-icon {
+  background: linear-gradient(160deg, var(--ic1), var(--ic2));
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 12px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.ph-screen[data-icon-style="mono"] .ph-app-icon { background: transparent; border: 2px dotted #fff; color: #fff; }
+.ph-screen[data-icon-style="outline"] .ph-app-icon { background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1.5px var(--ph-accent); color: #fff; }
+
+/* ---------- dock / search / dots ---------- */
+.ph-dock {
+  display: flex; justify-content: center; gap: 16px; padding: 12px 14px; margin: 0 2px 6px;
+  border-radius: 32px; background: rgba(255, 255, 255, 0.24); backdrop-filter: blur(14px);
+}
+.ph-searchbar {
+  display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 18px; margin-bottom: 6px;
+  border-radius: 999px; background: rgba(255, 255, 255, 0.22); backdrop-filter: blur(10px);
+  font-size: 15px; text-shadow: none;
+}
+.ph-screen[data-brand="google"] .ph-searchbar { background: #fff; color: #444; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12); }
+.ph-dots { display: flex; justify-content: center; gap: 6px; margin-bottom: 8px; }
+.ph-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.4); }
+.ph-dots i.is-on { background: #fff; }
+
+/* ---------- navigasi bawah ---------- */
+.ph-screen[data-in-app="1"] .ph-nav-gesture,
+.ph-screen[data-in-app="1"] .ph-nav-buttons { background: var(--ph-app-bg); color: var(--ph-text); }
+.ph-nav-gesture {
+  flex: none; height: 24px; border: none; background: transparent; cursor: pointer;
+  display: grid; place-items: center; padding: 0;
+}
+.ph-nav-gesture i { display: block; width: 118px; height: 5px; border-radius: 3px; background: var(--ph-home-ink, #fff); opacity: 0.85; }
+.ph-screen[data-in-app="1"] .ph-nav-gesture i { background: var(--ph-text); }
+.ph-screen[data-brand="apple"] .ph-nav-gesture i { width: 134px; }
+.ph-screen[data-brand="google"] .ph-nav-gesture i { width: 100px; }
+.ph-nav-buttons {
+  flex: none; height: 40px; display: flex; justify-content: space-around; align-items: center;
+  color: var(--ph-home-ink, #fff);
+}
+.ph-nav-buttons button { background: none; border: none; color: inherit; font-size: 18px; width: 64px; cursor: pointer; opacity: 0.85; }
+
+/* ---------- host aplikasi + header ---------- */
+.ph-app-host { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--ph-app-bg); color: var(--ph-text); }
+.ph-app-header { flex: none; display: flex; align-items: center; gap: 6px; padding: 2px 10px 8px; }
+.ph-app-header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.ph-back { background: none; border: none; color: var(--ph-accent); width: 36px; height: 36px; display: grid; place-items: center; cursor: pointer; border-radius: 50%; }
+.ph-screen[data-app="camera"] .ph-back { color: #fff; }
+
+.ph-screen[data-header="large"] .ph-app-header { flex-direction: column; align-items: flex-start; gap: 0; padding-bottom: 6px; }
+.ph-screen[data-header="large"] .ph-app-header h1 { font-size: 32px; font-weight: 700; padding: 0 8px; letter-spacing: -0.02em; }
+.ph-screen[data-header="collapse"] .ph-app-header { flex-direction: column; align-items: flex-start; gap: 0; padding-top: 14px; padding-bottom: 12px; }
+.ph-screen[data-header="collapse"] .ph-app-header h1 { font-size: 30px; font-weight: 500; padding: 14px 8px 0; }
+.ph-screen[data-header="plain"] .ph-app-header h1 { font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 700; }
+.ph-screen[data-brand="asus"] .ph-app-header { border-bottom: 1px solid var(--ph-line); }
+.ph-screen[data-brand="nothing"] .ph-app-header { border-bottom: 1px dotted var(--ph-line); }
+.ph-screen[data-app="camera"] .ph-app-header { position: absolute; top: 36px; left: 0; z-index: 3; padding: 0 6px; }
+.ph-screen[data-app="camera"] .ph-app-header h1 { display: none; }
+
+.ph-app-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 12px 14px; -webkit-overflow-scrolling: touch; }
+.ph-screen[data-app="camera"] .ph-app-body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ---------- komponen umum ---------- */
+.ph-card { background: var(--ph-surface); border-radius: var(--ph-radius); overflow: hidden; }
+.ph-sub { color: var(--ph-sub); font-size: 13px; margin: 0; }
+.ph-state { text-align: center; color: var(--ph-sub); font-size: 14px; padding: 22px 8px; margin: 0; }
+.ph-error { color: #ff5c6c; font-size: 12.5px; margin: 6px 0 0; }
+.ph-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; background: none; border: none; border-bottom: 1px solid var(--ph-line); color: var(--ph-text); text-align: left; cursor: pointer; }
+.ph-row:last-child { border-bottom: none; }
+.ph-row-text { display: flex; flex-direction: column; min-width: 0; }
+.ph-row-title { font-size: 15px; font-weight: 600; color: var(--ph-text); margin: 0; }
+.ph-row-sub { font-size: 12.5px; color: var(--ph-sub); }
+.ph-avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: var(--ph-accent); color: #fff; font-size: 14px; font-weight: 700; }
+.ph-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.ph-avatar-xl { width: 96px; height: 96px; font-size: 32px; }
+.ph-avatar-sm { width: 22px; height: 22px; font-size: 10px; }
+.ph-btn { border: 1px solid var(--ph-line); background: var(--ph-surface); color: var(--ph-text); font-size: 14px; font-weight: 600; padding: 10px 18px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.ph-btn:disabled { opacity: 0.45; cursor: default; }
+.ph-btn-primary { background: var(--ph-accent); border-color: transparent; color: #fff; }
+.ph-btn-sm { padding: 7px 14px; font-size: 13px; }
+.ph-screen[data-brand="asus"] .ph-btn, .ph-screen[data-brand="asus"] .ph-card { border-radius: 4px; }
+.ph-round { width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.16); color: #fff; display: grid; place-items: center; cursor: pointer; }
+
+/* kontak */
+.ph-search { display: flex; align-items: center; gap: 8px; background: var(--ph-surface); border-radius: 999px; padding: 8px 14px; margin: 2px 0 10px; color: var(--ph-sub); }
+.ph-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--ph-text); font: inherit; font-size: 16px; }
+.ph-group-letter { font-size: 12px; font-weight: 700; color: var(--ph-sub); padding: 8px 6px 4px; }
+.ph-contact-detail { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px 12px; gap: 8px; }
+.ph-contact-detail h2 { margin: 6px 0 0; font-size: 22px; }
+.ph-detail-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
+
+/* sosmed */
+.ph-compose { padding: 12px; margin-bottom: 8px; }
+.ph-compose textarea { width: 100%; border: none; outline: none; resize: none; background: transparent; color: var(--ph-text); font: inherit; font-size: 16px; }
+.ph-compose-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.ph-refresh { display: flex; align-items: center; gap: 6px; margin: 2px auto 8px; background: none; border: none; color: var(--ph-sub); font-size: 12.5px; cursor: pointer; }
+.ph-post { padding: 12px; margin-bottom: 10px; }
+.ph-post header { display: flex; align-items: center; gap: 10px; }
+.ph-post-body { margin: 10px 0 6px; font-size: 15px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.ph-like { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; color: var(--ph-sub); font-size: 13.5px; cursor: pointer; padding: 4px 0; }
+.ph-like.is-on { color: #ff3b6b; }
+.ph-like.is-on svg { fill: currentColor; }
+
+/* market */
+.ph-market-cta { padding: 14px; margin-bottom: 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.ph-listing { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 10px; }
+.ph-listing.is-mine { box-shadow: inset 0 0 0 1.5px var(--ph-accent); }
+.ph-listing-icon { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; background: rgba(127, 127, 127, 0.14); }
+.ph-listing-body { flex: 1; min-width: 0; }
+.ph-listing-seller { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.ph-price { flex: none; font-size: 12.5px; font-weight: 700; color: var(--ph-accent); }
+.ph-tag { margin-left: 6px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 999px; background: var(--ph-accent); color: #fff; vertical-align: middle; }
+
+/* kamera */
+.ph-camera { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #000; }
+.ph-viewfinder { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; }
+.ph-viewfinder video { width: 100%; height: 100%; object-fit: cover; }
+.ph-viewfinder video.is-mirror { transform: scaleX(-1); }
+.ph-cam-note { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; text-align: center; padding: 24px; color: #cfcfd6; font-size: 14px; margin: 0; }
+.ph-flash { position: absolute; inset: 0; background: #fff; opacity: 0.8; }
+.ph-cam-controls { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 14px 26px 10px; background: #000; }
+.ph-shutter { width: 68px; height: 68px; border-radius: 50%; border: 4px solid #fff; background: transparent; padding: 4px; cursor: pointer; }
+.ph-shutter span { display: block; width: 100%; height: 100%; border-radius: 50%; background: #fff; }
+.ph-shutter:active span { transform: scale(0.9); }
+.ph-shutter:disabled { opacity: 0.4; }
+.ph-screen[data-brand="asus"] .ph-shutter { border-color: var(--ph-accent); border-radius: 12px; }
+.ph-screen[data-brand="asus"] .ph-shutter span { background: var(--ph-accent); border-radius: 8px; }
+.ph-screen[data-brand="nothing"] .ph-shutter { border-style: dotted; }
+.ph-screen[data-brand="nothing"] .ph-shutter span { background: var(--ph-accent); }
+.ph-cam-thumb { width: 46px; height: 46px; border-radius: 10px; overflow: hidden; border: 1.5px solid rgba(255, 255, 255, 0.35); background: rgba(255, 255, 255, 0.08); padding: 0; cursor: pointer; }
+.ph-cam-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ph-gallery { position: relative; flex: 1; overflow-y: auto; padding: 44px 8px 14px; background: #000; color: #fff; }
+.ph-gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.ph-thumb { aspect-ratio: 1; padding: 0; border: none; background: #111; overflow: hidden; cursor: pointer; }
+.ph-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ph-gallery-back { margin: 14px auto 0; display: flex; }
+.ph-photo-viewer { position: fixed; inset: 0; z-index: 20; background: #000; display: flex; align-items: center; justify-content: center; }
+.ph-photo-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.ph-photo-actions { position: absolute; bottom: 22px; left: 0; right: 0; display: flex; justify-content: center; gap: 16px; }
+
+/* ---------- layar sentuh landscape (game selalu landscape di HP) ---------- */
+@media (orientation: landscape) and (max-height: 560px) {
+  .ph-overlay-full .ph-status { height: 28px; }
+  .ph-overlay-full .ph-home { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px 28px; padding-top: 0; overflow-y: auto; }
+  .ph-overlay-full .ph-widget { margin-top: 0; flex: 1; }
+  .ph-overlay-full .ph-widget-clock { font-size: 44px; }
+  .ph-overlay-full .ph-grid { flex: 1.2; margin-top: 0; }
+  .ph-overlay-full .ph-app-icon { width: 50px; height: 50px; }
+  .ph-overlay-full .ph-home-spacer, .ph-overlay-full .ph-os-name { display: none; }
+  .ph-overlay-full .ph-widget-ios, .ph-overlay-full .ph-cards-row { display: none; }
+  .ph-overlay-full .ph-dock { justify-content: space-around; }
+  .ph-overlay-full .ph-dock, .ph-overlay-full .ph-searchbar, .ph-overlay-full .ph-dots { flex: 1 1 100%; }
+  .ph-overlay-full .ph-camera { flex-direction: row; }
+  .ph-overlay-full .ph-cam-controls { flex-direction: column; padding: 14px 12px; }
+  .ph-overlay-full .ph-nav-gesture { height: 16px; }
+  .ph-overlay-full .ph-screen[data-app="camera"] .ph-app-header { top: 28px; }
+  .ph-overlay-full .ph-app-body { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+}
+
+/* ---------- tombol "Buka Layar" di popup inventaris (PhoneInventory) ---------- */
+.walk-inv-popup .walk-inv-equipped-row { flex-wrap: wrap; }
+.walk-inv-popup .walk-inv-screen-btn {
+  flex: 1 1 100%;
+  border: 1px solid rgba(34, 228, 255, 0.45);
+  background: rgba(34, 228, 255, 0.14);
+  color: var(--lantern-soft);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
