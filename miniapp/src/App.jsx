@@ -4,6 +4,7 @@ import { initTelegram, getTelegramUser, openTelegramLink, hapticSelect, hapticSu
 import { ensureCitizen, getRoomsWithPresence, enterRoom, pollRooms, updateCitizenCharacter } from './lib/rooms'
 import { getHouseByOwner, getIslandName } from './lib/houses'
 import { claimStarterBox } from './lib/items'
+import GatchaReveal from './components/GatchaReveal'
 import Market from './components/Market'
 import { requestKuaInvite, kuaInviteErrorMessage } from './lib/kua'
 import TownMap3D from './components/TownMap3D'
@@ -192,6 +193,10 @@ function HouseIcon() {
 
 export default function App() {
   const [citizen, setCitizen] = useState(null)
+  // Hasil box awal (row item_types dari claim_starter_box) -- dipasang
+  // begitu klaim berhasil, GatchaReveal nangkep ini & nge-reveal-in
+  // animasinya. null = gak ada apa-apa buat ditampilin.
+  const [gatchaResult, setGatchaResult] = useState(null)
   const [rooms, setRooms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -398,11 +403,13 @@ export default function App() {
     // Box pembuka pertama -- sekali per warga, ditegakkan di server
     // (claim_starter_box nolak kalau starter_box_opened_at udah keisi).
     // Sengaja gak bikin layar ini NUNGGU/GAGAL kalau klaimnya error --
-    // pilih karakter harus tetap lanjut walau box-nya kenapa-napa, HP
-    // hasilnya baru keliatan pas warga buka tas (PhoneInventory) di
-    // mode Jelajahi, jadi gak ada UI tambahan yang WAJIB ditambal di sini.
+    // pilih karakter harus tetap lanjut walau box-nya kenapa-napa.
+    // Hasilnya ditangkep ke gatchaResult -- GatchaReveal (dirender di
+    // return utama di bawah) yang nge-reveal-in animasinya begitu
+    // state ini keisi.
     try {
-      await claimStarterBox(citizen.id)
+      const result = await claimStarterBox(citizen.id)
+      setGatchaResult(result)
       hapticSuccess()
     } catch (err) {
       console.error('[RP Town] gagal klaim box awal:', err)
@@ -805,6 +812,11 @@ export default function App() {
         />
       )}
 
+      {/* Overlay di luar switch screen manapun -- box awal bisa kepicu
+          abis CharacterSelect, SEBELUM layar town/landing sempat
+          kerender, jadi reveal-nya harus nempel di root, bukan di
+          salah satu cabang screen === '...' di atas. */}
+      <GatchaReveal itemType={gatchaResult} onClose={() => setGatchaResult(null)} />
     </div>
   )
 }
