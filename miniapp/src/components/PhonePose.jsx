@@ -68,6 +68,26 @@ const POSE_DEGREES = {
 export const PHONE_OFFSET_POS = [0, 0.09, 0.064]
 export const PHONE_OFFSET_ROT = [0, 0, (63 * Math.PI) / 180]
 
+// Kenapa HP-nya kebelah dua ketutupan kepalan (nongol di atas & bawah
+// tangan, tapi tengahnya ketutupan): FoldablePhone/BarPhone itu di-render
+// PUSAT di titik (0,0,0) model-nya sendiri, jadi PHONE_OFFSET_POS/ROT di
+// atas motar/naronya dari TITIK TENGAH HP. Orang megang HP beneran (lihat
+// foto referensi) itu genggamnya di bagian BAWAH, bukan tengah -- jadi
+// mau PHONE_OFFSET_POS digeser berapa pun, separuh panjang HP-nya bakal
+// selalu nembus ke arah kepalan dari sisi yang gak digeser.
+// Ini genggaman TAMBAHAN (bukan gantiin POS/ROT di atas) -- geser di
+// sepanjang sumbu Y LOKAL HP ITU SENDIRI, diterapkan SETELAH rotasi
+// PHONE_OFFSET_ROT (lihat cara dipakainya di TownWalk.jsx: nested group,
+// bukan ditambahin ke PHONE_OFFSET_POS) -- jadi arah gesernya otomatis
+// ngikut kemana pun HP-nya lagi menghadap, gak perlu dihitung ulang tiap
+// kali rotasinya di-tweak. ~0.35 -- separuh lebih dikit dari panjang akhir
+// HP (BarPhone ~0.64, FoldablePhone open ~0.62), biar titik pegangnya
+// deket ujung bawah, bukan pas di tengah.
+// ARAH (+0.35 vs -0.35) ditebak -- kalau pas dites HP-nya malah geser
+// MENJAUH dari kepalan (bukan nempel pas di ujung bawahnya), tinggal
+// diganti jadi negatif.
+export const PHONE_GRIP_SHIFT = 0.35
+
 const parentWorldQuat = new THREE.Quaternion()
 const currentWorldQuat = new THREE.Quaternion()
 const deltaQuat = new THREE.Quaternion()
