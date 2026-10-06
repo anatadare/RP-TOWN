@@ -46,6 +46,19 @@ export const IconRefresh = (p) => (
   <svg {...base} {...p}><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
 )
 
+export const IconHome = (p) => (
+  <svg {...base} {...p}><path d="M4 11l8-6.5 8 6.5v8a1.5 1.5 0 0 1-1.5 1.5H15v-6H9v6H5.5A1.5 1.5 0 0 1 4 19z" /></svg>
+)
+export const IconPlus = (p) => (
+  <svg {...base} {...p}><rect x="4" y="4" width="16" height="16" rx="4.5" /><path d="M12 8.5v7M8.5 12h7" /></svg>
+)
+export const IconComment = (p) => (
+  <svg {...base} {...p}><path d="M20 11.5A7.5 7.5 0 0 1 8.9 18.1L4 19.5l1.4-4.6A7.5 7.5 0 1 1 20 11.5z" /></svg>
+)
+export const IconImage = (p) => (
+  <svg {...base} {...p}><rect x="4" y="5" width="16" height="14" rx="3" /><circle cx="9" cy="10" r="1.6" /><path d="M5 17l4.5-4.5 3 3 2-2L19 17" /></svg>
+)
+
 // ---- status bar ----
 export const IconSignal = () => (
   <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor">
