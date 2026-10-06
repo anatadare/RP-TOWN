@@ -2,7 +2,7 @@ import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { useGLTF, useAnimations, Bounds } from '@react-three/drei'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
-import { applyPhonePose, LowPolyPhone, PHONE_OFFSET_POS, PHONE_OFFSET_ROT } from './PhonePose'
+import { applyPhonePose, alignPhoneUpright, LowPolyPhone, PHONE_GRIP_SHIFT, PHONE_BACK_SHIFT } from './PhonePose'
 import FoldablePhone from './FoldablePhone'
 import { getPhoneVariant } from './phoneVariants'
 
@@ -49,7 +49,10 @@ function CharacterModel({ url, animation, spin, rotationRef, pose, phoneVariant,
   useEffect(() => {
     if (pose !== 'phone') return
     const fist = applyPhonePose(scene)
-    if (fist && phoneGroup.current) fist.add(phoneGroup.current)
+    if (fist && phoneGroup.current) {
+      fist.add(phoneGroup.current)
+      alignPhoneUpright(phoneGroup.current, fist, scene)
+    }
     return () => {
       if (fist && phoneGroup.current) fist.remove(phoneGroup.current)
     }
@@ -75,7 +78,7 @@ function CharacterModel({ url, animation, spin, rotationRef, pose, phoneVariant,
             // FoldablePhone gak nge-apply offset sendiri (beda dari LowPolyPhone),
             // jadi dibungkus manual di sini pakai kalibrasi telapak tangan yang
             // sama (PHONE_OFFSET_POS/ROT) biar posisinya konsisten.
-            <group position={PHONE_OFFSET_POS} rotation={PHONE_OFFSET_ROT}>
+            <group position={[0, PHONE_GRIP_SHIFT, PHONE_BACK_SHIFT]}>
               <FoldablePhone variant={getPhoneVariant(phoneVariant)} foldT={foldT ?? 1} />
             </group>
           ) : (
