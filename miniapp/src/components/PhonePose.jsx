@@ -43,8 +43,15 @@ const POSE_DEGREES = {
 // render asli -- kalau abis ini masih kurang pas, kirim screenshot lagi,
 // 3 angka pertama (posisi) & 3 angka kedua (rotasi) di sini yang paling
 // gampang di-nudge dikit-dikit sampai pas.
+// SEMENTARA di-nolin dulu (bukan kalibrasi final!) -- 2x percobaan nebak
+// angka rotasi dari perhitungan offline ternyata meleset dari hasil
+// render asli. Daripada numpuk tebakan di atas tebakan, rotasinya
+// dinolin sebentar biar kelihatan orientasi ASLI Fist.R apa adanya
+// (tanpa koreksi apa pun) -- dari situ koreksinya bisa dihitung LANGSUNG
+// dari satu screenshot, bukan nebak lagi. Posisi (jarak dari kepalan)
+// TETAP dipertahanin (udah pas, gak ada masalah soal itu).
 export const PHONE_OFFSET_POS = [0, 0.05, 0.04]
-export const PHONE_OFFSET_ROT = [Math.PI / 2.4, 0, Math.PI / 2]
+export const PHONE_OFFSET_ROT = [0, 0, 0]
 
 const parentWorldQuat = new THREE.Quaternion()
 const currentWorldQuat = new THREE.Quaternion()
