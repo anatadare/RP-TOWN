@@ -15,43 +15,57 @@ import { hapticSuccess, hapticSelect } from '../lib/telegram'
 //
 // PENTING: rarity-nya SUDAH DITENTUIN DI SERVER (claim_starter_box)
 // SEBELUM komponen ini kerender -- jadi animasi di sini CUMA
-// nge-reveal hasil yang udah ada, bukan nentuin hasil. `onTap` (tombol
-// "Sentuh buat buka") cuma buat PACING/ketegangan, bukan buat ngundi.
+// nge-reveal hasil yang udah ada, bukan nentuin hasil.
 //
-// TAHAPAN (lihat PHASE_SECONDS di bawah buat durasi tiap tahap):
-//   idle -> shaking -> opening -> glowing -> bursting -> revealing -> done
-// "Satu Alur, Beda Klimaks": idle/shaking/opening SAMA PERSIS buat
-// semua rarity (pemain belum tau bakal dapat apa) -- yang beda cuma
-// WARNA & LAMANYA tahap `glowing` (lihat GLOW_COLOR & glowing di
-// PHASE_SECONDS), dan intensitas `bursting` (confetti cuma epic+legendary).
-//
-// Props:
-//  - itemType : row hasil claim_starter_box (RPC return value) ATAU
-//               object manapun yang punya `.id` yang cocok sama id
-//               varian di phoneCatalog.js. null/undefined = gak tampil.
-//  - onClose  : dipanggil pas warga nekan "Oke" di kartu hasil.
+// 4 KALI TAP (bukan 1 tombol "sentuh buat buka" -- itu dihapus, warga
+// pasti udah paham ini box gatcha, gak perlu diinstruksiin):
+//   tap 1 -> toast "Welcome to RP Town", box goyang dikit, MASIH NUTUP
+//   tap 2 -> toast "Semoga betah ya di RP Town", mulai spil warna
+//            rarity + tutup kebuka dikit
+//   tap 3 -> toast "Ini ada HP buat kamu", tutup kebuka setengah,
+//            warna rarity makin cerah
+//   tap 4 -> box kebuka penuh + flash + HP keluar + muter (confetti
+//            kalau epic/legendary) -- ini doang yang jalan OTOMATIS
+//            lewat timer (burst -> reveal -> kartu hasil), tap 1-3
+//            semuanya nunggu warga, gak ada auto-advance.
+// Seluruh area canvas yang jadi target tap (bukan tombol teks).
 // ============================================================
 
 const GLOW_COLOR = {
   common: '#cfd3d8',
-  rare: '#cfd3d8', // sengaja SAMA kayak common -- bedanya baru kerasa di label rarity + lama build-up (common/rare emang dirancang gak beda dari sisi cahaya, biar epic/legendary yang nonjol)
+  rare: '#cfd3d8',
   epic: '#b36bff',
   legendary: '#ffb23f',
 }
 
-const PHASE_SECONDS = {
-  shaking: 0.45,
-  opening: 0.4,
-  glowing: { common: 0.15, rare: 0.15, epic: 0.3, legendary: 0.5 },
-  bursting: 0.3,
-  revealing: 0.9,
+// Target visual (seberapa kebuka tutupnya 0..1, seberapa terang cahaya
+// 0..1) per tahap tap -- BUKAN di-animasiin pakai kurva waktu kayak
+// sebelumnya (soalnya sekarang jedanya tergantung warga nge-tap kapan,
+// gak bisa ditebak), tapi di-LERP ke angka target ini tiap frame di
+// useFrame GatchaBoxScene. Jadi kapan pun tap berikutnya dateng, nilai
+// yang lagi jalan otomatis "ngejar" ke target baru dengan mulus.
+const TAP_TARGET = {
+  idle: { lidOpen: 0, glow: 0 },
+  tap1: { lidOpen: 0, glow: 0 },
+  tap2: { lidOpen: 0.16, glow: 0.35 },
+  tap3: { lidOpen: 0.5, glow: 0.65 },
+  bursting: { lidOpen: 0.5, glow: 1 },
+  revealing: { lidOpen: 1, glow: 0.18 },
+  done: { lidOpen: 1, glow: 0 },
 }
 
-const PHASE_ORDER = ['shaking', 'opening', 'glowing', 'bursting', 'revealing', 'done']
-
-function glowDuration(rarity) {
-  return PHASE_SECONDS.glowing[rarity] ?? PHASE_SECONDS.glowing.common
+const TOAST_BY_TAP = {
+  1: 'Welcome to RP Town',
+  2: 'Semoga betah ya di RP Town',
+  3: 'Ini ada HP buat kamu',
 }
+
+const PHASE_AFTER_TAP = { 1: 'tap1', 2: 'tap2', 3: 'tap3', 4: 'bursting' }
+
+const PHASE_ORDER = ['idle', 'tap1', 'tap2', 'tap3', 'bursting', 'revealing', 'done']
+const BURST_SECONDS = 0.3
+const REVEAL_SECONDS = 0.9
+const TOAST_SECONDS = 1.7
 
 // Label "RP TOWN HP" di tutup box -- digambar ke canvas 2D dulu baru
 // dipakai sebagai texture, SENGAJA gak pakai <Text> dari drei (itu
@@ -79,83 +93,81 @@ function useLidLabelTexture() {
   }, [])
 }
 
-// Isi <Canvas>: box + cahaya + HP hasil. Semua animasi digerakkan dari
-// `phase` (bukan CSS, ini konten 3D) -- tiap pergantian phase nyimpen
-// waktu mulainya (phaseStartRef), terus tiap frame itung elapsed time
-// SENDIRI relatif ke itu buat nentuin shake/rotasi lid/intensitas
-// cahaya/posisi HP. Durasi dibaca dari PHASE_SECONDS yang sama persis
-// dipakai scheduler di GatchaReveal, jadi dua-duanya gak bisa kesasar.
-function GatchaBoxScene({ phase, rarity, variant }) {
+// Isi <Canvas>: box + cahaya + HP hasil. `phase` nentuin TARGET
+// (lidOpen/glow dari TAP_TARGET), tapi nilai yang beneran dipakai buat
+// render (lidOpenRef/glowRef) di-LERP pelan-pelan ngejar target itu
+// tiap frame -- jadi transisi antar tap selalu mulus walau jedanya
+// gak teratur. `tapPulseAt` (timestamp performance.now()) dipakai buat
+// munculin goyangan singkat tiap kali tap baru masuk, independen dari
+// si lerp.
+function GatchaBoxScene({ phase, tapPulseAt, rarity, variant }) {
   const lidGroup = useRef()
   const boxGroup = useRef()
   const glowRef = useRef()
   const lightRef = useRef()
   const phoneGroup = useRef()
-  const phaseStartRef = useRef(performance.now())
+  const lidOpenCurrent = useRef(0)
+  const glowCurrent = useRef(0)
+  const burstStartRef = useRef(null)
+  const revealStartRef = useRef(null)
   const lidTex = useLidLabelTexture()
   const glowColor = useMemo(() => new THREE.Color(GLOW_COLOR[rarity] || GLOW_COLOR.common), [rarity])
 
   useEffect(() => {
-    phaseStartRef.current = performance.now()
+    if (phase === 'bursting') burstStartRef.current = performance.now()
+    if (phase === 'revealing') revealStartRef.current = performance.now()
   }, [phase])
 
-  useFrame(() => {
-    const t = (performance.now() - phaseStartRef.current) / 1000
-
-    // Guncang -- jitter kecil di posisi X/rotasi Z, random tapi dibatasi
-    // amplitudo-nya biar gak norak. Mereda total pas phase ini selesai.
+  useFrame((_, delta) => {
+    // Goyang singkat tiap tap -- bukan dari `phase` (biar tap 1,2,3 yang
+    // phase-nya beda-beda tetep sama-sama dapet efek "kedengeran" pas
+    // di-tap), tapi dari timestamp tap terakhir.
     if (boxGroup.current) {
-      const shaking = phase === 'shaking'
-      const amp = shaking ? (1 - Math.min(t / PHASE_SECONDS.shaking, 1)) * 0.035 : 0
-      boxGroup.current.position.x = shaking ? Math.sin(t * 60) * amp : 0
-      boxGroup.current.rotation.z = shaking ? Math.sin(t * 50 + 1) * amp : 0
+      const since = tapPulseAt ? (performance.now() - tapPulseAt) / 1000 : 999
+      const amp = since < 0.3 ? (1 - since / 0.3) * 0.022 : 0
+      boxGroup.current.position.x = amp ? Math.sin(since * 55) * amp : 0
+      boxGroup.current.rotation.z = amp ? Math.sin(since * 46 + 1) * amp : 0
     }
 
-    // Tutup kebuka -- ease-out ke -120° (ke belakang), dari phase
-    // 'opening' terus TETAP kebuka di semua phase setelahnya.
+    // Target lidOpen/glow dari tahap sekarang, di-lerp pelan (gak
+    // loncat) -- LERP_SPEED lebih cepet dari durasi tap biasa (warga
+    // gak nunggu lama), tapi masih kerasa "meleleh", bukan instan.
+    const target = TAP_TARGET[phase] || TAP_TARGET.idle
+    const lerpSpeed = 6
+    lidOpenCurrent.current += (target.lidOpen - lidOpenCurrent.current) * Math.min(delta * lerpSpeed, 1)
+    glowCurrent.current += (target.glow - glowCurrent.current) * Math.min(delta * lerpSpeed, 1)
+
     if (lidGroup.current) {
-      const openIdx = PHASE_ORDER.indexOf('opening')
-      const curIdx = PHASE_ORDER.indexOf(phase)
-      const openProgress = curIdx > openIdx ? 1 : curIdx === openIdx ? Math.min(t / PHASE_SECONDS.opening, 1) : 0
-      const eased = 1 - Math.pow(1 - openProgress, 3)
-      lidGroup.current.rotation.x = -eased * (Math.PI * 0.68)
+      lidGroup.current.rotation.x = -lidOpenCurrent.current * (Math.PI * 0.68)
     }
 
-    // Cahaya dari dalam box -- nyala pelan pas 'glowing' (durasinya BEDA
-    // per rarity, lihat glowDuration), lalu meledak sebentar pas
-    // 'bursting', baru padam abis itu (kalah sama HP yang nongol).
-    const dur = glowDuration(rarity)
-    let intensity = 0
-    let scale = 0.4
-    if (phase === 'glowing') {
-      const p = Math.min(t / dur, 1)
-      intensity = p
-      // Legendary dikasih kedip 2x di akhir build-up biar kerasa "beda
-      // kelas" dari epic yang mulus doang -- common/rare gak kena ini
-      // sama sekali (dur-nya emang kependekan buat sempet kedip).
-      if (rarity === 'legendary' && p > 0.6) {
-        intensity *= 0.6 + 0.4 * Math.abs(Math.sin(p * 26))
-      }
-      scale = 0.4 + p * 0.5
-    } else if (phase === 'bursting') {
-      const p = Math.min(t / PHASE_SECONDS.bursting, 1)
-      intensity = 1 - p
-      scale = 0.9 + p * 2.2
-    } else if (PHASE_ORDER.indexOf(phase) > PHASE_ORDER.indexOf('bursting')) {
-      intensity = 0
+    // Burst sekejap -- ledakan cahaya pas tap ke-4 masuk phase
+    // 'bursting', DI ATAS nilai glow hasil lerp biasa (biar tetep
+    // keliatan "meledak", bukan cuma nambah pelan kayak tap 2->3).
+    let burstBoost = 0
+    let burstScaleBoost = 0
+    if (phase === 'bursting' && burstStartRef.current) {
+      const p = Math.min((performance.now() - burstStartRef.current) / 1000 / BURST_SECONDS, 1)
+      burstBoost = (1 - p) * 0.6
+      burstScaleBoost = p * 2.2
     }
+
     if (glowRef.current) {
-      glowRef.current.scale.setScalar(scale)
-      glowRef.current.material.opacity = intensity * 0.85
+      glowRef.current.scale.setScalar(0.4 + glowCurrent.current * 0.5 + burstScaleBoost)
+      glowRef.current.material.opacity = Math.min(glowCurrent.current + burstBoost, 1) * 0.85
     }
-    if (lightRef.current) lightRef.current.intensity = intensity * 3.5
+    if (lightRef.current) lightRef.current.intensity = Math.min(glowCurrent.current + burstBoost, 1) * 3.5
 
     // HP-nya naik dari dalam box + muter pelan terus-terusan sambil
-    // nongol (biar kerasa "hidup", bukan model statis doang).
+    // nongol, mulai dari phase 'revealing'.
     if (phoneGroup.current) {
       const revIdx = PHASE_ORDER.indexOf('revealing')
       const curIdx = PHASE_ORDER.indexOf(phase)
-      const p = curIdx > revIdx ? 1 : curIdx === revIdx ? Math.min(t / PHASE_SECONDS.revealing, 1) : 0
+      let p = 0
+      if (curIdx > revIdx) p = 1
+      else if (phase === 'revealing' && revealStartRef.current) {
+        p = Math.min((performance.now() - revealStartRef.current) / 1000 / REVEAL_SECONDS, 1)
+      }
       const eased = 1 - Math.pow(1 - p, 2)
       phoneGroup.current.visible = p > 0
       phoneGroup.current.position.y = 0.12 + eased * 0.62
@@ -212,6 +224,9 @@ function GatchaBoxScene({ phase, rarity, variant }) {
 
 export default function GatchaReveal({ itemType, onClose }) {
   const [phase, setPhase] = useState('idle')
+  const [tapCount, setTapCount] = useState(0)
+  const [tapPulseAt, setTapPulseAt] = useState(null)
+  const [toast, setToast] = useState(null)
   const timers = useRef([])
 
   const variant = useMemo(() => (itemType ? getAnyPhoneVariant(itemType.id) : null), [itemType])
@@ -223,64 +238,61 @@ export default function GatchaReveal({ itemType, onClose }) {
   // ngubah phase punya reveal yang udah ditutup.
   useEffect(() => {
     setPhase('idle')
+    setTapCount(0)
+    setTapPulseAt(null)
+    setToast(null)
     timers.current.forEach(clearTimeout)
     timers.current = []
   }, [itemType])
 
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
 
-  function schedule(nextPhase, afterSeconds) {
-    timers.current.push(setTimeout(() => setPhase(nextPhase), afterSeconds * 1000))
+  function schedule(fn, afterSeconds) {
+    timers.current.push(setTimeout(fn, afterSeconds * 1000))
   }
 
-  function handleOpen() {
+  function handleTap() {
+    if (phase === 'bursting' || phase === 'revealing' || phase === 'done') return // tap 4 udah jalan, abaikan tap susulan
+    const next = tapCount + 1
+    setTapCount(next)
+    setTapPulseAt(performance.now())
     hapticSelect()
-    setPhase('shaking')
-    schedule('opening', PHASE_SECONDS.shaking)
-    schedule('glowing', PHASE_SECONDS.shaking + PHASE_SECONDS.opening)
-    schedule('bursting', PHASE_SECONDS.shaking + PHASE_SECONDS.opening + glowDuration(rarity))
-    schedule('revealing', PHASE_SECONDS.shaking + PHASE_SECONDS.opening + glowDuration(rarity) + PHASE_SECONDS.bursting)
-    schedule(
-      'done',
-      PHASE_SECONDS.shaking + PHASE_SECONDS.opening + glowDuration(rarity) + PHASE_SECONDS.bursting + PHASE_SECONDS.revealing
-    )
-  }
 
-  // Confetti (DOM 2D biasa, bukan di dalam Canvas) -- cuma buat
-  // epic/legendary, dipicu SEKALI pas masuk phase 'bursting'.
-  useEffect(() => {
-    if (phase !== 'bursting' || !isBigReveal) return
-    hapticSuccess()
-  }, [phase, isBigReveal])
+    const nextPhase = PHASE_AFTER_TAP[next]
+    setPhase(nextPhase)
+
+    const toastText = TOAST_BY_TAP[next]
+    if (toastText) {
+      setToast(toastText)
+      schedule(() => setToast(null), TOAST_SECONDS)
+    }
+
+    // Cuma tap ke-4 yang jalan otomatis (burst -> reveal -> done).
+    // Tap 1-3 berhenti nunggu tap berikutnya, gak ada timer lanjutan.
+    if (next === 4) {
+      hapticSuccess()
+      schedule(() => setPhase('revealing'), BURST_SECONDS)
+      schedule(() => setPhase('done'), BURST_SECONDS + REVEAL_SECONDS)
+    }
+  }
 
   if (!itemType || !variant) return null
 
   return (
     <div className="gatcha-reveal-overlay">
-      <div className="gatcha-reveal-canvas-wrap">
-        {/* Kamera default react-three-fiber TIDAK auto nunjuk ke origin --
-            dia cuma duduk di `position` dengan rotasi netral (ngadep -Z
-            lurus, gak nunduk/nengadah). Jadi tinggi (Y) kamera di sini
-            HARUS disetel ke tengah vertikal konten (box + HP yang naik
-            ke atas pas reveal), bukan ditebak -- sebelumnya y=0.55 bikin
-            framing-nya mepet ke box doang, HP yang naik ke atas jadi
-            kepotong di luar frame. Konten totalnya kira-kira dari
-            y=-0.35 (dasar box) sampai y=1.15 (puncak HP pas full reveal),
-            tengahnya ~0.4 -- itu yang dipakai jadi tinggi kamera. Jarak
-            (Z) dimundurin dari 2.3 ke 3.1 + fov dinaikin dikit ke 36
-            biar ada margin ekstra, gak mepet persis di tepi. */}
-        {/* Masih kurang turun dikit (laporan dari screenshot) -- Y
-            kamera diturunin lagi 0.4 -> 0.25 (geser "jendela lihat"-nya
-            ke bawah, jadi area atas yang tadi kepotong ikut masuk
-            frame), sekalian jarak dimundurin lagi 3.1 -> 3.4 + fov naik
-            dikit ke 38 biar ada margin lega, bukan pas-pasan lagi. */}
+      <div
+        className="gatcha-reveal-canvas-wrap"
+        role="button"
+        aria-label="Buka box"
+        onClick={handleTap}
+      >
         <Canvas dpr={[1, 1.5]} camera={{ fov: 38, position: [0, 0.25, 3.4] }}>
           <ambientLight intensity={0.8} />
           <directionalLight position={[3, 5, 4]} intensity={1.1} />
           <directionalLight position={[-3, 2, -4]} intensity={0.35} />
           <hemisphereLight args={['#8f8fd9', '#0b1220', 0.5]} />
           <Suspense fallback={null}>
-            <GatchaBoxScene phase={phase} rarity={rarity} variant={variant} />
+            <GatchaBoxScene phase={phase} tapPulseAt={tapPulseAt} rarity={rarity} variant={variant} />
           </Suspense>
         </Canvas>
 
@@ -291,13 +303,11 @@ export default function GatchaReveal({ itemType, onClose }) {
             ))}
           </div>
         )}
-      </div>
 
-      {phase === 'idle' && (
-        <button type="button" className="gatcha-tap-btn" onClick={handleOpen}>
-          Sentuh buat buka
-        </button>
-      )}
+        {/* Toast tap 1-3 -- "Welcome to RP Town" dst, fade sendiri abis
+            TOAST_SECONDS, BUKAN instruksi cara main (itu yang dihapus). */}
+        <div className={`gatcha-toast${toast ? ' show' : ''}`}>{toast}</div>
+      </div>
 
       <div className={`gatcha-result-card${phase === 'done' ? ' show' : ''} rarity-${rarity}`}>
         <span className="gatcha-result-rarity">{rarity}</span>
