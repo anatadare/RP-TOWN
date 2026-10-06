@@ -2390,23 +2390,36 @@ body {
   height: 100% !important;
 }
 
-.gatcha-tap-btn {
-  margin-top: 1.5rem;
-  background: transparent;
-  border: 1px solid var(--lantern);
-  color: var(--lantern-soft);
-  border-radius: 999px;
-  padding: 0.7rem 1.8rem;
-  font-family: var(--font-body);
-  font-size: 0.9rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  animation: gatchaPulse 1.6s ease-in-out infinite;
+/* Box-nya sendiri yang jadi tombol tap (4x) -- gak ada lagi teks
+   "sentuh buat buka", warga pasti udah paham ini box gatcha. cursor
+   pointer doang buat kasih tau area ini bisa ditekan di desktop/testing;
+   di HP cukup keliatan dari box-nya nongol di tengah. */
+.gatcha-reveal-canvas-wrap {
+  cursor: pointer;
 }
 
-@keyframes gatchaPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 228, 255, 0.35); }
-  50% { box-shadow: 0 0 0 10px rgba(34, 228, 255, 0); }
+/* Toast tap 1-3 ("Welcome to RP Town" dst) -- fade in/out sendiri,
+   BUKAN instruksi cara main, cuma flavor text pendek per tap. */
+.gatcha-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  transform: translate(-50%, 6px);
+  background: rgba(10, 16, 28, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0.5rem 1.1rem;
+  font-size: 0.82rem;
+  color: var(--paper);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.gatcha-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .gatcha-result-card {
