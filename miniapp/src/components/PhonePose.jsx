@@ -65,28 +65,41 @@ const POSE_DEGREES = {
 // Komponen ke-3 (Z, "depan" telapak tangan) dimajuin 60% (0.04 -> 0.064)
 // -- itu yang salah kemarin, bukan komponen ke-2 (Y), HP-nya masih
 // kebenem ke DALAM tangan karena kurang maju, bukan kurang naik.
-export const PHONE_OFFSET_POS = [0, 0.09, 0.064]
-export const PHONE_OFFSET_ROT = [0, 0, (63 * Math.PI) / 180]
+// ---- GAYA PEGANG HP ----------------------------------------------------
+// 'side'  = (AKTIF) lengan KANAN nggantung natural di samping badan, HP
+//           dipegang TEGAK (portrait) dengan ujung atasnya di genggaman dan
+//           badan HP menjuntai ke bawah -- sesuai kotak merah di screenshot
+//           referensi (HP di samping tangan, bukan di depan perut).
+// 'chest' = gaya lama: lengan ditekuk ke depan dada, HP kebaring di depan
+//           perut. Kode & angka kalibrasinya sengaja DIPERTAHANKAN di bawah,
+//           tinggal ganti flag ini kalau mau balik.
+export const PHONE_HOLD_STYLE = 'chest'
+const SIDE = PHONE_HOLD_STYLE === 'side'
 
-// Kenapa HP-nya kebelah dua ketutupan kepalan (nongol di atas & bawah
-// tangan, tapi tengahnya ketutupan): FoldablePhone/BarPhone itu di-render
-// PUSAT di titik (0,0,0) model-nya sendiri, jadi PHONE_OFFSET_POS/ROT di
-// atas motar/naronya dari TITIK TENGAH HP. Orang megang HP beneran (lihat
-// foto referensi) itu genggamnya di bagian BAWAH, bukan tengah -- jadi
-// mau PHONE_OFFSET_POS digeser berapa pun, separuh panjang HP-nya bakal
-// selalu nembus ke arah kepalan dari sisi yang gak digeser.
-// Ini genggaman TAMBAHAN (bukan gantiin POS/ROT di atas) -- geser di
-// sepanjang sumbu Y LOKAL HP ITU SENDIRI, diterapkan SETELAH rotasi
-// PHONE_OFFSET_ROT (lihat cara dipakainya di TownWalk.jsx: nested group,
-// bukan ditambahin ke PHONE_OFFSET_POS) -- jadi arah gesernya otomatis
-// ngikut kemana pun HP-nya lagi menghadap, gak perlu dihitung ulang tiap
-// kali rotasinya di-tweak. ~0.35 -- separuh lebih dikit dari panjang akhir
-// HP (BarPhone ~0.64, FoldablePhone open ~0.62), biar titik pegangnya
-// deket ujung bawah, bukan pas di tengah.
-// ARAH (+0.35 vs -0.35) ditebak -- kalau pas dites HP-nya malah geser
-// MENJAUH dari kepalan (bukan nempel pas di ujung bawahnya), tinggal
-// diganti jadi negatif.
-export const PHONE_GRIP_SHIFT = 0.35
+// Konfigurasi per gaya. Orientasi HP dihitung di WORLD space oleh
+// alignPhoneUpright() (relatif ke badan karakter), jadi gak bergantung sumbu
+// lokal bone yang susah ditebak.
+//  anchor : titik genggam di bone Fist.R (koordinat lokal bone). Untuk 'chest'
+//           angkanya sama dengan kalibrasi telapak lama (pose tangan udah pas).
+//  tiltDeg: kemiringan HP ke depan (ujung atas menjauh dari badan).
+//           0 = tegak lurus (AKTIF, sesuai permintaan: HP lurus, jangan miring).
+//           Isi mis. 20-55 kalau suatu saat mau dimiringkan ke depan.
+//  faceBack: true = layar menghadap ke ARAH WAJAH karakter (belakang + atas).
+const STYLE = SIDE
+  ? { anchor: [0, 0.09, 0], tiltDeg: 0, faceBack: false, grip: -0.25, back: 0 }
+  : { anchor: [0, 0.09, 0.064], tiltDeg: 0, faceBack: true, grip: 0.22, back: 0.04 }
+export const PHONE_SIDE_ANCHOR = STYLE.anchor
+
+// Orientasi/posisi sekarang diurus alignPhoneUpright, jadi offset lama dinolkan.
+export const PHONE_OFFSET_POS = [0, 0, 0]
+export const PHONE_OFFSET_ROT = [0, 0, 0]
+
+// Geser sepanjang sumbu panjang HP: 'chest' positif = telapak menopang bagian
+// BAWAH HP, badan HP menjulang lurus ke atas. 'side' negatif =
+// HP menjuntai ke bawah dari genggaman. Kalau kurang pas, ubah angka di STYLE.grip.
+export const PHONE_GRIP_SHIFT = STYLE.grip
+// Dorongan kecil ke arah belakang HP supaya punggung HP nempel telapak, gak nembus.
+export const PHONE_BACK_SHIFT = STYLE.back
 
 const parentWorldQuat = new THREE.Quaternion()
 const currentWorldQuat = new THREE.Quaternion()
@@ -118,6 +131,9 @@ export function applyPhonePose(root, degrees = POSE_DEGREES) {
   const shoulderR = root.getObjectByName('ShoulderR')
   if (!upperArm || !lowerArm || !fist || !shoulderL || !shoulderR) return null
 
+  // Mode 'side': lengan DIBIARIN natural (ikut animasi / bind pose), gak ditekuk.
+  if (SIDE) return fist
+
   // Sumbu "kiri-kanan tubuh": garis dari bahu kiri ke bahu kanan, dari
   // posisi bone yang BENERAN ada di model (bukan tebakan sumbu lokal).
   // Otomatis ikut arah hadap karakter (dihitung di world space). Nekuk
@@ -141,6 +157,34 @@ export function applyPhonePose(root, degrees = POSE_DEGREES) {
   fist.updateMatrixWorld(true)
 
   return fist
+}
+
+
+const _fistQ = new THREE.Quaternion()
+const _rootQ = new THREE.Quaternion()
+const _localQ = new THREE.Quaternion()
+const _tiltQ = new THREE.Quaternion()
+const _flipQ = new THREE.Quaternion()
+const _X = new THREE.Vector3(1, 0, 0)
+const _Y = new THREE.Vector3(0, 1, 0)
+
+// Pasang grup HP ke bone Fist.R dengan orientasi yang dihitung di world space
+// (relatif ke badan karakter), berapa pun rotasi bone tangannya. Dipanggil TIAP
+// FRAME setelah animation mixer (TownWalk) atau sekali di pose statis
+// (CharacterPreview). `root` = object model karakter.
+//   desired = rootWorld * tiltX(tiltDeg) * (faceBack ? flipY(180deg) : I)
+//   local   = inverse(fistWorld) * desired
+export function alignPhoneUpright(phoneGroup, fist, root) {
+  if (!phoneGroup || !fist || !root) return
+  fist.updateWorldMatrix(true, false)
+  root.updateWorldMatrix(true, false)
+  fist.getWorldQuaternion(_fistQ)
+  root.getWorldQuaternion(_rootQ)
+  _tiltQ.setFromAxisAngle(_X, THREE.MathUtils.degToRad(STYLE.tiltDeg))
+  _flipQ.setFromAxisAngle(_Y, STYLE.faceBack ? Math.PI : 0)
+  _localQ.copy(_fistQ).invert().multiply(_rootQ).multiply(_tiltQ).multiply(_flipQ)
+  phoneGroup.quaternion.copy(_localQ)
+  phoneGroup.position.set(STYLE.anchor[0], STYLE.anchor[1], STYLE.anchor[2])
 }
 
 // HP low-poly, dibikin dari primitive geometry (bukan file .glb) --
