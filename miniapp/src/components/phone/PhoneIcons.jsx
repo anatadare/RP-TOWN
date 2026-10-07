@@ -1,80 +1,232 @@
-// Ikon SVG sederhana (24x24, currentColor) buat aplikasi & status bar HP.
-const base = { width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round', strokeLinejoin: 'round' }
+import { useEffect, useRef, useState } from 'react'
+import { getPhoneTheme } from './phoneThemes'
+import { hapticSelect } from '../../lib/telegram'
+import {
+  IconBack, IconBattery, IconCamera, IconContacts, IconMarket, IconSignal, IconSocial, IconWifi, IconSearch,
+} from './PhoneIcons'
+import ContactsApp from './apps/ContactsApp'
+import CameraApp from './apps/CameraApp'
+import SocialApp from './apps/SocialApp'
+import MarketApp from './apps/MarketApp'
 
-export const IconContacts = (p) => (
-  <svg {...base} {...p}>
-    <circle cx="12" cy="8.5" r="3.6" />
-    <path d="M4.5 20c.9-3.6 3.8-5.4 7.5-5.4s6.6 1.8 7.5 5.4" />
-  </svg>
-)
-export const IconCamera = (p) => (
-  <svg {...base} {...p}>
-    <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.4l1.2-1.8h5.8L16.1 6h1.4A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
-    <circle cx="12" cy="12.5" r="3.4" />
-  </svg>
-)
-export const IconSocial = (p) => (
-  <svg {...base} {...p}>
-    <path d="M12 20s-7-4.3-7-9.7A4.1 4.1 0 0 1 9.1 6.2c1.2 0 2.2.6 2.9 1.6.7-1 1.7-1.6 2.9-1.6A4.1 4.1 0 0 1 19 10.3C19 15.7 12 20 12 20z" />
-  </svg>
-)
-export const IconMarket = (p) => (
-  <svg {...base} {...p}>
-    <path d="M5 9h14l-1 10.2a1.5 1.5 0 0 1-1.5 1.3h-9A1.5 1.5 0 0 1 6 19.2z" />
-    <path d="M8.5 9V7.5a3.5 3.5 0 0 1 7 0V9" />
-  </svg>
-)
-export const IconBack = (p) => (
-  <svg {...base} {...p}><path d="M15 5l-7 7 7 7" /></svg>
-)
-export const IconSearch = (p) => (
-  <svg {...base} {...p}><circle cx="11" cy="11" r="6.2" /><path d="M16 16l4 4" /></svg>
-)
-export const IconSwap = (p) => (
-  <svg {...base} {...p}><path d="M4 9h13l-3-3M20 15H7l3 3" /></svg>
-)
-export const IconSend = (p) => (
-  <svg {...base} {...p}><path d="M21 3L10 14M21 3l-6.5 18-3.5-7.5L3.5 10z" /></svg>
-)
-export const IconTrash = (p) => (
-  <svg {...base} {...p}><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" /></svg>
-)
-export const IconClose = (p) => (
-  <svg {...base} {...p}><path d="M6 6l12 12M18 6L6 18" /></svg>
-)
-export const IconRefresh = (p) => (
-  <svg {...base} {...p}><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
-)
+const APPS = [
+  { id: 'contacts', label: 'Kontak', Icon: IconContacts, Component: ContactsApp },
+  { id: 'camera', label: 'Kamera', Icon: IconCamera, Component: CameraApp },
+  { id: 'social', label: 'Sosmed', Icon: IconSocial, Component: SocialApp },
+  { id: 'market', label: 'Market', Icon: IconMarket, Component: MarketApp },
+]
 
-export const IconHome = (p) => (
-  <svg {...base} {...p}><path d="M4 11l8-6.5 8 6.5v8a1.5 1.5 0 0 1-1.5 1.5H15v-6H9v6H5.5A1.5 1.5 0 0 1 4 19z" /></svg>
-)
-export const IconPlus = (p) => (
-  <svg {...base} {...p}><rect x="4" y="4" width="16" height="16" rx="4.5" /><path d="M12 8.5v7M8.5 12h7" /></svg>
-)
-export const IconComment = (p) => (
-  <svg {...base} {...p}><path d="M20 11.5A7.5 7.5 0 0 1 8.9 18.1L4 19.5l1.4-4.6A7.5 7.5 0 1 1 20 11.5z" /></svg>
-)
-export const IconImage = (p) => (
-  <svg {...base} {...p}><rect x="4" y="5" width="16" height="14" rx="3" /><circle cx="9" cy="10" r="1.6" /><path d="M5 17l4.5-4.5 3 3 2-2L19 17" /></svg>
-)
+// ---- Swipe kiri/kanan = kembali ke home screen HP (tambahan; tombol home tetap ada) ----
+const SWIPE_MIN_X = 80      // geser minimal (px)
+const SWIPE_RATIO = 2       // harus jauh lebih horizontal daripada vertikal
+const SWIPE_MAX_MS = 700    // gesekan cepat, bukan drag lambat
 
-// ---- status bar ----
-export const IconSignal = () => (
-  <svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor">
-    <rect x="0" y="7" width="3" height="4" rx="0.8" /><rect x="4.3" y="5" width="3" height="6" rx="0.8" />
-    <rect x="8.6" y="2.5" width="3" height="8.5" rx="0.8" /><rect x="12.9" y="0" width="3" height="11" rx="0.8" />
-  </svg>
-)
-export const IconWifi = () => (
-  <svg width="15" height="11" viewBox="0 0 15 11" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
-    <path d="M1 3.6a9.5 9.5 0 0 1 13 0M3.2 6.1a6.3 6.3 0 0 1 8.6 0" /><circle cx="7.5" cy="9" r="1.1" fill="currentColor" stroke="none" />
-  </svg>
-)
-export const IconBattery = () => (
-  <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-    <rect x="0.6" y="0.6" width="21" height="10.8" rx="3" stroke="currentColor" strokeOpacity="0.5" />
-    <rect x="2" y="2" width="15" height="8" rx="1.8" fill="currentColor" />
-    <rect x="22.8" y="4" width="1.6" height="4" rx="0.8" fill="currentColor" fillOpacity="0.5" />
-  </svg>
-)
+// Jangan anggap swipe kalau jari mulai di: kolom ketik, daftar yang bisa digeser
+// horizontal (mis. baris Cerita), atau lembar komentar/detail post.
+function swipeBlocked(target, host) {
+  for (let el = target; el && el !== host; el = el.parentElement) {
+    if (!(el instanceof HTMLElement)) continue
+    const tag = el.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable) return true
+    if (el.dataset.noSwipe !== undefined || el.classList.contains('ph-sheet-wrap')) return true
+    if (el.scrollWidth > el.clientWidth + 1) {
+      const ox = getComputedStyle(el).overflowX
+      if (ox === 'auto' || ox === 'scroll') return true
+    }
+  }
+  return false
+}
+
+function useClock() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 15000)
+    return () => clearInterval(t)
+  }, [])
+  const time = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':')
+  const date = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })
+  const dateShort = now.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '')
+  const parts = {
+    weekday: now.toLocaleDateString('id-ID', { weekday: 'short' }).replace(',', ''),
+    day: String(now.getDate()),
+    month: now.toLocaleDateString('id-ID', { month: 'short' }),
+  }
+  return { time, date, dateShort, parts }
+}
+
+function StatusBar({ kind, time }) {
+  return (
+    <div className="ph-status">
+      <span className="ph-status-time">{time}</span>
+      {kind === 'island' && <span className="ph-island" />}
+      {kind === 'punch' && <span className="ph-punch" />}
+      <span className="ph-status-icons">
+        <IconSignal /><IconWifi /><IconBattery />
+      </span>
+    </div>
+  )
+}
+
+function Widget({ kind, clock }) {
+  if (kind === 'none') return <div className="ph-widget ph-widget-none" />
+  if (kind === 'ios') {
+    return (
+      <div className="ph-widget ph-widget-ios">
+        <div className="ph-ios-card">
+          <b>{clock.parts.weekday.toUpperCase()}</b>
+          <span className="ph-ios-big">{clock.parts.day}</span>
+          <span>{clock.parts.month}</span>
+        </div>
+        <div className="ph-ios-card">
+          <b>Cuaca</b>
+          <span className="ph-ios-big">29°</span>
+          <span>Cerah berawan</span>
+        </div>
+      </div>
+    )
+  }
+  if (kind === 'glance') {
+    return (
+      <div className="ph-widget ph-widget-glance">
+        <div className="ph-glance-date">{clock.date}</div>
+        <div className="ph-glance-sub">☀ 29° · Cerah berawan</div>
+      </div>
+    )
+  }
+  if (kind === 'cards') {
+    return (
+      <div className="ph-widget ph-widget-cards">
+        <div className="ph-widget-clock">{clock.time}</div>
+        <div className="ph-cards-row">
+          <div className="ph-mini-card"><b>Cuaca</b><span>29° Cerah</span></div>
+          <div className="ph-mini-card"><b>Kalender</b><span>{clock.dateShort}</span></div>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className={`ph-widget ph-widget-${kind}`}>
+      {kind === 'xmode' && <span className="ph-xmode">X MODE ●</span>}
+      <div className="ph-widget-clock">{clock.time}</div>
+      <div className="ph-widget-date">{clock.date}</div>
+    </div>
+  )
+}
+
+function AppIcon({ app, theme, onOpen, showLabel }) {
+  const [c1, c2] = theme.appColors?.[app.id] || ['#888', '#555']
+  const { Icon } = app
+  return (
+    <button type="button" className="ph-app" onClick={() => onOpen(app.id)} aria-label={app.label}>
+      <span
+        className="ph-app-icon"
+        style={{ '--ic1': c1, '--ic2': c2, '--ic-ink': theme.iconInk || '#fff' }}
+      >
+        <Icon width={26} height={26} />
+      </span>
+      {showLabel && <span className="ph-app-label">{app.label}</span>}
+    </button>
+  )
+}
+
+// Layar HP lengkap: status bar -> (home | aplikasi) -> bar navigasi.
+// Tampilannya diatur lewat data-* + CSS variable dari tema brand (phoneThemes.js).
+export default function PhoneScreen({ variant, citizenId, onClose, initialApp, onOpenRpCamera }) {
+  const theme = getPhoneTheme(variant)
+  const clock = useClock()
+  const [appId, setAppId] = useState(initialApp || null)
+  const app = APPS.find((a) => a.id === appId)
+
+  const swipe = useRef(null)
+  function onSwipeStart(e) {
+    if (e.touches.length !== 1) { swipe.current = null; return }
+    const t = e.touches[0]
+    swipe.current = { x: t.clientX, y: t.clientY, at: Date.now(), blocked: swipeBlocked(e.target, e.currentTarget) }
+  }
+  function onSwipeEnd(e) {
+    const s = swipe.current
+    swipe.current = null
+    if (!s || s.blocked) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - s.x
+    const dy = t.clientY - s.y
+    if (Math.abs(dx) >= SWIPE_MIN_X && Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO && Date.now() - s.at <= SWIPE_MAX_MS) home()
+  }
+
+  function open(id) { hapticSelect(); setAppId(id) }
+  function home() { hapticSelect(); setAppId(null) }
+  function back() { hapticSelect(); if (appId) setAppId(null) }
+
+  const floatingDock = theme.dock === 'floating'
+
+  return (
+    <div
+      className="ph-screen"
+      data-brand={theme.key}
+      data-mode={theme.mode}
+      data-status={theme.status}
+      data-nav={theme.nav}
+      data-header={theme.header}
+      data-icon-shape={theme.icon.shape}
+      data-icon-style={theme.icon.style}
+      data-in-app={appId ? '1' : '0'}
+      data-app={appId || 'home'}
+      style={theme.vars}
+    >
+      <StatusBar kind={theme.status} time={clock.time} />
+
+      {!app && (
+        <div className="ph-home">
+          <Widget kind={theme.widget} clock={clock} />
+          {!floatingDock && (
+            <div className="ph-grid">
+              {APPS.map((a) => <AppIcon key={a.id} app={a} theme={theme} onOpen={open} showLabel />)}
+            </div>
+          )}
+          <div className="ph-home-spacer" />
+          {theme.dock === 'floating' && (
+            <div className="ph-dock">
+              {APPS.map((a) => <AppIcon key={a.id} app={a} theme={theme} onOpen={open} showLabel={false} />)}
+            </div>
+          )}
+          {theme.dock === 'search' && (
+            <div className="ph-searchbar"><IconSearch width={18} height={18} /> Cari</div>
+          )}
+          {theme.dock === 'bar' && (
+            <div className="ph-dots"><i className="is-on" /><i /><i /></div>
+          )}
+          <div className="ph-os-name">{theme.osName}</div>
+        </div>
+      )}
+
+      {app && (
+        <div
+          className="ph-app-host"
+          onTouchStart={onSwipeStart}
+          onTouchEnd={onSwipeEnd}
+          onTouchCancel={() => { swipe.current = null }}
+        >
+          <header className="ph-app-header">
+            <button type="button" className="ph-back" onClick={home} aria-label="Kembali">
+              <IconBack width={22} height={22} />
+            </button>
+            <h1>{app.label}</h1>
+          </header>
+          <div className="ph-app-body">
+            <app.Component citizenId={citizenId} onOpenApp={open} onOpenRpCamera={onOpenRpCamera} />
+          </div>
+        </div>
+      )}
+
+      {theme.nav === 'gesture' ? (
+        <button type="button" className="ph-nav-gesture" onClick={home} aria-label="Ke beranda"><i /></button>
+      ) : (
+        <div className="ph-nav-buttons">
+          <button type="button" onClick={back} aria-label="Kembali">◁</button>
+          <button type="button" onClick={home} aria-label="Beranda">○</button>
+          <button type="button" onClick={onClose} aria-label="Tutup HP">□</button>
+        </div>
+      )}
+    </div>
+  )
+}
