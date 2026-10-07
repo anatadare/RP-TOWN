@@ -1,47 +1,68 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  addComment, createPost, getComments, getFeed, getMyLikes, loadPhotos, takePendingShare,
+  clearPendingSocialOpen, countUnread, createPost, getFeed, getMyLikes, loadPhotos, peekPendingSocialOpen, takePendingShare,
   timeAgo, toggleLike, uploadPhoto,
 } from '../../../lib/phoneApps'
 import { hapticSelect, hapticSuccess } from '../../../lib/telegram'
-import { IconComment, IconHome, IconImage, IconPlus, IconSend, IconSocial, IconContacts, IconClose } from '../PhoneIcons'
+import { IconBack, IconComment, IconHome, IconImage, IconPlus, IconSend, IconSocial, IconContacts, IconClose, IconSearch } from '../PhoneIcons'
+import { Avatar, Media } from './social/shared'
+import CommentSheet from './social/CommentSheet'
+import ProfileView from './social/ProfileView'
+import ChatView from './social/ChatView'
+import InboxView from './social/InboxView'
+import SearchView from './social/SearchView'
 
-function initials(name) {
-  if (!name) return '?'
-  return name.trim().split(/\s+/).slice(0, 2).map((s) => s[0]?.toUpperCase()).join('')
-}
-
-function Avatar({ author, size }) {
+function PostCard({ post, isLiked, onLike, onComments, onOpenProfile }) {
+  const open = () => onOpenProfile(post.citizen_id)
   return (
-    <span className={`ph-avatar${size ? ` ph-avatar-${size}` : ''}`}>
-      {author?.avatar_url ? <img src={author.avatar_url} alt="" /> : initials(author?.display_name)}
-    </span>
-  )
-}
-
-// Kotak media post: foto kalau ada, kalau post teks doang -> kartu teks berwarna.
-function Media({ post, onDoubleTap }) {
-  if (post.image_url) {
-    return (
-      <div className="ph-media" onDoubleClick={onDoubleTap}>
-        <img src={post.image_url} alt="" loading="lazy" />
+    <article className="ph-ig-post">
+      <header>
+        <Avatar author={post.author} size="sm2" onClick={open} />
+        <button type="button" className="ph-row-text ph-who" onClick={open}>
+          <span className="ph-row-title">{post.author?.display_name || 'Warga'}</span>
+          <span className="ph-row-sub">{post.author?.public_id || timeAgo(post.created_at)}</span>
+        </button>
+      </header>
+      <Media post={post} onDoubleTap={() => onLike(post, true)} />
+      <div className="ph-ig-actions">
+        <button type="button" className={`ph-ig-act${isLiked ? ' is-on' : ''}`} onClick={() => onLike(post)} aria-label="Suka">
+          <IconSocial width={26} height={26} />
+        </button>
+        <button type="button" className="ph-ig-act" onClick={() => { hapticSelect(); onComments(post) }} aria-label="Komentar">
+          <IconComment width={25} height={25} />
+        </button>
       </div>
-    )
-  }
-  return (
-    <div className="ph-media ph-media-text" onDoubleClick={onDoubleTap}>
-      <p>{post.body}</p>
-    </div>
+      <div className="ph-ig-meta">
+        <p className="ph-ig-likes">{post.likes_count} suka</p>
+        {post.image_url && post.body && (
+          <p className="ph-ig-caption"><b>{post.author?.display_name || 'Warga'}</b> {post.body}</p>
+        )}
+        {post.comments_count > 0 && (
+          <button type="button" className="ph-ig-viewall" onClick={() => onComments(post)}>
+            Lihat {post.comments_count} komentar
+          </button>
+        )}
+        <p className="ph-ig-time">{timeAgo(post.created_at)} yang lalu{post.edited_at ? ' · diedit' : ''}</p>
+      </div>
+    </article>
   )
 }
 
 export default function SocialApp({ citizenId }) {
-  const [tab, setTab] = useState('home') // 'home' | 'create' | 'profile'
+  const [tab, setTab] = useState('home') // 'home' | 'search' | 'create' | 'inbox' | 'profile'
   const [posts, setPosts] = useState([])
   const [liked, setLiked] = useState(() => new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [onlyAuthor, setOnlyAuthor] = useState(null)
+  // Layar yang ditumpuk di atas tab: { type: 'profile', id } | { type: 'chat', person }
+  const [stack, setStack] = useState(() => {
+    const t = peekPendingSocialOpen() // dari app Kontak: langsung ke chat / profil orangnya
+    if (t?.type === 'chat' && t.person?.id) return [{ type: 'chat', person: t.person }]
+    if (t?.type === 'profile' && t.id) return [{ type: 'profile', id: t.id }]
+    return []
+  })
+  const [unread, setUnread] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [commentsFor, setCommentsFor] = useState(null) // post yang komentarnya lagi dibuka
 
   // composer
@@ -53,6 +74,7 @@ export default function SocialApp({ citizenId }) {
 
   // Dari app Kamera ("Bagikan ke Sosmed") langsung buka tab buat post.
   useEffect(() => { if (photo) setTab('create') }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { clearPendingSocialOpen() }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -78,10 +100,32 @@ export default function SocialApp({ citizenId }) {
     return [...seen.entries()].slice(0, 12)
   }, [posts])
 
-  const visible = onlyAuthor ? posts.filter((p) => p.citizen_id === onlyAuthor) : posts
-  const mine = posts.filter((p) => p.citizen_id === citizenId)
-  const myAuthor = mine[0]?.author
-  const myLikesTotal = mine.reduce((n, p) => n + p.likes_count, 0)
+  const myAuthor = posts.find((p) => p.citizen_id === citizenId)?.author
+  const top = stack[stack.length - 1]
+
+  // ---- navigasi ----
+  function openProfile(id) {
+    setCommentsFor(null)
+    if (id === citizenId) { setStack([]); setTab('profile'); return }
+    setStack((st) => (st[st.length - 1]?.type === 'profile' && st[st.length - 1].id === id ? st : [...st, { type: 'profile', id }]))
+  }
+  function openChat(person) { setStack((st) => [...st, { type: 'chat', person }]) }
+  function pop() {
+    hapticSelect()
+    if (top?.type === 'chat' && citizenId) countUnread(citizenId).then(setUnread).catch(() => {})
+    setStack((st) => st.slice(0, -1))
+  }
+  function pickTab(t) { hapticSelect(); setStack([]); setTab(t) }
+
+  // Titik merah pesan belum dibaca.
+  useEffect(() => {
+    if (!citizenId) return undefined
+    let cancelled = false
+    const run = () => countUnread(citizenId).then((n) => { if (!cancelled) setUnread(n) }).catch(() => {})
+    run()
+    const t = setInterval(() => { if (!document.hidden) run() }, 8000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [citizenId])
 
   async function like(post, forceOn = false) {
     if (!citizenId) return
@@ -97,11 +141,16 @@ export default function SocialApp({ citizenId }) {
     try {
       const count = await toggleLike(citizenId, post.id)
       setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, likes_count: count } : p)))
+      return count
     } catch (err) {
       console.error(err)
       load()
+      throw err
     }
   }
+  // Dipakai PostViewer: kembalikan jumlah like terbaru dari server.
+  const likeFromViewer = (post) => like(post)
+  const likeSafe = (post, forceOn) => { like(post, forceOn).catch(() => {}) }
 
   async function submit() {
     const body = draft.trim()
@@ -115,7 +164,6 @@ export default function SocialApp({ citizenId }) {
       setDraft('')
       setPhoto(null)
       setTab('home')
-      setOnlyAuthor(null)
       await load()
     } catch (err) {
       console.error(err)
@@ -143,59 +191,48 @@ export default function SocialApp({ citizenId }) {
     img.src = url
   }
 
-  function PostCard({ post }) {
-    const isLiked = liked.has(post.id)
-    return (
-      <article className="ph-ig-post">
-        <header>
-          <Avatar author={post.author} size="sm2" />
-          <span className="ph-row-text">
-            <span className="ph-row-title">{post.author?.display_name || 'Warga'}</span>
-            <span className="ph-row-sub">{post.author?.username ? `@${post.author.username}` : timeAgo(post.created_at)}</span>
-          </span>
-        </header>
-        <Media post={post} onDoubleTap={() => like(post, true)} />
-        <div className="ph-ig-actions">
-          <button type="button" className={`ph-ig-act${isLiked ? ' is-on' : ''}`} onClick={() => like(post)} aria-label="Suka">
-            <IconSocial width={26} height={26} />
-          </button>
-          <button type="button" className="ph-ig-act" onClick={() => { hapticSelect(); setCommentsFor(post) }} aria-label="Komentar">
-            <IconComment width={25} height={25} />
-          </button>
-        </div>
-        <div className="ph-ig-meta">
-          <p className="ph-ig-likes">{post.likes_count} suka</p>
-          {post.image_url && post.body && (
-            <p className="ph-ig-caption"><b>{post.author?.display_name || 'Warga'}</b> {post.body}</p>
-          )}
-          {post.comments_count > 0 && (
-            <button type="button" className="ph-ig-viewall" onClick={() => setCommentsFor(post)}>
-              Lihat {post.comments_count} komentar
-            </button>
-          )}
-          <p className="ph-ig-time">{timeAgo(post.created_at)} yang lalu</p>
-        </div>
-      </article>
-    )
+  const onCommentAdded = (id) => {
+    setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, comments_count: p.comments_count + 1 } : p)))
+    setRefreshKey((k) => k + 1)
   }
+  const profileProps = {
+    viewerId: citizenId,
+    liked,
+    refreshKey,
+    onToggleLike: likeFromViewer,
+    onOpenComments: setCommentsFor,
+    onOpenProfile: openProfile,
+    onChat: openChat,
+    onPostsChanged: load,
+  }
+  const inChat = top?.type === 'chat'
 
   return (
     <div className="ph-social ph-ig">
-      <div className="ph-ig-scroll">
-        {tab === 'home' && (
+      <div className={`ph-ig-scroll${inChat ? ' is-chat' : ''}`}>
+        {top?.type === 'profile' && (
+          <>
+            <div className="ph-subhead">
+              <button type="button" className="ph-back" onClick={pop} aria-label="Kembali"><IconBack width={22} height={22} /></button>
+              <span className="ph-subhead-title">Profil</span>
+            </div>
+            <ProfileView key={top.id} targetId={top.id} {...profileProps} />
+          </>
+        )}
+
+        {top?.type === 'chat' && (
+          <ChatView key={top.person.id} viewerId={citizenId} other={top.person} onBack={pop} onOpenProfile={openProfile} />
+        )}
+
+        {!top && tab === 'home' && (
           <>
             <div className="ph-stories">
-              <button type="button" className="ph-story" onClick={() => setTab('create')}>
+              <button type="button" className="ph-story" onClick={() => pickTab('create')}>
                 <span className="ph-story-ring is-self"><Avatar author={myAuthor} /><i className="ph-story-plus">+</i></span>
                 <span>Kamu</span>
               </button>
               {authors.filter(([id]) => id !== citizenId).map(([id, a]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`ph-story${onlyAuthor === id ? ' is-picked' : ''}`}
-                  onClick={() => { hapticSelect(); setOnlyAuthor(onlyAuthor === id ? null : id) }}
-                >
+                <button key={id} type="button" className="ph-story" onClick={() => { hapticSelect(); openProfile(id) }}>
                   <span className="ph-story-ring"><Avatar author={a} /></span>
                   <span>{(a?.display_name || 'Warga').split(' ')[0]}</span>
                 </button>
@@ -203,10 +240,14 @@ export default function SocialApp({ citizenId }) {
             </div>
             {loading && <p className="ph-state">Memuat...</p>}
             {error && <p className="ph-state">{error}</p>}
-            {!loading && !error && visible.length === 0 && <p className="ph-state">Belum ada post. Jadi yang pertama!</p>}
-            {visible.map((p) => <Fragment key={p.id}>{PostCard({ post: p })}</Fragment>)}
+            {!loading && !error && posts.length === 0 && <p className="ph-state">Belum ada post. Jadi yang pertama!</p>}
+            {posts.map((p) => (
+              <PostCard key={p.id} post={p} isLiked={liked.has(p.id)} onLike={likeSafe} onComments={setCommentsFor} onOpenProfile={openProfile} />
+            ))}
           </>
         )}
+
+        {!top && tab === 'search' && <SearchView viewerId={citizenId} onOpenProfile={openProfile} />}
 
         {tab === 'create' && (
           <div className="ph-create">
@@ -248,100 +289,27 @@ export default function SocialApp({ citizenId }) {
           </div>
         )}
 
-        {tab === 'profile' && (
-          <div className="ph-profile">
-            <div className="ph-profile-head">
-              <Avatar author={myAuthor} size="xl" />
-              <div className="ph-profile-stats">
-                <span><b>{mine.length}</b>post</span>
-                <span><b>{myLikesTotal}</b>suka</span>
-              </div>
-            </div>
-            <p className="ph-profile-name">{myAuthor?.display_name || 'Profil Saya'}</p>
-            {myAuthor?.username && <p className="ph-sub">@{myAuthor.username}</p>}
-            {mine.length === 0 && <p className="ph-state">Belum ada postinganmu.</p>}
-            <div className="ph-profile-grid">
-              {mine.map((p) => (
-                <button key={p.id} type="button" className="ph-grid-cell" onClick={() => setCommentsFor(p)}>
-                  {p.image_url ? <img src={p.image_url} alt="" loading="lazy" /> : <span>{p.body}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {!top && tab === 'inbox' && <InboxView viewerId={citizenId} onOpenChat={openChat} onLoaded={setUnread} />}
+
+        {!top && tab === 'profile' && <ProfileView targetId={citizenId} {...profileProps} />}
       </div>
 
-      <nav className="ph-tabbar">
-        <button type="button" className={tab === 'home' ? 'is-on' : ''} onClick={() => { hapticSelect(); setTab('home') }} aria-label="Beranda"><IconHome width={26} height={26} /></button>
-        <button type="button" className={tab === 'create' ? 'is-on' : ''} onClick={() => { hapticSelect(); setTab('create') }} aria-label="Buat post"><IconPlus width={26} height={26} /></button>
-        <button type="button" className={tab === 'profile' ? 'is-on' : ''} onClick={() => { hapticSelect(); setTab('profile') }} aria-label="Profil"><IconContacts width={26} height={26} /></button>
-      </nav>
+      {!inChat && (
+        <nav className="ph-tabbar">
+          <button type="button" className={!top && tab === 'home' ? 'is-on' : ''} onClick={() => pickTab('home')} aria-label="Beranda"><IconHome width={26} height={26} /></button>
+          <button type="button" className={!top && tab === 'search' ? 'is-on' : ''} onClick={() => pickTab('search')} aria-label="Cari"><IconSearch width={26} height={26} /></button>
+          <button type="button" className={!top && tab === 'create' ? 'is-on' : ''} onClick={() => pickTab('create')} aria-label="Buat post"><IconPlus width={26} height={26} /></button>
+          <button type="button" className={!top && tab === 'inbox' ? 'is-on' : ''} onClick={() => pickTab('inbox')} aria-label="Pesan">
+            <span className="ph-tab-icon"><IconComment width={26} height={26} />{unread > 0 && <i className="ph-dot" />}</span>
+          </button>
+          <button type="button" className={!top && tab === 'profile' ? 'is-on' : ''} onClick={() => pickTab('profile')} aria-label="Profil"><IconContacts width={26} height={26} /></button>
+        </nav>
+      )}
 
       {commentsFor && (
         <CommentSheet post={commentsFor} citizenId={citizenId} onClose={() => setCommentsFor(null)}
-          onAdded={(id) => setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, comments_count: p.comments_count + 1 } : p)))} />
+          onAdded={onCommentAdded} onOpenProfile={openProfile} />
       )}
-    </div>
-  )
-}
-
-function CommentSheet({ post, citizenId, onClose, onAdded }) {
-  const [list, setList] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [text, setText] = useState('')
-  const [sending, setSending] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    getComments(post.id)
-      .then((rows) => { if (!cancelled) setList(rows) })
-      .catch((e) => console.error(e))
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [post.id])
-
-  async function send() {
-    const body = text.trim()
-    if (!body || sending || !citizenId) return
-    setSending(true)
-    try {
-      await addComment(citizenId, post.id, body)
-      setText('')
-      onAdded(post.id)
-      setList(await getComments(post.id))
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div className="ph-sheet-wrap">
-      <button type="button" className="ph-sheet-backdrop" onClick={onClose} aria-label="Tutup" />
-      <div className="ph-sheet">
-        <div className="ph-sheet-grab" />
-        <h3>Komentar</h3>
-        <div className="ph-sheet-list">
-          <div className="ph-comment">
-            <Avatar author={post.author} size="sm2" />
-            <p><b>{post.author?.display_name || 'Warga'}</b> {post.body}</p>
-          </div>
-          {loading && <p className="ph-state">Memuat...</p>}
-          {!loading && list.length === 0 && <p className="ph-state">Belum ada komentar.</p>}
-          {list.map((c) => (
-            <div key={c.id} className="ph-comment">
-              <Avatar author={c.author} size="sm2" />
-              <p><b>{c.author?.display_name || 'Warga'}</b> {c.body} <span className="ph-row-sub">{timeAgo(c.created_at)}</span></p>
-            </div>
-          ))}
-        </div>
-        <div className="ph-sheet-input">
-          <input type="text" maxLength={200} placeholder="Tambahkan komentar..." value={text} onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') send() }} />
-          <button type="button" className="ph-btn ph-btn-primary ph-btn-sm" disabled={!text.trim() || sending} onClick={send}>Kirim</button>
-        </div>
-      </div>
     </div>
   )
 }
