@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getPhoneTheme } from './phoneThemes'
 import { hapticSelect } from '../../lib/telegram'
 import {
@@ -15,6 +15,27 @@ const APPS = [
   { id: 'social', label: 'Sosmed', Icon: IconSocial, Component: SocialApp },
   { id: 'market', label: 'Market', Icon: IconMarket, Component: MarketApp },
 ]
+
+// ---- Swipe kiri/kanan = kembali ke home screen HP (tambahan; tombol home tetap ada) ----
+const SWIPE_MIN_X = 80      // geser minimal (px)
+const SWIPE_RATIO = 2       // harus jauh lebih horizontal daripada vertikal
+const SWIPE_MAX_MS = 700    // gesekan cepat, bukan drag lambat
+
+// Jangan anggap swipe kalau jari mulai di: kolom ketik, daftar yang bisa digeser
+// horizontal (mis. baris Cerita), atau lembar komentar/detail post.
+function swipeBlocked(target, host) {
+  for (let el = target; el && el !== host; el = el.parentElement) {
+    if (!(el instanceof HTMLElement)) continue
+    const tag = el.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable) return true
+    if (el.dataset.noSwipe !== undefined || el.classList.contains('ph-sheet-wrap')) return true
+    if (el.scrollWidth > el.clientWidth + 1) {
+      const ox = getComputedStyle(el).overflowX
+      if (ox === 'auto' || ox === 'scroll') return true
+    }
+  }
+  return false
+}
 
 function useClock() {
   const [now, setNow] = useState(() => new Date())
@@ -110,11 +131,27 @@ function AppIcon({ app, theme, onOpen, showLabel }) {
 
 // Layar HP lengkap: status bar -> (home | aplikasi) -> bar navigasi.
 // Tampilannya diatur lewat data-* + CSS variable dari tema brand (phoneThemes.js).
-export default function PhoneScreen({ variant, citizenId, onClose }) {
+export default function PhoneScreen({ variant, citizenId, onClose, initialApp, onOpenRpCamera }) {
   const theme = getPhoneTheme(variant)
   const clock = useClock()
-  const [appId, setAppId] = useState(null)
+  const [appId, setAppId] = useState(initialApp || null)
   const app = APPS.find((a) => a.id === appId)
+
+  const swipe = useRef(null)
+  function onSwipeStart(e) {
+    if (e.touches.length !== 1) { swipe.current = null; return }
+    const t = e.touches[0]
+    swipe.current = { x: t.clientX, y: t.clientY, at: Date.now(), blocked: swipeBlocked(e.target, e.currentTarget) }
+  }
+  function onSwipeEnd(e) {
+    const s = swipe.current
+    swipe.current = null
+    if (!s || s.blocked) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - s.x
+    const dy = t.clientY - s.y
+    if (Math.abs(dx) >= SWIPE_MIN_X && Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO && Date.now() - s.at <= SWIPE_MAX_MS) home()
+  }
 
   function open(id) { hapticSelect(); setAppId(id) }
   function home() { hapticSelect(); setAppId(null) }
@@ -163,7 +200,12 @@ export default function PhoneScreen({ variant, citizenId, onClose }) {
       )}
 
       {app && (
-        <div className="ph-app-host">
+        <div
+          className="ph-app-host"
+          onTouchStart={onSwipeStart}
+          onTouchEnd={onSwipeEnd}
+          onTouchCancel={() => { swipe.current = null }}
+        >
           <header className="ph-app-header">
             <button type="button" className="ph-back" onClick={home} aria-label="Kembali">
               <IconBack width={22} height={22} />
@@ -171,7 +213,7 @@ export default function PhoneScreen({ variant, citizenId, onClose }) {
             <h1>{app.label}</h1>
           </header>
           <div className="ph-app-body">
-            <app.Component citizenId={citizenId} onOpenApp={open} />
+            <app.Component citizenId={citizenId} onOpenApp={open} onOpenRpCamera={onOpenRpCamera} />
           </div>
         </div>
       )}
