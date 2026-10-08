@@ -2137,21 +2137,42 @@ body {
 
 .walk-map-popup {
   position: absolute;
-  left: 0;
-  top: calc(100% + 8px);
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 6;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: 4px;
   width: max-content;
-  max-width: 46vw;
-  max-height: 160px;
-  overflow-y: auto;
+  max-width: calc(100vw - 150px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   padding: 6px;
-  border-radius: 14px;
+  border-radius: 999px;
   background: rgba(11, 18, 32, 0.85);
   border: 1px solid rgba(234, 246, 255, 0.2);
   backdrop-filter: blur(6px);
+  animation: walk-popup-slide 0.18s ease-out;
+}
+
+.walk-map-popup::-webkit-scrollbar {
+  display: none;
+}
+
+/* Popup bergulir keluar ke kanan dari tombolnya. */
+@keyframes walk-popup-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
 }
 
 .walk-map-popup-item {
@@ -2167,6 +2188,7 @@ body {
   cursor: pointer;
   text-align: left;
   white-space: nowrap;
+  flex: none;
 }
 
 .walk-map-popup-item.is-active {
@@ -2175,9 +2197,9 @@ body {
   color: var(--lantern-soft);
 }
 
-/* Tombol tas (inventory) -- persis di atas tombol pilih peta (44px + 12px
-   gap = 56px lebih tinggi). Ikon dikasih putih (bukan mix-blend-mode kayak
-   PNG map-pin) karena ini SVG langsung, bukan gambar. */
+/* Tombol tas (inventory) -- di atas tombol pilih peta (44px + 12px gap =
+   56px lebih tinggi). Ikon dikasih putih (bukan mix-blend-mode kayak PNG
+   map-pin) karena ini SVG langsung, bukan gambar. */
 .walk-inv-picker {
   position: absolute;
   left: 20px;
@@ -2185,7 +2207,17 @@ body {
   z-index: 6;
 }
 
-.walk-inv-btn {
+/* Tombol HP -- persis di bawah tombol pilih peta (56px lebih rendah),
+   ukuran & gaya sama kayak tombol tas/peta. */
+.walk-hp-picker {
+  position: absolute;
+  left: 20px;
+  bottom: 124px;
+  z-index: 6;
+}
+
+.walk-inv-btn,
+.walk-hp-btn {
   color: #fff;
   position: relative;
 }
@@ -2202,12 +2234,11 @@ body {
 }
 
 .walk-inv-popup {
-  min-width: 140px;
+  min-width: 0;
 }
 
 .walk-inv-popup-wide {
-  width: 220px;
-  max-width: 70vw;
+  width: max-content;
 }
 
 .walk-inv-item {
@@ -2215,7 +2246,6 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  width: 100%;
 }
 
 .walk-inv-item-count {
@@ -2226,56 +2256,87 @@ body {
 
 .walk-inv-back {
   opacity: 0.85;
-}
-
-.walk-inv-equipped-row {
-  display: flex;
-  gap: 4px;
-  padding: 2px 4px 6px;
-  border-bottom: 1px solid rgba(234, 246, 255, 0.12);
-  margin-bottom: 4px;
+  padding: 8px 12px;
 }
 
 .walk-inv-fold-btn,
-.walk-inv-unequip-btn {
-  flex: 1;
+.walk-inv-unequip-btn,
+.walk-inv-screen-btn {
+  flex: none;
   border: 1px solid rgba(234, 246, 255, 0.18);
   background: rgba(255, 255, 255, 0.06);
   color: var(--paper);
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  padding: 6px 8px;
-  border-radius: 10px;
+  font-size: 11.5px;
+  padding: 8px 12px;
+  border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
 }
 
+.walk-inv-screen-btn {
+  border-color: rgba(34, 228, 255, 0.45);
+  background: rgba(34, 228, 255, 0.14);
+  color: var(--lantern-soft);
+}
+
 .walk-inv-unequip-btn {
-  flex: none;
   color: #ff8a7a;
 }
 
-.walk-inv-phone-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 220px;
-  overflow-y: auto;
+.walk-hp-empty {
+  flex: none;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  white-space: nowrap;
 }
 
-.walk-inv-phone-item {
+.walk-inv-empty {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  border: none;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.walk-inv-claim-box-btn {
+  flex: none;
+  border: 1px solid rgba(34, 228, 255, 0.45);
+  background: rgba(34, 228, 255, 0.14);
+  color: var(--lantern-soft);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.walk-inv-claim-box-error {
+  color: #ff8a7a;
+}
+
+.walk-inv-phone-item {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--ink-soft);
   font-family: var(--font-mono);
   font-size: 11.5px;
-  padding: 7px 10px;
-  border-radius: 10px;
+  padding: 7px 12px;
+  border-radius: 999px;
   cursor: pointer;
   text-align: left;
+  white-space: nowrap;
 }
 
 .walk-inv-phone-item:active {
@@ -2284,6 +2345,7 @@ body {
 
 .walk-inv-phone-item.is-active {
   background: rgba(34, 228, 255, 0.12);
+  border-color: rgba(34, 228, 255, 0.35);
   color: var(--lantern-soft);
 }
 
@@ -2296,7 +2358,7 @@ body {
 }
 
 .walk-inv-phone-name {
-  flex: 1;
+  flex: none;
 }
 
 .walk-inv-phone-type {
