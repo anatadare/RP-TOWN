@@ -119,10 +119,49 @@ function flexToward(bone, axis, degrees) {
   bone.updateMatrixWorld(true)
 }
 
+// ---- KUNCI LENGAN KANAN (anti gerak-gerak) -----------------------------
+// Penyebab tangan "ngebug" pas megang HP: flexToward() nekuk lengan relatif
+// ke pose lengan SAAT ITU (hasil animation mixer). Animasi Idle gak
+// nggerakin lengan kanan sama sekali (konstan), tapi Walk/Run/Jump ngayunin
+// lengan atas sampai ~60 derajat -- jadi tiap kali karakter melangkah
+// (bahkan sedikit / pas crossfade Idle<->Walk), lengan yang megang HP ikut
+// berayun naik-turun.
+// Solusi: sebelum ditekuk, 4 tulang lengan kanan DIKEMBALIIN dulu ke pose
+// Idle (pose yang dipakai waktu karakter diam = persis pose yang sekarang
+// keliatan "bener"). Jadi hasil pose di Idle SAMA PERSIS kayak sebelumnya,
+// dan di Walk/Run/Jump lengannya tetap diam relatif ke badan.
+const ARM_LOCK_BONES = ['ShoulderR', 'UpperArmR', 'LowerArmR', 'FistR']
+const armLockCache = new WeakMap() // root -> { bone, quat }[] | null
+
+const normName = (n) => String(n).replace(/\./g, '')
+
+function captureIdleArm(root, clips) {
+  if (armLockCache.has(root)) return armLockCache.get(root)
+  const idle = Array.isArray(clips) ? clips.find((c) => c.name === 'Idle') : null
+  if (!idle) return null // belum ada clip -> jangan cache, coba lagi frame berikutnya
+  const locks = []
+  for (const name of ARM_LOCK_BONES) {
+    const bone = root.getObjectByName(name)
+    const track = idle.tracks.find((t) => normName(t.name) === name + 'quaternion')
+    if (!bone || !track || track.values.length < 4) continue
+    locks.push({ bone, quat: new THREE.Quaternion().fromArray(track.values, 0) })
+  }
+  const result = locks.length === ARM_LOCK_BONES.length ? locks : null
+  armLockCache.set(root, result)
+  return result
+}
+
 // Dipanggil tiap frame kalau equippedPhone true (lihat TownWalk.jsx).
 // Return bone Fist.R (buat nempelin grup HP), atau null kalau nama
 // bone-nya gak ketemu (gagal secara aman, gak nge-crash).
-export function applyPhonePose(root, degrees = POSE_DEGREES) {
+// `clips` (opsional) = array animasi karakter, dipakai buat ngunci lengan
+// ke pose Idle (lihat KUNCI LENGAN KANAN di atas). Tanpa `clips` perilakunya
+// sama kayak dulu (dipakai CharacterPreview yang pose-nya statis).
+export function applyPhonePose(root, degrees = POSE_DEGREES, clips = null) {
+  const locks = clips ? captureIdleArm(root, clips) : null
+  if (locks) {
+    for (const l of locks) l.bone.quaternion.copy(l.quat)
+  }
   root.updateMatrixWorld(true)
   const upperArm = root.getObjectByName('UpperArmR')
   const lowerArm = root.getObjectByName('LowerArmR')
