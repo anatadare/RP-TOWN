@@ -317,21 +317,6 @@
   .ph-overlay-full .ph-app-body { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
 }
 
-/* ---------- tombol "Buka Layar" di popup inventaris (PhoneInventory) ---------- */
-.walk-inv-popup .walk-inv-equipped-row { flex-wrap: wrap; }
-.walk-inv-popup .walk-inv-screen-btn {
-  flex: 1 1 100%;
-  border: 1px solid rgba(34, 228, 255, 0.45);
-  background: rgba(34, 228, 255, 0.14);
-  color: var(--lantern-soft);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
 /* ---------- Sosmed (feed foto: cerita, post, komentar, tab bawah) ---------- */
 .ph-screen[data-app="social"] .ph-app-body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .ph-ig { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
