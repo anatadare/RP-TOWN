@@ -1,0 +1,45 @@
+/* HUD kamera RP (di atas dunia 3D). Root tidak menangkap sentuhan --
+   joystick & putar kamera tetap jalan; hanya tombolnya yang aktif. */
+.rpcam-hud { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
+.rpcam-hud > * { pointer-events: auto; }
+
+.rpcam-top {
+  position: absolute; left: 0; right: 0; top: 0; pointer-events: none;
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 14px 0;
+  display: flex; justify-content: space-between; align-items: flex-start;
+}
+.rpcam-top > * { pointer-events: auto; }
+
+/* switch Real | RP -- sengaja kecil & redup */
+.rpcam-switch { display: inline-flex; padding: 2px; border-radius: 999px; background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(4px); }
+.rpcam-switch button { border: none; background: none; color: rgba(255, 255, 255, 0.6); font: 600 11px/1 system-ui, sans-serif; padding: 5px 11px; border-radius: 999px; cursor: pointer; }
+.rpcam-switch button.is-on { background: rgba(255, 255, 255, 0.22); color: #fff; cursor: default; }
+
+.rpcam-x { width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.8); font-size: 13px; cursor: pointer; backdrop-filter: blur(4px); }
+
+.rpcam-shutter {
+  position: absolute; right: calc(env(safe-area-inset-right, 0px) + 22px); top: 50%; transform: translateY(-50%);
+  width: 68px; height: 68px; border-radius: 50%; padding: 0;
+  border: 4px solid #fff; background: rgba(0, 0, 0, 0.25); cursor: pointer; display: grid; place-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.rpcam-shutter span { width: 48px; height: 48px; border-radius: 50%; background: #fff; transition: transform 0.08s; }
+.rpcam-shutter:active span { transform: scale(0.86); }
+
+.rpcam-toast {
+  position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 22px); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 6px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(6px); color: #fff; font: 600 12px/1 system-ui, sans-serif; pointer-events: none;
+}
+.rpcam-toast img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+.rpcam-toast span:only-child { padding-left: 8px; }
+.rpcam-flash { position: absolute; inset: 0; background: #fff; opacity: 0.85; pointer-events: none; animation: rpcam-flash 0.14s ease-out forwards; }
+@keyframes rpcam-flash { to { opacity: 0; } }
+
+/* Mode kamera RP: sembunyikan UI jalan-jalan lain biar pemandangan bersih. */
+.walk-root.is-rpcam .walk-topbar,
+.walk-root.is-rpcam .walk-side,
+.walk-root.is-rpcam .walk-jump,
+.walk-root.is-rpcam .walk-map-picker,
+.walk-root.is-rpcam .walk-inv-picker,
+.walk-root.is-rpcam .walk-hint { display: none; }
