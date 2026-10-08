@@ -10,7 +10,7 @@ import './phone.css'
 //                      di belakangnya tetap kelihatan.
 // Semua event keyboard/pointer dihentikan di sini supaya ngetik di kolom
 // teks (cari kontak, posting, dll) TIDAK menggerakkan karakter / memutar kamera.
-export default function PhoneOverlay({ variant, citizenId, onClose }) {
+export default function PhoneOverlay({ variant, citizenId, onClose, initialApp, onOpenRpCamera }) {
   const mode = useMemo(getPhoneUiMode, [])
 
   useEffect(() => {
@@ -36,7 +36,7 @@ export default function PhoneOverlay({ variant, citizenId, onClose }) {
       onWheel={stop}
     >
       <div className="ph-frame">
-        <PhoneScreen variant={variant} citizenId={citizenId} onClose={onClose} />
+        <PhoneScreen variant={variant} citizenId={citizenId} onClose={onClose} initialApp={initialApp} onOpenRpCamera={onOpenRpCamera} />
         <button type="button" className="ph-close" onClick={onClose} aria-label="Tutup layar HP">
           <IconClose width={18} height={18} />
         </button>
