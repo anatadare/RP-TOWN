@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
 import { hapticSelect } from '../lib/telegram'
 import './phone/phone.css'
@@ -6,45 +6,52 @@ import './phone/phone.css'
 // ============================================================
 // PhoneInventory -- tombol tas (inventory) di mode Jelajahi.
 //
-// BEDA DARI VERSI SEBELUMNYA: komponen ini SEKARANG CUMA UI PILIHAN
-// (equip/unequip), gak lagi bikin Canvas/preview sendiri. HP-nya
-// beneran nempel & ke-render di karakter yang jalan di peta 3D --
-// itu kerjaannya <WalkPlayer> di TownWalk.jsx (attach ke bone
-// Fist.R punya karakter yang lagi jalan, lihat komentar di sana).
+// SEKARANG CUMA ISI TAS: pilih HP mana yang dipasang (equip) atau
+// dilepas (unequip). Aksi yang SERING dipakai (buka layar HP, buka/tutup
+// HP lipat) dipindah ke tombol HP sendiri -- lihat PhoneButton.jsx.
 //
-// BEDA LAGI (setelah migration-009-items.sql): dulu daftar di sini
-// nampilin SEMUA 54 HP yang ada di kode (ALL_PHONE_VARIANTS), sekarang
-// cuma nampilin HP yang BENERAN DIMILIKI warga (dari tabel
-// citizen_items lewat Supabase, di-fetch di TownWalk.jsx). Makanya
-// `equippedId` sekarang id BARIS citizen_items (instance yang dimiliki),
-// BUKAN lagi id varian di phoneVariants.js/barPhoneVariants.js -- kalau
-// warga punya 2 unit HP yang sama, itu 2 tombol terpisah di daftar ini
-// (bisa diequip salah satu doang), bukan digabung jadi 1 baris.
+// HP-nya beneran nempel & ke-render di karakter yang jalan di peta 3D
+// -- itu kerjaannya <WalkPlayer> di TownWalk.jsx (attach ke bone
+// Fist.R punya karakter yang lagi jalan).
+//
+// Daftar di sini = HP yang BENERAN DIMILIKI warga (tabel citizen_items
+// lewat Supabase, di-fetch di TownWalk.jsx). `equippedId` = id BARIS
+// citizen_items (instance yang dimiliki), BUKAN id varian di
+// phoneVariants.js/barPhoneVariants.js.
+//
+// Popup-nya sekarang BERGULIR KE KANAN dari tombol (bukan ke bawah).
+// Buka/tutupnya dikontrol dari TownWalk (satu panel aktif sekaligus
+// bareng tombol peta & tombol HP), makanya ada `open`/`onToggle`/`onClose`.
 //
 // Props:
+//  - open, onToggle(), onClose() : status buka/tutup popup (dikontrol parent)
 //  - items       : array kepemilikan warga, tiap elemen
 //                   { id: <citizen_items.id>, item_type_id: <id varian> }
 //  - equippedId  : citizen_items.id yang lagi dipasang (atau null)
-//  - foldT       : 0..1, state buka/tutup HP yang lagi dipasang
-//  - onEquip(citizenItemId), onUnequip(), onSetFold(value)
-//  - onOpenScreen() : buka layar HP (UI per brand, lihat components/phone/)
+//  - onEquip(citizenItemId), onUnequip()
+//  - onClaimStarterBox(), claimingStarterBox, claimStarterBoxError
 // ============================================================
 
 export default function PhoneInventory({
+  open,
+  onToggle,
+  onClose,
   items,
   equippedId,
-  foldT,
   onEquip,
   onUnequip,
-  onOpenScreen,
-  onSetFold,
   onClaimStarterBox,
   claimingStarterBox,
   claimStarterBoxError,
 }) {
-  // 'closed' | 'items' | 'phones'
-  const [screen, setScreen] = useState('closed')
-  const isOpen = screen !== 'closed'
+  // 'items' (daftar kategori) | 'phones' (daftar HP yang dimiliki)
+  const [screen, setScreen] = useState('items')
+
+  // Tiap popup ditutup, balik ke daftar kategori biar pas dibuka lagi
+  // mulai dari awal.
+  useEffect(() => {
+    if (!open) setScreen('items')
+  }, [open])
 
   const owned = (items || []).map((it) => ({
     citizenItemId: it.id,
@@ -52,24 +59,19 @@ export default function PhoneInventory({
   }))
   const equippedEntry = equippedId ? owned.find((o) => o.citizenItemId === equippedId) : null
   const equipped = equippedEntry?.variant || null
-  // HP bar (39 varian .glb) gak bisa dilipat -- sembunyiin tombol
-  // buka/tutup HP kalau yang lagi dipasang jenisnya bar.
-  const equippedIsBar = equipped ? isBarPhone(equipped) : false
-
-  function toggleOpen() {
-    hapticSelect()
-    setScreen((s) => (s === 'closed' ? 'items' : 'closed'))
-  }
 
   return (
     <div className="walk-inv-picker">
-      {isOpen && <div className="walk-map-backdrop" onClick={() => setScreen('closed')} />}
+      {open && <div className="walk-map-backdrop" onClick={onClose} />}
       <button
         type="button"
         className="walk-map-btn walk-inv-btn"
         aria-label="Inventaris"
-        aria-expanded={isOpen}
-        onClick={toggleOpen}
+        aria-expanded={open}
+        onClick={() => {
+          hapticSelect()
+          onToggle?.()
+        }}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
           <path d="M8 8V6.5a4 4 0 0 1 8 0V8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -79,7 +81,7 @@ export default function PhoneInventory({
         {equipped && <span className="walk-inv-btn-dot" />}
       </button>
 
-      {screen === 'items' && (
+      {open && screen === 'items' && (
         <div className="walk-map-popup walk-inv-popup">
           <button
             type="button"
@@ -94,7 +96,7 @@ export default function PhoneInventory({
         </div>
       )}
 
-      {screen === 'phones' && (
+      {open && screen === 'phones' && (
         <div className="walk-map-popup walk-inv-popup walk-inv-popup-wide">
           <button
             type="button"
@@ -104,99 +106,70 @@ export default function PhoneInventory({
               setScreen('items')
             }}
           >
-            ← Kembali
+            ←
           </button>
 
           {equipped && (
-            <div className="walk-inv-equipped-row">
+            <button
+              type="button"
+              className="walk-inv-unequip-btn"
+              onClick={() => {
+                hapticSelect()
+                onUnequip?.()
+              }}
+            >
+              Lepas
+            </button>
+          )}
+
+          {owned.length === 0 && (
+            <div className="walk-inv-empty">
+              <span>Belum punya HP.</span>
+              {/* Jaring pengaman: box pembuka pertama biasanya otomatis
+                  pas pilih karakter, tapi warga yang character_id-nya
+                  udah keisi dari sebelum fitur ini ada gak pernah lewat
+                  momen itu lagi -- tombol ini biar mereka tetap bisa
+                  klaim manual. Server tetap yang nolak kalau ternyata
+                  udah pernah dibuka. */}
               <button
                 type="button"
-                className="walk-inv-screen-btn"
+                className="walk-inv-claim-box-btn"
+                disabled={claimingStarterBox}
                 onClick={() => {
                   hapticSelect()
-                  setScreen('closed')
-                  onOpenScreen?.()
+                  onClaimStarterBox?.()
                 }}
               >
-                📲 Buka Layar
+                {claimingStarterBox ? 'Membuka...' : '🎁 Buka Box HP'}
               </button>
-              {!equippedIsBar && (
-                <button
-                  type="button"
-                  className="walk-inv-fold-btn"
-                  onClick={() => {
-                    hapticSelect()
-                    onSetFold?.(foldT > 0.5 ? 0 : 1)
-                  }}
-                >
-                  {foldT > 0.5 ? '📴 Tutup HP' : '📱 Buka HP'}
-                </button>
-              )}
-              <button
-                type="button"
-                className="walk-inv-unequip-btn"
-                onClick={() => {
-                  hapticSelect()
-                  onUnequip?.()
-                }}
-              >
-                Lepas
-              </button>
+              {claimStarterBoxError && <span className="walk-inv-claim-box-error">{claimStarterBoxError}</span>}
             </div>
           )}
 
-          <div className="walk-inv-phone-list">
-            {owned.length === 0 && (
-              <div className="walk-inv-empty">
-                <p>Belum punya HP.</p>
-                {/* Jaring pengaman: box pembuka pertama biasanya otomatis
-                    pas pilih karakter, tapi warga yang character_id-nya
-                    udah keisi dari sebelum fitur ini ada gak pernah lewat
-                    momen itu lagi -- tombol ini biar mereka (atau siapa
-                    pun yang box-nya somehow gagal ke-trigger) tetap bisa
-                    klaim manual. Server tetap yang nolak kalau ternyata
-                    udah pernah dibuka. */}
-                <button
-                  type="button"
-                  className="walk-inv-claim-box-btn"
-                  disabled={claimingStarterBox}
-                  onClick={() => {
-                    hapticSelect()
-                    onClaimStarterBox?.()
-                  }}
-                >
-                  {claimingStarterBox ? 'Membuka...' : '🎁 Buka Box HP'}
-                </button>
-                {claimStarterBoxError && <p className="walk-inv-claim-box-error">{claimStarterBoxError}</p>}
-              </div>
-            )}
-            {owned.map(({ citizenItemId, variant: v }) => {
-              const active = citizenItemId === equippedId
-              const isBar = isBarPhone(v)
-              return (
-                <button
-                  key={citizenItemId}
-                  type="button"
-                  className={`walk-inv-phone-item${active ? ' is-active' : ''}`}
-                  onClick={() => {
-                    hapticSelect()
-                    onEquip?.(citizenItemId)
-                  }}
-                >
-                  <span className="walk-inv-phone-swatch" style={{ background: v.colors.body }} />
-                  <span className="walk-inv-phone-name">{v.label}</span>
-                  {/* HP bar gak punya foldType flip/book -- tampilin rarity-nya
-                      di situ (common/rare/epic/legendary) alih-alih Flip/Buku,
-                      soalnya 15 HP lipat lama belum punya field rarity sama
-                      sekali (belum ada box gatcha buat mereka). */}
-                  <span className={`walk-inv-phone-type${isBar ? ` rarity-${v.rarity}` : ''}`}>
-                    {isBar ? v.rarity : v.foldType === 'flip' ? 'Flip' : 'Buku'}
-                  </span>
-                  {active && <span className="walk-inv-phone-check">✓</span>}
-                </button>
-              )
-            })}
-          </div>
+          {owned.map(({ citizenItemId, variant: v }) => {
+            const active = citizenItemId === equippedId
+            const isBar = isBarPhone(v)
+            return (
+              <button
+                key={citizenItemId}
+                type="button"
+                className={`walk-inv-phone-item${active ? ' is-active' : ''}`}
+                onClick={() => {
+                  hapticSelect()
+                  onEquip?.(citizenItemId)
+                }}
+              >
+                <span className="walk-inv-phone-swatch" style={{ background: v.colors.body }} />
+                <span className="walk-inv-phone-name">{v.label}</span>
+                {/* HP bar gak punya foldType flip/book -- tampilin rarity-nya
+                    (common/rare/epic/legendary) alih-alih Flip/Buku. */}
+                <span className={`walk-inv-phone-type${isBar ? ` rarity-${v.rarity}` : ''}`}>
+                  {isBar ? v.rarity : v.foldType === 'flip' ? 'Flip' : 'Buku'}
+                </span>
+                {active && <span className="walk-inv-phone-check">✓</span>}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
