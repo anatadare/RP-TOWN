@@ -2560,3 +2560,301 @@ body {
 @keyframes gatchaFall {
   to { transform: translateY(46vh) rotate(480deg); opacity: 0.15; }
 }
+
+/* ============================================================
+   Chat global room Jelajahi (ChatPanel.jsx) + bubble di atas kepala
+   (ChatBubble3D.jsx). Tombolnya pakai gaya .walk-map-btn (bulat merah),
+   ditaruh di atas tombol tas (236px + 56px = 292px).
+   ============================================================ */
+.walk-chat-picker {
+  position: absolute;
+  left: 20px;
+  bottom: 292px;
+  z-index: 6;
+}
+
+.walk-chat-btn {
+  color: #fff;
+  position: relative;
+  overflow: visible;
+}
+
+.walk-chat-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #22e4ff;
+  color: #06202a;
+  border: 1.5px solid rgba(11, 18, 32, 0.9);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.walk-chat-badge.is-mention {
+  background: #ffd23f;
+  animation: walk-chat-pulse 1s ease-in-out infinite;
+}
+
+@keyframes walk-chat-pulse {
+  50% {
+    transform: scale(1.2);
+  }
+}
+
+.walk-chat-panel {
+  position: fixed;
+  left: 76px;
+  bottom: 16px;
+  z-index: 6;
+  width: min(330px, calc(100vw - 150px));
+  height: min(240px, 62vh);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: rgba(11, 18, 32, 0.72);
+  border: 1px solid rgba(234, 246, 255, 0.2);
+  backdrop-filter: blur(6px);
+  overflow: hidden;
+  animation: walk-popup-slide-x 0.18s ease-out;
+  font-family: var(--font-mono);
+}
+
+@keyframes walk-popup-slide-x {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.walk-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 6px 5px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--paper);
+  border-bottom: 1px solid rgba(234, 246, 255, 0.12);
+}
+
+.walk-chat-close {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 13px;
+  width: 26px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.walk-chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.walk-chat-list::-webkit-scrollbar {
+  display: none;
+}
+
+.walk-chat-empty {
+  margin: auto;
+  font-size: 11px;
+  color: var(--ink-soft);
+  opacity: 0.8;
+  text-align: center;
+}
+
+.chat-row-wrap {
+  position: relative;
+  flex: none;
+}
+
+.chat-row-reply-hint {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: var(--ink-soft);
+  opacity: 0.6;
+}
+
+.chat-row {
+  position: relative;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(11, 18, 32, 0.55);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--paper);
+  word-break: break-word;
+}
+
+.chat-row.is-mine {
+  background: rgba(34, 228, 255, 0.14);
+}
+
+.chat-row.is-mention {
+  background: rgba(255, 210, 63, 0.2);
+  box-shadow: inset 2px 0 0 #ffd23f;
+}
+
+.chat-quote {
+  margin-bottom: 2px;
+  padding: 1px 6px;
+  border-left: 2px solid rgba(234, 246, 255, 0.4);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-quote b {
+  font-weight: 700;
+}
+
+.chat-name {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-right: 6px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-mention {
+  color: #ffd23f;
+  font-weight: 700;
+}
+
+.walk-chat-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px;
+  border-top: 1px solid rgba(234, 246, 255, 0.12);
+}
+
+.walk-chat-suggest button {
+  border: 1px solid rgba(255, 210, 63, 0.5);
+  background: rgba(255, 210, 63, 0.12);
+  color: #ffd23f;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.walk-chat-replybar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 6px 3px 10px;
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  background: rgba(234, 246, 255, 0.07);
+  border-top: 1px solid rgba(234, 246, 255, 0.12);
+}
+
+.walk-chat-replybar span {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.walk-chat-replybar button {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.walk-chat-form {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-top: 1px solid rgba(234, 246, 255, 0.12);
+}
+
+.walk-chat-form input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(234, 246, 255, 0.22);
+  background: rgba(11, 18, 32, 0.6);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 16px; /* >=16px: cegah iOS auto-zoom pas fokus */
+  padding: 5px 10px;
+  border-radius: 999px;
+  outline: none;
+}
+
+.walk-chat-form button {
+  flex: none;
+  width: 34px;
+  border: none;
+  border-radius: 50%;
+  background: #e0483a;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.walk-chat-form button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Bubble di atas kepala karakter */
+.walk-bubble {
+  position: relative;
+  max-width: 170px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111a2b;
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  word-break: break-word;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 0.15s linear;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
