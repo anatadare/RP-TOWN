@@ -16,6 +16,7 @@ import RemotePlayers from './RemotePlayers'
 import PhoneInventory from './PhoneInventory'
 import GatchaReveal from './GatchaReveal'
 import PhoneOverlay from './phone/PhoneOverlay'
+import RpCameraHud, { RpCaptureBridge } from './RpCameraHud'
 import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/items'
 import {
   lockTelegramSwipe,
@@ -970,6 +971,10 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   const [phoneFoldT, setPhoneFoldT] = useState(1)
   // Layar HP (UI per brand) lagi terbuka atau nggak -- lihat components/phone/.
   const [phoneScreenOpen, setPhoneScreenOpen] = useState(false)
+  // Kamera RP (foto dunia RP): layar HP ditutup, HUD tipis nongol di atas peta.
+  // phoneStartApp = app yang langsung dibuka saat layar HP dibuka lagi (balik ke kamera Real).
+  const [rpCam, setRpCam] = useState(false)
+  const [phoneStartApp, setPhoneStartApp] = useState(null)
   const equippedPhone = ownedItems.find((it) => it.id === equippedCitizenItemId)?.item_type_id ?? null
 
   // Ambil kepemilikan HP sekali pas TownWalk dimount (atau citizenId-nya
@@ -1040,6 +1045,18 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   }
   const handleReady = useCallback(() => setReady(true), [])
 
+  function openRpCamera() {
+    setPhoneScreenOpen(false)
+    setRpCam(true)
+  }
+  function closeRpCamera({ backToPhone }) {
+    setRpCam(false)
+    if (backToPhone) {
+      setPhoneStartApp('camera')
+      setPhoneScreenOpen(true)
+    }
+  }
+
   // Ganti peta = Canvas remount (key) -> tampilkan loading lagi.
   useEffect(() => {
     setReady(false)
@@ -1078,7 +1095,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
               : null
 
   return (
-    <div className="walk-root">
+    <div className={`walk-root${rpCam ? ' is-rpcam' : ''}`}>
       <Canvas
         key={mapKey}
         dpr={[1, 1.5]}
@@ -1102,6 +1119,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
             phoneFoldT={phoneFoldT}
           />
         </Suspense>
+        <RpCaptureBridge />
       </Canvas>
 
       <WalkControls inputRef={inputRef} />
@@ -1148,7 +1166,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         foldT={phoneFoldT}
         onEquip={handleEquip}
         onUnequip={handleUnequip}
-        onOpenScreen={() => setPhoneScreenOpen(true)}
+        onOpenScreen={() => { setPhoneStartApp(null); setPhoneScreenOpen(true) }}
         onSetFold={setPhoneFoldT}
         onClaimStarterBox={handleClaimStarterBox}
         claimingStarterBox={boxClaiming}
@@ -1160,7 +1178,16 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         <PhoneOverlay
           variant={getAnyPhoneVariant(equippedPhone)}
           citizenId={citizenId}
+          initialApp={phoneStartApp}
+          onOpenRpCamera={openRpCamera}
           onClose={() => setPhoneScreenOpen(false)}
+        />
+      )}
+
+      {rpCam && (
+        <RpCameraHud
+          onSwitchReal={() => closeRpCamera({ backToPhone: true })}
+          onClose={() => closeRpCamera({ backToPhone: false })}
         />
       )}
 
