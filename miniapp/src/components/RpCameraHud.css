@@ -42,4 +42,5 @@
 .walk-root.is-rpcam .walk-jump,
 .walk-root.is-rpcam .walk-map-picker,
 .walk-root.is-rpcam .walk-inv-picker,
+.walk-root.is-rpcam .walk-hp-picker,
 .walk-root.is-rpcam .walk-hint { display: none; }
