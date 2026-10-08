@@ -563,7 +563,8 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
     // Idle/Walk/Run/Jump-nya -- lihat komentar panjang di deklarasi
     // phoneGroupRef di atas kenapa ini gak bisa cuma sekali di awal.
     if (equippedPhone) {
-      const phoneFist = applyPhonePose(model)
+      // `animations` dipakai buat ngunci lengan kanan ke pose Idle (anti gerak-gerak, lihat PhonePose.jsx)
+      const phoneFist = applyPhonePose(model, undefined, animations)
       // HP diorientasikan di world space (lihat PhonePose.jsx) --
       // dipanggil SETELAH mixer & tiap frame biar tetap tegak walau tangan
       // berayun pas Walk/Run.
