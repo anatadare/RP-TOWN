@@ -11,13 +11,14 @@
 // re-render) karena berubah ~5x/detik per pemain. Yang memicu re-render React
 // cuma `peerIds` (daftar id) -- berubah pas ada yang masuk/keluar.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const WORKER_URL = (import.meta.env.VITE_WORKER_URL || '').replace(/\/+$/, '')
 
 const SEND_MS = 200 // cek/kirim posisi tiap 200 ms (5x/detik), cuma kalau berubah
 const HEARTBEAT_MS = 20000 // diam pun kirim kabar tiap 20 dtk (biar gak dianggap hilang)
 const PEER_TIMEOUT_MS = 75000 // pemain lain gak ada kabar segini lama -> dibuang dari layar
+const MAX_CHAT_KEEP = 80
 const MAX_FAILS_BEFORE_GIVE_UP = 6 // gagal nyambung berturut-turut -> nyerah (mode solo)
 
 export const ANIM_IDLE = 0
@@ -36,11 +37,23 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
   const peersRef = useRef(new Map())
   const [peerIds, setPeerIds] = useState([])
   const [status, setStatus] = useState('connecting')
+  // Chat global room: `messages` (maks MAX_CHAT_KEEP terakhir), id sendiri dari
+  // server (`selfId`), dan `sendChat`. Pesan gak disimpan server -- cuma yang
+  // masuk selama kita terhubung.
+  const wsRef = useRef(null)
+  // Bubble chat di atas kepala: id pemain -> { x, ts, k }. Ref (bukan state)
+  // karena dibaca per-frame oleh ChatBubble3D tanpa bikin React re-render.
+  const bubblesRef = useRef(new Map())
+  const selfIdRef = useRef(null)
+  const [messages, setMessages] = useState([])
+  const [selfId, setSelfId] = useState(null)
 
   useEffect(() => {
     const peers = peersRef.current
     peers.clear()
     setPeerIds([])
+    setMessages([])
+    bubblesRef.current.clear()
 
     const initData = typeof window !== 'undefined' ? window.Telegram?.WebApp?.initData : ''
     if (!WORKER_URL || !initData) {
@@ -73,6 +86,7 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
         return
       }
       ws = socket
+      wsRef.current = socket
 
       socket.onopen = () => {
         opened = true
@@ -91,6 +105,10 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
         if (msg.t === 'snap') {
           peers.clear()
           for (const p of msg.peers || []) peers.set(p.i, { ...p, seen: now })
+          if (msg.you) {
+            selfIdRef.current = String(msg.you)
+            setSelfId(String(msg.you))
+          }
           setStatus('online')
           publishIds()
         } else if (msg.t === 'join') {
@@ -107,6 +125,14 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
           peer.seen = now
         } else if (msg.t === 'leave') {
           if (peers.delete(msg.i)) publishIds()
+        } else if (msg.t === 'm') {
+          if (typeof msg.x !== 'string' || !msg.k) return
+          bubblesRef.current.set(String(msg.i), { x: msg.x, ts: performance.now(), k: msg.k })
+          setMessages((cur) => {
+            if (cur.some((m) => m.k === msg.k)) return cur
+            const next = [...cur, { k: msg.k, i: String(msg.i), n: msg.n, x: msg.x, r: msg.r || null, mt: msg.mt || [], ts: msg.ts }]
+            return next.length > MAX_CHAT_KEEP ? next.slice(next.length - MAX_CHAT_KEEP) : next
+          })
         }
       }
 
@@ -199,6 +225,7 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
       document.removeEventListener('visibilitychange', onVisible)
       const s = ws
       ws = null
+      wsRef.current = null
       if (s) {
         s.onclose = null
         try {
@@ -211,5 +238,18 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
     }
   }, [mapKey, characterId, selfRef])
 
-  return { peersRef, peerIds, status }
+  // Kirim chat. reply = { i, n, x } (pesan yang di-reply), mentions = [id].
+  // Return true kalau terkirim (socket lagi nyambung).
+  const sendChat = useCallback((text, reply, mentions) => {
+    const sock = wsRef.current
+    const clean = String(text || '').trim()
+    if (!clean || !sock || sock.readyState !== 1) return false
+    const payload = { t: 'm', x: clean.slice(0, 200) }
+    if (reply) payload.r = { i: reply.i, n: reply.n, x: String(reply.x || '').slice(0, 80) }
+    if (mentions && mentions.length) payload.mt = mentions.slice(0, 5)
+    sock.send(JSON.stringify(payload))
+    return true
+  }, [])
+
+  return { peersRef, peerIds, status, messages, selfId, selfIdRef, bubblesRef, sendChat }
 }
