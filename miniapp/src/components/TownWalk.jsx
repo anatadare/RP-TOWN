@@ -14,6 +14,7 @@ import { getAnyPhoneVariant, isBarPhone } from './phoneCatalog'
 import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
 import RemotePlayers from './RemotePlayers'
 import PhoneInventory from './PhoneInventory'
+import PhoneButton from './PhoneButton'
 import GatchaReveal from './GatchaReveal'
 import PhoneOverlay from './phone/PhoneOverlay'
 import RpCameraHud, { RpCaptureBridge } from './RpCameraHud'
@@ -958,7 +959,13 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   const [showRotateHint, setShowRotateHint] = useState(true)
   // Popup daftar peta -- gantiin tab map-switcher yang dulu nongkrong di
   // topbar, sekarang dipanggil dari tombol bulat kecil di kiri bawah.
-  const [showMapPicker, setShowMapPicker] = useState(false)
+  // Panel aksi di kiri bawah (tas / peta / HP) -- cuma satu yang boleh
+  // kebuka sekaligus: 'inv' | 'map' | 'hp' | null. Popup-nya semua
+  // bergulir ke kanan dari tombolnya masing-masing.
+  const [activePanel, setActivePanel] = useState(null)
+  const showMapPicker = activePanel === 'map'
+  const togglePanel = (name) => setActivePanel((cur) => (cur === name ? null : name))
+  const closePanel = () => setActivePanel(null)
   // Daftar HP yang BENERAN dimiliki warga ini (tabel citizen_items lewat
   // Supabase, migration-009-items.sql) -- bukan lagi "pilih bebas dari 54
   // varian yang ada di kode". `equippedCitizenItemId` nyimpen id BARIS
@@ -1162,16 +1169,28 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
           buat langsung dipasang ke tangan karakter yang jalan di peta
           (lihat equippedPhone di atas + WalkPlayer). */}
       <PhoneInventory
+        open={activePanel === 'inv'}
+        onToggle={() => togglePanel('inv')}
+        onClose={closePanel}
         items={ownedItems}
         equippedId={equippedCitizenItemId}
-        foldT={phoneFoldT}
         onEquip={handleEquip}
         onUnequip={handleUnequip}
-        onOpenScreen={() => { setPhoneStartApp(null); setPhoneScreenOpen(true) }}
-        onSetFold={setPhoneFoldT}
         onClaimStarterBox={handleClaimStarterBox}
         claimingStarterBox={boxClaiming}
         claimStarterBoxError={boxClaimError}
+      />
+
+      {/* Tombol HP -- persis di bawah tombol peta, ukuran sama. Dipisah dari
+          tas karena paling sering dibuka: buka layar HP, buka/tutup HP lipat. */}
+      <PhoneButton
+        open={activePanel === 'hp'}
+        onToggle={() => togglePanel('hp')}
+        onClose={closePanel}
+        variant={equippedPhone ? getAnyPhoneVariant(equippedPhone) : null}
+        foldT={phoneFoldT}
+        onOpenScreen={() => { setPhoneStartApp(null); setPhoneScreenOpen(true) }}
+        onSetFold={setPhoneFoldT}
       />
 
       {/* Layar HP: popup penuh di Telegram HP, panel melayang di kanan untuk PC. */}
@@ -1198,11 +1217,11 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
       <GatchaReveal itemType={gatchaResult} onClose={() => setGatchaResult(null)} />
 
       {/* Tombol pilih peta -- bulat kecil merah, kiri bawah. Tap buka popup
-          yang ngegulir ke bawah nampilin daftar peta (gantiin tab lama di
+          yang ngegulir ke kanan nampilin daftar peta (gantiin tab lama di
           topbar). Ada backdrop transparan biar tap di luar popup nutup. */}
       <div className="walk-map-picker">
         {showMapPicker && (
-          <div className="walk-map-backdrop" onClick={() => setShowMapPicker(false)} />
+          <div className="walk-map-backdrop" onClick={closePanel} />
         )}
         <button
           type="button"
@@ -1211,7 +1230,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
           aria-expanded={showMapPicker}
           onClick={() => {
             hapticSelect()
-            setShowMapPicker((v) => !v)
+            togglePanel('map')
           }}
         >
           <img src="/icons/map-pin.png" alt="" className="walk-map-btn-icon" />
@@ -1228,7 +1247,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
                     hapticSelect()
                     onChangeMap(m.key)
                   }
-                  setShowMapPicker(false)
+                  closePanel()
                 }}
               >
                 {m.name}
