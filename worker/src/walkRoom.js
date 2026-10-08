@@ -27,6 +27,14 @@
 //                      { t:'s', i, x, y, z, r, a }
 //                      { t:'leave', i }
 //
+// Chat global room (1 per peta, sama kayak room jalan-jalan):
+//   client -> server : { t:'m', x:'teks', r:{i,n,x}?, mt:[id,...]? }
+//                      x = isi (maks 200 huruf), r = pesan yang di-reply
+//                      (id/nama/cuplikan), mt = id pemain yang di-@mention
+//   server -> client : { t:'m', k, i, n, x, r?, mt?, ts }   (dikirim ke SEMUA
+//                      termasuk pengirim; id & nama pengirim dari server)
+// Chat cuma hidup di memori (gak disimpan) -- pemain baru gak lihat riwayat.
+//
 // Kode close: 4000 = digantikan koneksi baru akun yang sama, 4001 = gak
 // terautentikasi, 4002 = terlalu lama diam (dianggap hilang), 4003 = penuh.
 //
@@ -41,6 +49,11 @@ import { validateInitData } from './kuaInvite.js'
 
 const DEFAULT_MAX_PLAYERS = 40
 const MAX_MESSAGE_BYTES = 256
+const MAX_CHAT_PACKET = 1200 // paket chat (JSON mentah) lebih besar dari paket posisi
+const MAX_CHAT_CHARS = 200
+const MAX_REPLY_CHARS = 80
+const MAX_MENTIONS = 5
+const MIN_CHAT_INTERVAL_MS = 800 // anti-spam
 const MIN_STATE_INTERVAL_MS = 60 // update lebih rapat dari ini dibuang
 const STALE_AFTER_MS = 90 * 1000 // gak ada kabar segini lama = dianggap hilang
 const PRUNE_EVERY_MS = 15 * 1000
@@ -183,7 +196,7 @@ export class WalkRoom extends DurableObject {
   }
 
   async webSocketMessage(ws, message) {
-    if (typeof message !== 'string' || message.length > MAX_MESSAGE_BYTES) return
+    if (typeof message !== 'string' || message.length > MAX_CHAT_PACKET) return
 
     let msg
     try {
@@ -191,7 +204,9 @@ export class WalkRoom extends DurableObject {
     } catch {
       return
     }
-    if (!msg || msg.t !== 's') return
+    if (!msg) return
+    if (msg.t === 'm') return this.handleChat(ws, msg)
+    if (msg.t !== 's' || message.length > MAX_MESSAGE_BYTES) return
 
     const at = ws.deserializeAttachment()
     const p = at && this.players.get(at.i)
@@ -227,6 +242,50 @@ export class WalkRoom extends DurableObject {
       this.broadcast({ t: 's', i: p.i, x: p.x, y: p.y, z: p.z, r: p.r, a: p.a }, ws)
     }
 
+    this.pruneStale(now)
+  }
+
+  // Pesan chat global. Id & nama pengirim SELALU dari data server (hasil
+  // verifikasi initData), bukan dari isi pesan.
+  handleChat(ws, msg) {
+    const at = ws.deserializeAttachment()
+    const p = at && this.players.get(at.i)
+    if (!p || this.sockets.get(p.i) !== ws) return
+
+    const now = Date.now()
+    if (now - (p.lastChat || 0) < MIN_CHAT_INTERVAL_MS) return
+    const clean = (v, max) =>
+      typeof v === 'string'
+        ? v.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+        : ''
+    const text = clean(msg.x, MAX_CHAT_CHARS)
+    if (!text) return
+
+    let reply
+    if (msg.r && typeof msg.r === 'object') {
+      const rx = clean(msg.r.x, MAX_REPLY_CHARS)
+      const ri = clean(String(msg.r.i ?? ''), 20)
+      const rn = clean(msg.r.n, 24)
+      if (rx && ri) reply = { i: ri, n: rn || 'Warga', x: rx }
+    }
+
+    // Mention: cuma id yang beneran lagi ada di room ini.
+    const mt = []
+    if (Array.isArray(msg.mt)) {
+      for (const raw of msg.mt) {
+        const id = String(raw)
+        if (this.players.has(id) && !mt.includes(id)) mt.push(id)
+        if (mt.length >= MAX_MENTIONS) break
+      }
+    }
+
+    p.lastChat = now
+    p.seen = now
+    this.chatSeq = (this.chatSeq || 0) + 1
+    const out = { t: 'm', k: `${now}-${this.chatSeq}`, i: p.i, n: p.n, x: text, ts: now }
+    if (reply) out.r = reply
+    if (mt.length) out.mt = mt
+    this.broadcast(out, null)
     this.pruneStale(now)
   }
 
