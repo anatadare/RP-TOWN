@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { PLAYER } from '../lib/walkController'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
 import { getCharacterById, DEFAULT_CHARACTER_ID } from '../lib/characters'
+import ChatBubble3D from './ChatBubble3D'
 import { ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/walkNet'
 
 // Pemain lain di mode Jelajahi (posisinya datang dari walkNet.js).
@@ -26,7 +27,7 @@ function lerpAngle(a, b, t) {
   return a + d * t
 }
 
-function RemotePlayer({ id, peersRef, selfRef, world }) {
+function RemotePlayer({ id, peersRef, selfRef, bubblesRef, world }) {
   const peer0 = peersRef.current.get(id)
   const character = getCharacterById(peer0?.c) || getCharacterById(DEFAULT_CHARACTER_ID)
   const { scene: charScene, animations } = useGLTF(character.modelUrl)
@@ -165,6 +166,7 @@ function RemotePlayer({ id, peersRef, selfRef, world }) {
             {peer0?.n || 'Warga'}
           </div>
         </Html>
+        {bubblesRef && <ChatBubble3D bubblesRef={bubblesRef} id={id} y={PLAYER.height + 0.75} />}
       </group>
       <mesh ref={shadowRef} rotation-x={-Math.PI / 2} visible={false} renderOrder={2}>
         <circleGeometry args={[0.5, 20]} />
@@ -182,7 +184,7 @@ function RemotePlayer({ id, peersRef, selfRef, world }) {
   )
 }
 
-export default function RemotePlayers({ peersRef, peerIds, selfRef, world }) {
+export default function RemotePlayers({ peersRef, peerIds, selfRef, bubblesRef, world }) {
   const [visibleIds, setVisibleIds] = useState([])
   const acc = useRef(RECOMPUTE_EVERY) // langsung hitung di frame pertama
   const dirty = useRef(true)
@@ -215,7 +217,7 @@ export default function RemotePlayers({ peersRef, peerIds, selfRef, world }) {
         // Suspense per pemain: model karakter yang belum dimuat gak boleh
         // nge-blank seluruh scene.
         <Suspense key={id} fallback={null}>
-          <RemotePlayer id={id} peersRef={peersRef} selfRef={selfRef} world={world} />
+          <RemotePlayer id={id} peersRef={peersRef} selfRef={selfRef} bubblesRef={bubblesRef} world={world} />
         </Suspense>
       ))}
     </>
