@@ -14,7 +14,7 @@ function shrinkToDataUrl(source, sw, sh) {
   return c.toDataURL('image/jpeg', 0.7)
 }
 
-export default function CameraApp({ onOpenApp }) {
+export default function CameraApp({ onOpenApp, onOpenRpCamera }) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const fileRef = useRef(null)
@@ -64,7 +64,7 @@ export default function CameraApp({ onOpenApp }) {
   }, [facing, view, stopStream])
 
   function addPhoto(dataUrl) {
-    const next = [{ id: Date.now(), src: dataUrl }, ...photos].slice(0, 12)
+    const next = [{ id: Date.now(), src: dataUrl, kind: 'real' }, ...photos].slice(0, 12)
     setPhotos(next)
     savePhotos(next)
     hapticSuccess()
@@ -109,6 +109,7 @@ export default function CameraApp({ onOpenApp }) {
           {photos.map((p) => (
             <button key={p.id} type="button" className="ph-thumb" onClick={() => setOpenPhoto(p)}>
               <img src={p.src} alt="" />
+              {p.kind === 'rp' && <i className="ph-thumb-tag">RP</i>}
             </button>
           ))}
         </div>
@@ -143,6 +144,12 @@ export default function CameraApp({ onOpenApp }) {
   return (
     <div className="ph-camera">
       <div className="ph-viewfinder">
+        {onOpenRpCamera && (
+          <div className="ph-cam-mode" role="group" aria-label="Mode kamera">
+            <button type="button" className="is-on" aria-pressed="true">Real</button>
+            <button type="button" onClick={() => { hapticSelect(); onOpenRpCamera() }}>RP</button>
+          </div>
+        )}
         <video ref={videoRef} playsInline muted className={facing === 'user' ? 'is-mirror' : ''} />
         {!ready && !streamError && <p className="ph-cam-note">Membuka kamera...</p>}
         {streamError && (
