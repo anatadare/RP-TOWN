@@ -11,7 +11,20 @@ import * as THREE from 'three'
 const SHOW_MS = 6000 // bubble tampil segini lama sejak pesan terakhir
 const FADE_MS = 500
 const MAX_DIST = 45 // lebih jauh dari ini bubble disembunyikan
+const WORDS_PER_LINE = 7
+const MAX_LINES = 5
 const _v = new THREE.Vector3()
+
+// Pecah teks: maks 7 kata per baris, maks 5 baris (lebihnya dipotong "…").
+function formatBubble(text) {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean)
+  const lines = []
+  for (let i = 0; i < words.length && lines.length < MAX_LINES; i += WORDS_PER_LINE) {
+    lines.push(words.slice(i, i + WORDS_PER_LINE).join(' '))
+  }
+  if (words.length > WORDS_PER_LINE * MAX_LINES) lines[MAX_LINES - 1] += '…'
+  return lines.join('\n')
+}
 
 export default function ChatBubble3D({ bubblesRef, id = null, selfIdRef = null, y }) {
   const { camera } = useThree()
@@ -37,7 +50,7 @@ export default function ChatBubble3D({ bubblesRef, id = null, selfIdRef = null, 
       return
     }
     if (lastKey.current !== e.k && textRef.current) {
-      textRef.current.textContent = e.x
+      textRef.current.textContent = formatBubble(e.x)
       lastKey.current = e.k
     }
     box.style.opacity = age > SHOW_MS ? String(1 - (age - SHOW_MS) / FADE_MS) : '1'
