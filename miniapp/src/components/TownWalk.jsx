@@ -15,6 +15,8 @@ import { useWalkNet, ANIM_IDLE, ANIM_WALK, ANIM_RUN, ANIM_JUMP } from '../lib/wa
 import RemotePlayers from './RemotePlayers'
 import PhoneInventory from './PhoneInventory'
 import PhoneButton from './PhoneButton'
+import ChatPanel from './ChatPanel'
+import ChatBubble3D from './ChatBubble3D'
 import GatchaReveal from './GatchaReveal'
 import PhoneOverlay from './phone/PhoneOverlay'
 import RpCameraHud, { RpCaptureBridge } from './RpCameraHud'
@@ -371,7 +373,7 @@ function prepareWalkScene(scene) {
 // Karakter + fisika + kamera. Semua di satu useFrame supaya urutannya pasti:
 // input -> fisika -> posisi model -> animasi -> kamera.
 // ---------------------------------------------------------------------------
-function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onReady, equippedPhone, phoneFoldT }) {
+function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies, onReady, equippedPhone, phoneFoldT }) {
   const { scene: charScene, animations } = useGLTF(character.modelUrl)
   const { camera } = useThree()
 
@@ -677,6 +679,7 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, canopies, onRe
             </group>
           </group>
         </group>
+        <ChatBubble3D bubblesRef={net.bubblesRef} selfIdRef={net.selfIdRef} y={PLAYER.height + 0.35} />
       </group>
       <mesh ref={shadowRef} rotation-x={-Math.PI / 2} visible={false} renderOrder={2}>
         <circleGeometry args={[0.5, 20]} />
@@ -771,12 +774,13 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, 
         character={character}
         inputRef={inputRef}
         selfRef={selfRef}
+        net={net}
         canopies={built.canopies}
         onReady={onReady}
         equippedPhone={equippedPhone}
         phoneFoldT={phoneFoldT}
       />
-      <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} world={world} />
+      <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
     </>
   )
 }
@@ -803,7 +807,13 @@ function WalkControls({ inputRef }) {
       inp.kbX = (x / l) * gain
       inp.kbY = (y / l) * gain
     }
+    // Lagi ngetik (kolom chat) -> WASD/Spasi jangan ikut gerakin karakter.
+    const typing = (e) => {
+      const t = e.target
+      return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+    }
     function onDown(e) {
+      if (typing(e)) return
       if (e.code === 'Space') {
         e.preventDefault()
         if (!e.repeat) inputRef.current.jump = true
@@ -813,6 +823,7 @@ function WalkControls({ inputRef }) {
       sync()
     }
     function onUp(e) {
+      if (typing(e)) return
       keys.delete(e.code)
       sync()
     }
@@ -983,6 +994,72 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // phoneStartApp = app yang langsung dibuka saat layar HP dibuka lagi (balik ke kamera Real).
   const [rpCam, setRpCam] = useState(false)
   const [phoneStartApp, setPhoneStartApp] = useState(null)
+  // ---- Chat global room ---------------------------------------------------
+  // Auto-buka CUMA SEKALI per sesi: pas ada chat masuk dari orang lain (atau
+  // pas user buka sendiri duluan). Begitu sudah kejadian sekali, kalau user
+  // nutup kotak chat gak akan dibuka paksa lagi -- cuma bisa lewat tombol.
+  // Statusnya disimpan di sessionStorage biar tetap berlaku walau keluar-masuk
+  // mode Jelajahi selama sesi yang sama.
+  const CHAT_AUTO_KEY = 'rpt_chat_auto_done'
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatUnread, setChatUnread] = useState(0)
+  const [chatMentionUnread, setChatMentionUnread] = useState(false)
+  const chatAutoDoneRef = useRef(
+    (() => {
+      try {
+        return sessionStorage.getItem(CHAT_AUTO_KEY) === '1'
+      } catch {
+        return false
+      }
+    })(),
+  )
+  const chatSeenRef = useRef(0) // jumlah pesan yang sudah diproses
+  const chatOpenRef = useRef(false)
+  chatOpenRef.current = chatOpen
+
+  function markChatAutoDone() {
+    chatAutoDoneRef.current = true
+    try {
+      sessionStorage.setItem(CHAT_AUTO_KEY, '1')
+    } catch {
+      // gak masalah
+    }
+  }
+
+  function openChat() {
+    markChatAutoDone() // user buka sendiri = pemicu "sekali" juga dianggap terpakai
+    setChatOpen(true)
+    setChatUnread(0)
+    setChatMentionUnread(false)
+  }
+
+  function closeChat() {
+    markChatAutoDone()
+    setChatOpen(false)
+  }
+
+  const { messages: chatMessages, selfId: chatSelfId } = net
+  useEffect(() => {
+    if (chatMessages.length === 0) {
+      chatSeenRef.current = 0
+      return
+    }
+    const fresh = chatMessages.slice(chatSeenRef.current)
+    chatSeenRef.current = chatMessages.length
+    const fromOthers = fresh.filter((m) => m.i !== chatSelfId)
+    if (fromOthers.length === 0) return
+    if (chatOpenRef.current) return
+    if (!chatAutoDoneRef.current) {
+      markChatAutoDone()
+      setChatOpen(true)
+      setChatUnread(0)
+      setChatMentionUnread(false)
+      return
+    }
+    setChatUnread((n) => n + fromOthers.length)
+    if (chatSelfId && fromOthers.some((m) => (m.mt || []).includes(chatSelfId))) setChatMentionUnread(true)
+  }, [chatMessages, chatSelfId])
+
   const equippedPhone = ownedItems.find((it) => it.id === equippedCitizenItemId)?.item_type_id ?? null
 
   // Ambil kepemilikan HP sekali pas TownWalk dimount (atau citizenId-nya
@@ -1163,6 +1240,22 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
           ↺
         </button>
       </div>
+
+      {/* Chat global room -- tombol bulat merah di atas tas + kotak chat
+          (swipe kanan = reply, @ = mention). Bubble di atas kepala karakter
+          digambar di dalam Canvas (ChatBubble3D). */}
+      <ChatPanel
+        open={chatOpen}
+        onToggle={() => (chatOpen ? closeChat() : openChat())}
+        onClose={closeChat}
+        messages={net.messages}
+        selfId={net.selfId}
+        peersRef={net.peersRef}
+        online={net.status === 'online'}
+        unread={chatUnread}
+        mentionUnread={chatMentionUnread}
+        onSend={net.sendChat}
+      />
 
       {/* Tombol tas (inventory) -- persis di atas tombol pilih peta. Pilih
           salah satu HP yang BENERAN dimiliki warga (ownedItems di atas)
