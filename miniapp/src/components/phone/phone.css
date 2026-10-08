@@ -365,7 +365,7 @@
 .ph-ig-time { color: var(--ph-sub); font-size: 11px !important; text-transform: uppercase; letter-spacing: 0.03em; }
 
 .ph-tabbar { flex: none; display: flex; justify-content: space-around; border-top: 1px solid var(--ph-line); background: var(--ph-app-bg); padding: 6px 0; }
-.ph-tabbar button { background: none; border: none; color: var(--ph-sub); padding: 6px 22px; cursor: pointer; }
+.ph-tabbar button { flex: 1; background: none; border: none; color: var(--ph-sub); padding: 6px 0; cursor: pointer; display: grid; place-items: center; }
 .ph-tabbar button.is-on { color: var(--ph-text); }
 .ph-tabbar button.is-on svg { stroke-width: 2.4; }
 
@@ -405,3 +405,82 @@
 .ph-comment p { margin: 0; font-size: 14px; line-height: 1.35; word-break: break-word; }
 .ph-sheet-input { display: flex; gap: 8px; align-items: center; padding-top: 8px; border-top: 1px solid var(--ph-line); }
 .ph-sheet-input input { flex: 1; min-width: 0; border: none; outline: none; background: var(--ph-surface); color: var(--ph-text); font: inherit; font-size: 16px; padding: 9px 14px; border-radius: 999px; }
+
+
+/* ===== Sosmed: profil orang, edit/hapus post, pencarian, chat ===== */
+.ph-ig-scroll.is-chat { display: flex; flex-direction: column; overflow: hidden; }
+.ph-who { background: none; border: none; padding: 0; text-align: left; cursor: pointer; align-items: flex-start; }
+.ph-avatar.is-tap { border: none; padding: 0; cursor: pointer; }
+.ph-tab-icon { position: relative; display: grid; place-items: center; }
+.ph-dot { position: absolute; top: -1px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: #ff3b5c; border: 2px solid var(--ph-app-bg); box-sizing: content-box; }
+.ph-section-title { margin: 12px 14px 8px; font-size: 18px; font-weight: 700; }
+.ph-inbox, .ph-searchview { padding: 0 12px 14px; }
+.ph-searchview { padding-top: 10px; }
+.ph-hint { text-align: center; margin-top: 10px; font-size: 12px; }
+.ph-pid { margin-top: 2px; }
+.ph-pid b { color: var(--ph-text); letter-spacing: 0.04em; }
+
+/* header kecil untuk layar yang ditumpuk (profil orang, chat) */
+.ph-subhead { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--ph-line); background: var(--ph-app-bg); position: sticky; top: 0; z-index: 3; }
+.ph-subhead-title { font-weight: 700; font-size: 16px; }
+.ph-subhead-who { display: flex; align-items: center; gap: 10px; background: none; border: none; padding: 0; color: var(--ph-text); text-align: left; cursor: pointer; min-width: 0; }
+
+/* tombol Chat di profil */
+.ph-profile-actions { display: flex; gap: 8px; margin-top: 12px; }
+.ph-profile-actions .ph-btn { flex: 1; }
+
+/* inbox */
+.ph-grow { flex: 1; min-width: 0; }
+.ph-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.ph-row-sub.is-unread { color: var(--ph-text); font-weight: 600; }
+.ph-inbox-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.ph-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--ph-accent); color: #fff; font-style: normal; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+
+/* chat */
+.ph-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ph-chat-list { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; -webkit-overflow-scrolling: touch; }
+.ph-bubble-row { display: flex; }
+.ph-bubble-row.is-mine { justify-content: flex-end; }
+.ph-bubble { max-width: 78%; padding: 8px 12px 6px; border-radius: 18px 18px 18px 5px; background: var(--ph-surface); color: var(--ph-text); font-size: 14.5px; line-height: 1.35; word-break: break-word; }
+.ph-bubble.is-mine { border-radius: 18px 18px 5px 18px; background: var(--ph-accent); color: #fff; }
+.ph-bubble.is-pending { opacity: 0.6; }
+.ph-bubble i { display: block; margin-top: 2px; font-style: normal; font-size: 10px; opacity: 0.65; text-align: right; }
+.ph-chat-error { flex: none; padding: 0 14px; margin: 0 0 4px; }
+.ph-chat-input { flex: none; display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--ph-line); background: var(--ph-app-bg); }
+.ph-chat-input input { flex: 1; min-width: 0; border: none; outline: none; background: var(--ph-surface); color: var(--ph-text); font: inherit; font-size: 16px; padding: 9px 14px; border-radius: 999px; }
+
+/* detail post + edit/hapus */
+.ph-sheet.ph-sheet-tall { max-height: 92%; padding: 8px 0 0; }
+.ph-viewer { padding: 0 0 14px; gap: 0; }
+.ph-viewer-head { display: flex; align-items: center; gap: 10px; padding: 4px 14px 10px; }
+.ph-viewer-actions { padding-top: 8px; }
+.ph-viewer-meta { padding-bottom: 4px; }
+.ph-owner-btns { display: flex; gap: 8px; padding: 10px 14px 0; }
+.ph-owner-btns .ph-btn { flex: 1; }
+.ph-btn-danger { color: #ff4d5e; border-color: rgba(255, 77, 94, 0.5); }
+.ph-btn-danger-solid { background: #ff3b4e; border-color: transparent; color: #fff; }
+.ph-edit { padding: 10px 14px 0; }
+.ph-edit textarea { width: 100%; border: none; outline: none; resize: none; background: var(--ph-surface); color: var(--ph-text); font: inherit; font-size: 16px; padding: 10px 12px; border-radius: var(--ph-radius); box-sizing: border-box; }
+.ph-edit .ph-compose-bar { margin-top: 8px; }
+.ph-edit-btns { display: inline-flex; gap: 8px; }
+.ph-confirm { padding: 10px 14px 0; }
+.ph-confirm p { margin: 0; font-size: 13.5px; color: var(--ph-sub); line-height: 1.4; }
+.ph-viewer .ph-error { padding: 0 14px; }
+
+
+/* ===== Kamera: switch Real | RP (kecil, redup) + tag foto RP di galeri ===== */
+.ph-cam-mode { position: absolute; top: 8px; left: 8px; z-index: 3; display: inline-flex; padding: 2px; border-radius: 999px; background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(4px); }
+.ph-cam-mode button { border: none; background: none; color: rgba(255, 255, 255, 0.6); font-size: 11px; font-weight: 600; line-height: 1; padding: 5px 11px; border-radius: 999px; cursor: pointer; }
+.ph-cam-mode button.is-on { background: rgba(255, 255, 255, 0.22); color: #fff; cursor: default; }
+.ph-thumb { position: relative; }
+.ph-thumb-tag { position: absolute; left: 4px; bottom: 4px; font-style: normal; font-size: 9px; font-weight: 700; line-height: 1; padding: 3px 5px; border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: #fff; }
+
+/* ===== Kontak berbasis ID RP Town ===== */
+.ph-myid { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--ph-surface); border-radius: var(--ph-radius); padding: 10px 12px; margin: 2px 0 10px; }
+.ph-myid-text { display: flex; flex-direction: column; min-width: 0; }
+.ph-myid-text b { font-size: 17px; letter-spacing: 0.05em; user-select: all; -webkit-user-select: all; }
+.ph-contact-info { align-self: stretch; margin: 14px 0 4px; background: var(--ph-surface); border-radius: var(--ph-radius); overflow: hidden; text-align: left; }
+.ph-contact-info > div { padding: 10px 14px; border-bottom: 1px solid var(--ph-line); }
+.ph-contact-info > div:last-child { border-bottom: none; }
+.ph-contact-info b { display: block; font-size: 15px; font-weight: 600; word-break: break-word; }
+.ph-contact-info span { font-size: 12px; color: var(--ph-sub); }
