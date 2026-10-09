@@ -36,10 +36,15 @@ export default function PhoneOverlay({ variant, citizenId, onClose, initialApp, 
       onWheel={stop}
     >
       <div className="ph-frame">
-        <PhoneScreen variant={variant} citizenId={citizenId} onClose={onClose} initialApp={initialApp} onOpenRpCamera={onOpenRpCamera} />
-        <button type="button" className="ph-close" onClick={onClose} aria-label="Tutup layar HP">
-          <IconClose width={18} height={18} />
-        </button>
+        <PhoneScreen variant={variant} citizenId={citizenId} onClose={onClose} initialApp={initialApp} onOpenRpCamera={onOpenRpCamera} mode={mode} />
+        {/* HP (mode 'full'): TIDAK ada tombol X di pojok (posisinya susah dijangkau).
+            Tutup lewat: swipe dari tepi kanan (panel Tutup), atau tombol home saat sudah di beranda.
+            PC (mode 'floating'): tombol X tetap seperti biasa. */}
+        {mode !== 'full' && (
+          <button type="button" className="ph-close" onClick={onClose} aria-label="Tutup layar HP">
+            <IconClose width={18} height={18} />
+          </button>
+        )}
       </div>
     </div>
   )
