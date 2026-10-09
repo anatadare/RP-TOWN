@@ -44,7 +44,6 @@
   color: #fff;
   cursor: pointer;
 }
-.ph-overlay-full .ph-close { top: 6px; right: 8px; }
 .ph-overlay-floating .ph-close { left: -46px; top: 14px; background: rgba(11, 18, 32, 0.85); }
 
 /* ---------- layar ---------- */
@@ -74,7 +73,6 @@
   font-size: 13px; font-weight: 600;
   z-index: 2;
 }
-.ph-overlay-full .ph-status { padding-right: 52px; }
 .ph-status-icons { display: flex; align-items: center; gap: 6px; }
 .ph-screen[data-in-app="1"] .ph-status { background: var(--ph-app-bg); color: var(--ph-text); }
 .ph-island {
@@ -469,3 +467,27 @@
 .ph-contact-info > div:last-child { border-bottom: none; }
 .ph-contact-info b { display: block; font-size: 15px; font-weight: 600; word-break: break-word; }
 .ph-contact-info span { font-size: 12px; color: var(--ph-sub); }
+
+
+/* ===== Panel "Tutup HP" (khusus HP) -- muncul dari tepi kanan seperti panel volume ===== */
+.ph-sidepanel-backdrop { position: absolute; inset: 0; z-index: 40; background: transparent; }
+.ph-sidepanel {
+  position: absolute; z-index: 41;
+  right: 10px; top: 24%;
+  width: 68px; padding: 16px 0 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  background: #fff; color: #222;
+  border-radius: 18px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  animation: ph-side-in 0.2s ease-out;
+}
+.ph-sidepanel-track { width: 6px; height: 150px; border-radius: 3px; background: #ececec; position: relative; overflow: hidden; }
+.ph-sidepanel-track i { position: absolute; inset: 0; border-radius: 3px; background: #555; }
+.ph-sidepanel-btn {
+  width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer;
+  display: grid; place-items: center;
+  background: #ef4444; color: #fff;
+}
+.ph-sidepanel-btn:active { transform: scale(0.94); }
+.ph-sidepanel-label { font-size: 11px; font-weight: 600; color: #555; }
+@keyframes ph-side-in { from { opacity: 0; transform: translateX(24px) } to { opacity: 1; transform: translateX(0) } }
