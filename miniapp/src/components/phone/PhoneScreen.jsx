@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getPhoneTheme } from './phoneThemes'
 import { hapticSelect } from '../../lib/telegram'
 import {
-  IconBack, IconBattery, IconCamera, IconContacts, IconMarket, IconSignal, IconSocial, IconWifi, IconSearch,
+  IconBack, IconBattery, IconCamera, IconClose, IconContacts, IconMarket, IconSignal, IconSocial, IconWifi, IconSearch,
 } from './PhoneIcons'
 import ContactsApp from './apps/ContactsApp'
 import CameraApp from './apps/CameraApp'
@@ -20,6 +20,13 @@ const APPS = [
 const SWIPE_MIN_X = 80      // geser minimal (px)
 const SWIPE_RATIO = 2       // harus jauh lebih horizontal daripada vertikal
 const SWIPE_MAX_MS = 700    // gesekan cepat, bukan drag lambat
+
+// ---- Panel "Tutup HP" (khusus HP / mode 'full'), gayanya seperti panel volume ----
+// Muncul kalau: (a) swipe dari TEPI KANAN layar ke kiri (di mana saja, termasuk dalam aplikasi), atau
+// (b) swipe ke kanan di layar beranda HP (di beranda swipe tidak punya fungsi lain).
+const EDGE_PX = 36          // lebar zona tepi kanan (px)
+const EDGE_MIN_X = 36       // geser minimal dari tepi (px)
+const PANEL_HIDE_MS = 4000  // panel hilang sendiri
 
 // Jangan anggap swipe kalau jari mulai di: kolom ketik, daftar yang bisa digeser
 // horizontal (mis. baris Cerita), atau lembar komentar/detail post.
@@ -131,31 +138,65 @@ function AppIcon({ app, theme, onOpen, showLabel }) {
 
 // Layar HP lengkap: status bar -> (home | aplikasi) -> bar navigasi.
 // Tampilannya diatur lewat data-* + CSS variable dari tema brand (phoneThemes.js).
-export default function PhoneScreen({ variant, citizenId, onClose, initialApp, onOpenRpCamera }) {
+export default function PhoneScreen({ variant, citizenId, onClose, initialApp, onOpenRpCamera, mode = 'floating' }) {
   const theme = getPhoneTheme(variant)
   const clock = useClock()
   const [appId, setAppId] = useState(initialApp || null)
   const app = APPS.find((a) => a.id === appId)
 
+  const isFull = mode === 'full'
+  const [closePanel, setClosePanel] = useState(false)
+
+  // panel tutup hilang sendiri setelah beberapa detik
+  useEffect(() => {
+    if (!closePanel) return undefined
+    const t = setTimeout(() => setClosePanel(false), PANEL_HIDE_MS)
+    return () => clearTimeout(t)
+  }, [closePanel])
+
   const swipe = useRef(null)
   function onSwipeStart(e) {
     if (e.touches.length !== 1) { swipe.current = null; return }
     const t = e.touches[0]
-    swipe.current = { x: t.clientX, y: t.clientY, at: Date.now(), blocked: swipeBlocked(e.target, e.currentTarget) }
+    const rect = e.currentTarget.getBoundingClientRect()
+    swipe.current = {
+      x: t.clientX, y: t.clientY, at: Date.now(),
+      edge: isFull && t.clientX >= rect.right - EDGE_PX,
+      blocked: swipeBlocked(e.target, e.currentTarget),
+    }
   }
   function onSwipeEnd(e) {
     const s = swipe.current
     swipe.current = null
-    if (!s || s.blocked) return
+    if (!s) return
     const t = e.changedTouches[0]
     const dx = t.clientX - s.x
     const dy = t.clientY - s.y
-    if (Math.abs(dx) >= SWIPE_MIN_X && Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO && Date.now() - s.at <= SWIPE_MAX_MS) home()
+    const horizontal = Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO && Date.now() - s.at <= SWIPE_MAX_MS
+
+    // (a) swipe dari tepi kanan -> panel Tutup HP (tidak ikut memicu "ke beranda")
+    if (s.edge) {
+      if (dx <= -EDGE_MIN_X && horizontal) { hapticSelect(); setClosePanel(true) }
+      return
+    }
+    if (s.blocked) return
+    if (!horizontal || Math.abs(dx) < SWIPE_MIN_X) return
+    if (app) { goHome(); return }
+    // (b) di beranda: swipe ke kanan -> panel Tutup HP
+    if (isFull && dx > 0) { hapticSelect(); setClosePanel(true) }
   }
 
   function open(id) { hapticSelect(); setAppId(id) }
-  function home() { hapticSelect(); setAppId(null) }
+  // dari dalam aplikasi -> beranda HP (dipakai tombol panah di header & swipe)
+  function goHome() { hapticSelect(); setAppId(null) }
+  // tombol home di bawah: di dalam aplikasi -> beranda; sudah di beranda -> keluar dari HP (khusus HP)
+  function pressHome() {
+    hapticSelect()
+    if (appId) setAppId(null)
+    else if (isFull) onClose?.()
+  }
   function back() { hapticSelect(); if (appId) setAppId(null) }
+  function closePhone() { hapticSelect(); setClosePanel(false); onClose?.() }
 
   const floatingDock = theme.dock === 'floating'
 
@@ -172,6 +213,9 @@ export default function PhoneScreen({ variant, citizenId, onClose, initialApp, o
       data-in-app={appId ? '1' : '0'}
       data-app={appId || 'home'}
       style={theme.vars}
+      onTouchStart={onSwipeStart}
+      onTouchEnd={onSwipeEnd}
+      onTouchCancel={() => { swipe.current = null }}
     >
       <StatusBar kind={theme.status} time={clock.time} />
 
@@ -200,14 +244,9 @@ export default function PhoneScreen({ variant, citizenId, onClose, initialApp, o
       )}
 
       {app && (
-        <div
-          className="ph-app-host"
-          onTouchStart={onSwipeStart}
-          onTouchEnd={onSwipeEnd}
-          onTouchCancel={() => { swipe.current = null }}
-        >
+        <div className="ph-app-host">
           <header className="ph-app-header">
-            <button type="button" className="ph-back" onClick={home} aria-label="Kembali">
+            <button type="button" className="ph-back" onClick={goHome} aria-label="Kembali">
               <IconBack width={22} height={22} />
             </button>
             <h1>{app.label}</h1>
@@ -219,13 +258,26 @@ export default function PhoneScreen({ variant, citizenId, onClose, initialApp, o
       )}
 
       {theme.nav === 'gesture' ? (
-        <button type="button" className="ph-nav-gesture" onClick={home} aria-label="Ke beranda"><i /></button>
+        <button type="button" className="ph-nav-gesture" onClick={pressHome} aria-label={isFull && !appId ? 'Tutup HP' : 'Ke beranda'}><i /></button>
       ) : (
         <div className="ph-nav-buttons">
           <button type="button" onClick={back} aria-label="Kembali">◁</button>
-          <button type="button" onClick={home} aria-label="Beranda">○</button>
+          <button type="button" onClick={pressHome} aria-label={isFull && !appId ? 'Tutup HP' : 'Beranda'}>○</button>
           <button type="button" onClick={onClose} aria-label="Tutup HP">□</button>
         </div>
+      )}
+
+      {isFull && closePanel && (
+        <>
+          <div className="ph-sidepanel-backdrop" onClick={() => setClosePanel(false)} />
+          <div className="ph-sidepanel" role="dialog" aria-label="Tutup HP" data-no-swipe>
+            <div className="ph-sidepanel-track"><i /></div>
+            <button type="button" className="ph-sidepanel-btn" onClick={closePhone} aria-label="Tutup HP">
+              <IconClose width={22} height={22} />
+            </button>
+            <span className="ph-sidepanel-label">Tutup</span>
+          </div>
+        </>
       )}
     </div>
   )
