@@ -1,2871 +1,493 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap');
+/* ============================================================
+   phone.css -- layar HP (PhoneOverlay/PhoneScreen).
+   Tema per brand diatur lewat CSS variable --ph-* (inline dari
+   phoneThemes.js) + atribut data-* di .ph-screen.
+   ============================================================ */
 
-:root {
-  /* Tema Y2K Cyber — nama variabel lama (--lantern dst) sengaja dipertahankan
-     supaya semua komponen otomatis ikut; isinya sekarang cyan/magenta. */
-  --sky-dusk-1: #0b1220;
-  --sky-dusk-2: #101a33;
-  --sky-dusk-3: #2a0f3f;
-  --lantern: #22e4ff; /* aksen utama: cyan */
-  --lantern-soft: #9cf3ff;
-  --accent: #ff3dcb; /* aksen kedua: magenta */
-  --accent-soft: #ff8ae2;
-  --moss: #2b1b5e; /* avatar & node keluarga: violet tua */
-  --moss-light: #5a46b8;
-  --paper: #eaf6ff;
-  --ink: #04121c;
-  --ink-soft: #b4c6e0;
-  --path: rgba(234, 246, 255, 0.28);
+/* ---------- wadah: popup penuh (Telegram HP) / floating kanan (PC) ---------- */
+.ph-overlay { position: fixed; z-index: 60; }
 
-  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: 'Space Mono', 'SF Mono', Consolas, monospace;
+.ph-overlay-full {
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  animation: ph-fade 0.18s ease-out;
+}
+.ph-overlay-full .ph-frame { position: relative; width: 100%; height: 100%; }
+.ph-overlay-full .ph-screen { border-radius: 0; }
+
+.ph-overlay-floating {
+  right: 64px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: min(90vh, 900px);
+  aspect-ratio: 9 / 19.5;
+  animation: ph-pop 0.2s ease-out;
+}
+.ph-overlay-floating .ph-frame { position: relative; width: 100%; height: 100%; }
+.ph-overlay-floating .ph-screen {
+  border-radius: 40px;
+  border: 9px solid #0b0b0e;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 0 0 1.5px rgba(255, 255, 255, 0.14);
 }
 
-* {
+@keyframes ph-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ph-pop { from { opacity: 0; transform: translateY(-48%) scale(0.96) } to { opacity: 1; transform: translateY(-50%) scale(1) } }
+
+.ph-close {
+  position: absolute;
+  z-index: 12;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: none;
+  display: grid; place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+}
+.ph-overlay-floating .ph-close { left: -46px; top: 14px; background: rgba(11, 18, 32, 0.85); }
+
+/* ---------- layar ---------- */
+.ph-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--ph-wall);
+  color: var(--ph-home-ink, #fff);
+  font-family: var(--ph-font);
+  -webkit-font-smoothing: antialiased;
   box-sizing: border-box;
 }
+.ph-screen *, .ph-screen *::before, .ph-screen *::after { box-sizing: border-box; }
+.ph-screen button { font-family: inherit; }
+.ph-screen[data-app="camera"] { --ph-app-bg: #000 !important; --ph-text: #fff !important; --ph-sub: #a0a0a8 !important; --ph-surface: #16161a !important; --ph-line: rgba(255,255,255,0.14) !important; }
 
-html, body, #root {
-  height: 100%;
-  margin: 0;
-  overflow: hidden;
-}
-
-body {
-  font-family: var(--font-body);
-  color: var(--ink-soft);
-  background: linear-gradient(180deg, var(--sky-dusk-1) 0%, var(--sky-dusk-2) 55%, var(--sky-dusk-3) 100%);
-}
-
-.town {
+/* ---------- status bar ---------- */
+.ph-status {
   position: relative;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-}
-
-/* Bintang ambient di langit */
-.town::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image:
-    radial-gradient(1px 1px at 20% 15%, #fff, transparent),
-    radial-gradient(1px 1px at 60% 8%, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 80% 20%, #fff, transparent),
-    radial-gradient(1px 1px at 35% 25%, #fff, transparent),
-    radial-gradient(1px 1px at 90% 12%, #fff, transparent),
-    radial-gradient(1.5px 1.5px at 10% 35%, #fff, transparent);
-  opacity: 0.5;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Overlay UI yang mengambang di atas peta, tidak ikut ke-zoom/pan */
-.town-overlay-top {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 5;
-  padding: 20px 16px 0;
-  max-width: 480px;
-  margin: 0 auto;
-  pointer-events: none;
-}
-
-.town-overlay-top > * {
-  pointer-events: auto;
-}
-
-/* Header — judul kiri, status waktu kanan */
-.town-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.town-title {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 22px;
-  letter-spacing: 0.3px;
-  color: var(--paper);
-  margin: 0;
-  text-shadow: 0 0 24px rgba(34, 228, 255, 0.25);
-  white-space: nowrap;
-}
-
-/* Clock badge — signature element: waktu & fase dunia */
-.world-clock {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 12px;
-  width: fit-content;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: rgba(234, 246, 255, 0.08);
-  border: 1px solid rgba(234, 246, 255, 0.16);
-  backdrop-filter: blur(6px);
-}
-
-.world-clock .phase-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--lantern);
-  box-shadow: 0 0 10px 2px var(--lantern);
-  flex-shrink: 0;
-}
-
-.world-clock span:not(.phase-dot) {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--paper);
-  white-space: nowrap;
-}
-
-/* Switcher pindah peta — tab kecil di bawah header, kawasan pantai vs LPM dst */
-.map-switcher {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  gap: 6px;
-  width: fit-content;
-  margin-top: 10px;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgba(234, 246, 255, 0.08);
-  border: 1px solid rgba(234, 246, 255, 0.16);
-  backdrop-filter: blur(6px);
-}
-
-.map-switcher-item {
-  border: none;
-  background: transparent;
-  color: var(--ink-soft);
-  opacity: 0.65;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.3px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.map-switcher-item.is-active {
-  opacity: 1;
-  background: rgba(34, 228, 255, 0.16);
-  color: var(--lantern-soft);
-}
-
-/* ============================================
-   SEARCH BAR BANGUNAN — di bawah map-switcher.
-   Klik/fokus -> top 5 populasi. Ngetik -> cari semua bangunan di peta aktif.
-   ============================================ */
-.building-search {
-  position: relative;
+  flex: none;
+  height: 36px;
+  padding: 0 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; font-weight: 600;
   z-index: 2;
-  margin-top: 10px;
 }
-
-.building-search-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: rgba(234, 246, 255, 0.08);
-  border: 1px solid rgba(234, 246, 255, 0.16);
-  backdrop-filter: blur(6px);
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.building-search-box.is-open {
-  border-color: rgba(34, 228, 255, 0.4);
-  background: rgba(234, 246, 255, 0.1);
-}
-
-.building-search-icon {
-  display: flex;
-  color: var(--ink-soft);
-  opacity: 0.6;
-  flex-shrink: 0;
-}
-
-.building-search-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  outline: none;
-  font-family: var(--font-body);
-  font-size: 13px;
-  color: var(--paper);
-}
-
-.building-search-input::placeholder {
-  color: var(--ink-soft);
-  opacity: 0.55;
-}
-
-.building-search-clear {
-  border: none;
-  background: rgba(234, 246, 255, 0.12);
-  color: var(--ink-soft);
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.building-search-panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  max-height: 340px;
-  overflow-y: auto;
-  border-radius: 16px;
-  background: rgba(13, 16, 34, 0.96);
-  border: 1px solid rgba(234, 246, 255, 0.16);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
-  animation: fadeIn 0.12s ease;
-}
-
-.building-search-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
-  color: var(--lantern-soft);
-  opacity: 0.85;
-}
-
-.building-search-count {
-  color: var(--ink-soft);
-  opacity: 0.6;
-  text-transform: none;
-}
-
-.building-search-empty {
-  padding: 6px 14px 16px;
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--ink-soft);
-  opacity: 0.65;
-}
-
-.building-search-list {
-  list-style: none;
-  margin: 0;
-  padding: 0 6px 6px;
-}
-
-.building-search-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 8px;
-  border: none;
-  background: transparent;
-  border-radius: 12px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.building-search-item:active {
-  background: rgba(34, 228, 255, 0.14);
-}
-
-.building-search-rank {
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: rgba(34, 228, 255, 0.16);
-  color: var(--lantern-soft);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.building-search-emoji {
-  flex-shrink: 0;
-  font-size: 18px;
-  width: 22px;
-  text-align: center;
-}
-
-.building-search-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.building-search-name {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--paper);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.building-search-sub {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--ink-soft);
-  opacity: 0.6;
-}
-
-.building-search-pop {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--lantern-soft);
-  white-space: nowrap;
-}
-
-/* Card citizen */
-.citizen-card {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: rgba(234, 246, 255, 0.06);
-  border: 1px solid rgba(234, 246, 255, 0.14);
-  border-radius: 16px;
-  padding: 12px 14px;
-  margin-bottom: 24px;
-}
-
-.citizen-avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: var(--moss);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-display);
-  font-weight: 600;
-  color: var(--paper);
-  font-size: 16px;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.citizen-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.citizen-name {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--paper);
-  margin: 0;
-}
-
-.citizen-status {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-  opacity: 0.75;
-  margin: 2px 0 0;
-}
-
-/* ============================================
-   PETA KOTA — pan & zoom interaktif
-   ============================================ */
-.map-viewport {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-}
-
-.map-transform-wrapper {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.map-transform-content {
-  cursor: grab;
-}
-
-.map-transform-content:active {
-  cursor: grabbing;
-}
-
-.map-canvas {
-  display: block;
-}
-
-.map-building {
-  cursor: pointer;
-  transition: transform 0.15s ease;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.map-building:hover,
-.map-building:active {
-  transform: scale(1.08);
-}
-
-.map-zoom-controls {
-  position: absolute;
-  right: 16px;
-  bottom: calc(78px + env(safe-area-inset-bottom));
-  z-index: 6;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.map-zoom-btn {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  border: 1px solid rgba(234, 246, 255, 0.18);
-  background: rgba(11, 18, 32, 0.85);
-  backdrop-filter: blur(6px);
-  color: var(--paper);
-  font-family: var(--font-body);
-  font-size: 20px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.map-zoom-btn:active {
-  transform: scale(0.94);
-  background: rgba(34, 228, 255, 0.2);
-}
-
-/* state message (loading/error) tetap di tengah layar penuh */
-.state-message {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 40px 20px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--ink-soft);
-  opacity: 0.7;
-  line-height: 1.6;
-}
-
-/* Modal masuk room */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(4, 6, 14, 0.7);
-  backdrop-filter: blur(3px);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  z-index: 10;
-  animation: fadeIn 0.15s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.modal-sheet {
-  width: 100%;
-  max-width: 480px;
-  background: var(--sky-dusk-2);
-  border: 1px solid rgba(234, 246, 255, 0.15);
-  border-bottom: none;
-  border-radius: 22px 22px 0 0;
-  padding: 24px 20px 28px;
-  animation: slideUp 0.2s ease;
-}
-
-@keyframes slideUp {
-  from { transform: translateY(16px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-.modal-icon {
-  font-size: 40px;
-  text-align: center;
-  margin-bottom: 8px;
-}
-
-.modal-title {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 20px;
-  color: var(--paper);
-  text-align: center;
-  margin: 0 0 6px;
-}
-
-.modal-desc {
-  font-family: var(--font-body);
-  font-size: 13px;
-  color: var(--ink-soft);
-  opacity: 0.8;
-  text-align: center;
-  margin: 0 0 22px;
-  line-height: 1.5;
-}
-
-.modal-capacity {
-  background: rgba(234, 246, 255, 0.06);
-  border: 1px solid rgba(234, 246, 255, 0.12);
-  border-radius: 14px;
-  padding: 12px 14px;
-  margin-bottom: 18px;
-}
-
-.modal-capacity-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.modal-capacity-count {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--paper);
-}
-
-.modal-capacity-badge {
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 11px;
-  color: #04121c;
-  background: var(--lantern);
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-.modal-capacity-note {
-  font-family: var(--font-body);
-  font-size: 12px;
-  color: var(--ink-soft);
-  opacity: 0.75;
-  line-height: 1.5;
-  margin: 6px 0 0;
-}
-
-.modal-occupant-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.modal-occupant {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(234, 246, 255, 0.08);
-  border-radius: 999px;
-  padding: 4px 10px 4px 4px;
-}
-
-.modal-occupant-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--sky-dusk-3, #3a3260);
-  color: var(--paper);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  font-weight: 700;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.modal-occupant-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.modal-occupant-name {
-  font-family: var(--font-body);
-  font-size: 11.5px;
-  color: var(--ink-soft);
-  max-width: 90px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.modal-btn {
-  width: 100%;
-  padding: 14px;
-  border-radius: 14px;
-  border: none;
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 14.5px;
-  cursor: pointer;
-  margin-bottom: 10px;
-}
-
-.modal-btn-primary {
-  background: var(--lantern);
-  color: #04121c;
-}
-
-.modal-btn-secondary {
-  background: transparent;
-  color: var(--ink-soft);
-  border: 1px solid rgba(234, 246, 255, 0.18);
-}
-
-/* ============================================
-   PERUMAHAN — panel sewa petak rumah
-   ============================================ */
-.housing-sheet {
-  max-height: 82vh;
-  overflow-y: auto;
-}
-
-.housing-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-
-.housing-subtitle {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-  opacity: 0.75;
-  margin: 0;
-}
-
-.housing-close-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid rgba(234, 246, 255, 0.18);
-  background: rgba(234, 246, 255, 0.06);
-  color: var(--paper);
-  font-size: 14px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.housing-balance {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: rgba(34, 228, 255, 0.1);
-  border: 1px solid rgba(34, 228, 255, 0.25);
-  border-radius: 12px;
-  padding: 10px 14px;
-  margin-bottom: 18px;
-  font-family: var(--font-body);
-  font-size: 13px;
-  color: var(--paper);
-}
-
-.housing-balance strong {
-  font-family: var(--font-mono);
-  color: var(--lantern);
-  font-size: 15px;
-}
-
-.housing-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.housing-plot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 14px 8px;
-  border-radius: 14px;
-  border: 1px solid rgba(234, 246, 255, 0.14);
-  background: rgba(234, 246, 255, 0.05);
-  cursor: pointer;
-  font-family: inherit;
-  color: inherit;
-  text-align: center;
-}
-
-.housing-plot-empty:hover,
-.housing-plot-empty:active {
-  border-color: rgba(34, 228, 255, 0.4);
-  background: rgba(34, 228, 255, 0.08);
-}
-
-.housing-plot-mine {
-  border-color: rgba(255, 61, 203, 0.5);
-  background: rgba(255, 61, 203, 0.1);
-}
-
-.housing-plot-taken {
-  opacity: 0.55;
-}
-
-.housing-plot-icon {
-  font-size: 24px;
-}
-
-.housing-plot-number {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 12.5px;
-  color: var(--paper);
-}
-
-.housing-plot-tag {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  color: var(--lantern-soft);
-  opacity: 0.85;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.housing-plot-price {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-soft);
-  opacity: 0.7;
-}
-
-.housing-hint {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-  opacity: 0.7;
-  text-align: center;
-  line-height: 1.5;
-  margin: 12px 0 0;
-}
-
-.housing-error {
-  font-family: var(--font-body);
-  font-size: 12.5px;
-  color: #ff8a8a;
-  text-align: center;
-  margin: 0 0 14px;
-}
-
-/* ============================================
-   3D MAP — kota dalam bentuk model glTF
-   ============================================ */
-.map3d-viewport {
-  position: absolute;
-  inset: 0;
-  touch-action: none;
-}
-
-/* Tombol refresh peta — pojok kanan bawah, tepat di atas bottom nav */
-.map3d-refresh-btn {
-  position: absolute;
-  right: 16px;
-  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 76px);
-  z-index: 6;
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 1px solid rgba(156, 243, 255, 0.35);
-  background: rgba(11, 18, 32, 0.82);
-  backdrop-filter: blur(8px);
-  color: var(--lantern-soft);
-  cursor: pointer;
-  padding: 0;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.map3d-refresh-btn:active {
-  background: rgba(34, 228, 255, 0.18);
-  transform: scale(0.94);
-}
-
-/* Ikon muter sekali tiap kali peta di-refresh (svg di-remount lewat key) */
-.map3d-refresh-icon {
-  animation: map3d-refresh-spin 0.6s ease-out;
-}
-
-@keyframes map3d-refresh-spin {
-  from { transform: rotate(-360deg); }
-  to { transform: rotate(0deg); }
-}
-
-.map3d-admin-badge {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(34, 228, 255, 0.15);
-  border: 1px solid var(--lantern);
-  color: var(--lantern-soft);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  z-index: 5;
-  pointer-events: none;
-}
-
-/* ============================================
-   BOTTOM NAV — menu navigasi bawah
-   ============================================ */
-.bottom-nav {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 7;
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 16px max(10px, env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, rgba(11, 18, 32, 0) 0%, rgba(7, 11, 22, 0.92) 40%, rgba(7, 11, 22, 0.96) 100%);
-  backdrop-filter: blur(8px);
-}
-
-.bottom-nav-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  min-width: 84px;
-  padding: 8px 18px;
-  border-radius: 14px;
-  border: none;
-  background: transparent;
-  color: var(--ink-soft);
-  opacity: 0.65;
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.5px;
-}
-
-.bottom-nav-item.is-active {
-  opacity: 1;
-  background: rgba(34, 228, 255, 0.1);
-  color: var(--lantern-soft);
-}
-
-/* ============================================
-   MARKET PAGE — etalase listing rumah (read-only,
-   aksi jual/beli/batal tetap lewat chat Pak Darma)
-   ============================================ */
-.market-page {
-  position: relative;
-  z-index: 2;
-  height: 100vh;
-  width: 100%;
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 20px 16px 96px;
-  overflow-y: auto;
-}
-
-.market-page-header {
-  text-align: center;
-  margin-bottom: 18px;
-}
-
-.market-page-title {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 22px;
-  letter-spacing: 0.3px;
-  color: var(--paper);
-  margin: 0 0 4px;
-  text-shadow: 0 0 24px rgba(34, 228, 255, 0.25);
-}
-
-.market-page-subtitle {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--ink-soft);
-  opacity: 0.75;
-  margin: 0;
-}
-
-.market-empty {
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--ink-soft);
-  opacity: 0.7;
-  background: rgba(234, 246, 255, 0.05);
-  border: 1px solid rgba(234, 246, 255, 0.12);
-  border-radius: 12px;
-  padding: 20px 12px;
-  margin: 0 0 16px;
-}
-
-.market-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.market-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(234, 246, 255, 0.14);
-  background: rgba(234, 246, 255, 0.05);
-}
-
-.market-card-mine {
-  border-color: rgba(255, 61, 203, 0.5);
-  background: rgba(255, 61, 203, 0.08);
-}
-
-.market-card-icon {
-  font-size: 26px;
-  flex-shrink: 0;
-}
-
-.market-card-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.market-card-name {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 14.5px;
-  color: var(--paper);
-  margin: 0 0 2px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.market-card-mine-tag {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--accent-soft);
-  border: 1px solid rgba(255, 61, 203, 0.4);
-  border-radius: 999px;
-  padding: 1px 7px;
-  flex-shrink: 0;
-}
-
-.market-card-meta {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--ink-soft);
-  opacity: 0.75;
-  margin: 0 0 6px;
-}
-
-.market-card-seller {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-body);
-  font-size: 11.5px;
-  color: var(--ink-soft);
-}
-
-.market-card-seller-avatar {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--moss);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 8.5px;
-  font-weight: 600;
-  color: var(--paper);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.market-card-seller-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.market-card-price {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 12.5px;
-  color: var(--lantern);
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.market-hint {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-  opacity: 0.7;
-  text-align: center;
-  line-height: 1.5;
-  margin: 4px 0 0;
-}
-
-/* ============================================
-   PROFILE PAGE (halaman penuh, bukan popup lagi)
-   ============================================ */
-.profile-page {
-  position: relative;
-  z-index: 2;
-  height: 100vh;
-  width: 100%;
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 20px 16px 96px;
-  overflow-y: auto;
-}
-
-.profile-page-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 18px;
-}
-
-.profile-page-title {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 22px;
-  letter-spacing: 0.3px;
-  color: var(--paper);
-  margin: 0;
-  text-shadow: 0 0 24px rgba(34, 228, 255, 0.25);
-}
-
-.profile-settings-empty {
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--ink-soft);
-  opacity: 0.7;
-  background: rgba(234, 246, 255, 0.05);
-  border: 1px solid rgba(234, 246, 255, 0.12);
-  border-radius: 12px;
-  padding: 12px 10px;
-  margin: 0 0 16px;
-}
-
-.profile-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.citizen-card-static {
-  margin-bottom: 20px;
-}
-
-/* ---- Identitas (avatar besar + nama + online) ---- */
-.profile-identity {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  margin-bottom: 18px;
-}
-
-.profile-avatar-large {
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
-  background: var(--moss);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-display);
-  font-weight: 600;
-  color: var(--paper);
-  font-size: 30px;
-  overflow: hidden;
-  margin-bottom: 10px;
-  border: 2px solid rgba(34, 228, 255, 0.35);
-}
-
-.profile-avatar-large img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.profile-name {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 19px;
-  color: var(--paper);
-  margin: 0 0 4px;
-}
-
-.profile-online {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--ink-soft);
-  opacity: 0.8;
-  margin: 0;
-}
-
-.profile-online-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--lantern);
-  box-shadow: 0 0 6px 1px var(--lantern);
-}
-
-/* ---- Baris tombol aksi ---- */
-.profile-actions {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.profile-actions-3 {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.profile-action-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 6px;
-  border-radius: 14px;
-  border: 1px solid rgba(234, 246, 255, 0.14);
-  background: rgba(234, 246, 255, 0.06);
-  color: var(--ink-soft);
-  font-family: var(--font-body);
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: center;
-}
-
-.profile-action-btn span {
-  line-height: 1.2;
-}
-
-.profile-action-btn.is-active {
-  background: rgba(34, 228, 255, 0.12);
-  border-color: rgba(34, 228, 255, 0.3);
-  color: var(--lantern-soft);
-}
-
-.profile-toast {
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--lantern-soft);
-  background: rgba(34, 228, 255, 0.1);
-  border: 1px solid rgba(34, 228, 255, 0.25);
-  border-radius: 10px;
-  padding: 8px 10px;
-  margin: 0 0 14px;
-}
-
-/* ---- Section title (mis. "Rumah") ---- */
-.profile-section {
-  margin-bottom: 16px;
-}
-
-.profile-section-title-row {
-  display: flex;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.profile-section-title {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 13.5px;
-  color: var(--lantern-soft);
-}
-
-/* ---- Kartu Rumah ---- */
-.profile-house-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  background: rgba(234, 246, 255, 0.06);
-  border: 1px solid rgba(234, 246, 255, 0.14);
-  border-radius: 16px;
-  padding: 12px 14px;
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
-}
-
-.profile-house-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: rgba(34, 228, 255, 0.12);
-  color: var(--lantern-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.profile-house-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.profile-house-name {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--paper);
-  margin: 0 0 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.profile-house-sub {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-  opacity: 0.75;
-  margin: 0;
-}
-
-.profile-house-arrow {
-  font-size: 20px;
-  color: var(--ink-soft);
-  opacity: 0.6;
-  flex-shrink: 0;
-}
-
-.profile-house-empty {
-  cursor: default;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-}
-
-.profile-house-empty-text {
-  font-family: var(--font-body);
-  font-size: 13px;
-  color: var(--ink-soft);
-  opacity: 0.8;
-  margin: 0;
-  text-align: center;
-}
-
-.profile-house-cta {
-  width: 100%;
-  padding: 11px;
-  border-radius: 12px;
-  border: 1px solid rgba(34, 228, 255, 0.3);
-  background: rgba(34, 228, 255, 0.12);
-  color: var(--lantern-soft);
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-/* ---- Kartu info (Status, Bio, Username) ---- */
-.profile-info-card {
-  background: rgba(234, 246, 255, 0.06);
-  border: 1px solid rgba(234, 246, 255, 0.14);
-  border-radius: 16px;
-  padding: 4px 14px;
-  margin-bottom: 20px;
-}
-
-.profile-info-row {
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(234, 246, 255, 0.08);
-}
-
-.profile-info-row:last-child {
-  border-bottom: none;
-}
-
-.profile-info-value {
-  font-family: var(--font-body);
-  font-size: 14px;
-  color: var(--paper);
-  margin: 0 0 2px;
-  word-break: break-word;
-}
-
-.profile-info-label {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--ink-soft);
-  opacity: 0.65;
-  margin: 0;
-}
-
-.admin-mode-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(234, 246, 255, 0.14);
-  background: rgba(234, 246, 255, 0.05);
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
-}
-
-.admin-mode-title {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--paper);
-  margin: 0;
-}
-
-.admin-mode-desc {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--ink-soft);
-  opacity: 0.7;
-  margin: 3px 0 0;
-}
-
-.switch {
-  position: relative;
-  flex-shrink: 0;
-  width: 42px;
-  height: 24px;
-  border-radius: 999px;
-  background: rgba(234, 246, 255, 0.15);
-  border: 1px solid rgba(234, 246, 255, 0.2);
-  transition: background 0.15s ease;
-}
-
-.switch.is-on {
-  background: var(--lantern);
-  border-color: var(--lantern);
-}
-
-.switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--paper);
-  transition: transform 0.15s ease;
-}
-
-.switch.is-on .switch-knob {
-  transform: translateX(18px);
-  background: #04121c;
-}
-
-/* ============================================
-   POHON KELUARGA (tab "Keluarga" di halaman Profil)
-   ============================================ */
-.family-tree-card {
-  position: relative;
-  height: 58vh;
-  min-height: 380px;
-  max-height: 560px;
-  border-radius: 20px;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 20%, rgba(34, 228, 255, 0.08), transparent 60%),
-    linear-gradient(180deg, rgba(234, 246, 255, 0.06) 0%, rgba(234, 246, 255, 0.02) 100%);
-  border: 1px solid rgba(234, 246, 255, 0.14);
-  margin-bottom: 16px;
-}
-
-.family-tree-wrapper {
-  width: 100% !important;
-  height: 100% !important;
-  cursor: grab;
-}
-
-.family-tree-wrapper:active {
-  cursor: grabbing;
-}
-
-.family-tree-canvas {
-  display: block;
-}
-
-/* Garis penghubung (pasangan & turunan) */
-.family-tree-link {
-  stroke: rgba(234, 246, 255, 0.35);
-  stroke-width: 3;
-  fill: none;
-  stroke-linecap: round;
-}
-
-.family-node {
-  cursor: default;
-}
-
-.family-node-shadow {
-  fill: rgba(0, 0, 0, 0.28);
-}
-
-.family-node-circle {
-  fill: var(--moss);
-  stroke: rgba(34, 228, 255, 0.3);
-  stroke-width: 2;
-}
-
-.family-node.is-you .family-node-circle,
-.family-node.is-you .family-node-ring {
-  stroke: var(--lantern);
-  stroke-width: 3;
-  filter: drop-shadow(0 0 6px rgba(34, 228, 255, 0.55));
-}
-
-.family-node-ring {
-  fill: none;
-  stroke: rgba(34, 228, 255, 0.3);
-  stroke-width: 2;
-}
-
-.family-node-initials {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 26px;
-  fill: var(--paper);
-}
-
-.family-node-label-bg {
-  fill: rgba(11, 18, 32, 0.85);
-  stroke: rgba(234, 246, 255, 0.16);
-}
-
-.family-node-name {
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 14px;
-  fill: var(--paper);
-}
-
-.family-node-role {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  fill: var(--ink-soft);
-  opacity: 0.75;
-}
-
-.family-tree-hint {
-  position: absolute;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
-  margin: 0;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: rgba(8, 12, 24, 0.55);
-  backdrop-filter: blur(4px);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--ink-soft);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.family-tree-zoom-controls {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.building-room-list {
-  max-height: 40vh;
-  overflow-y: auto;
-  margin-bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.building-room-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(234, 246, 255, 0.15);
-  background: rgba(234, 246, 255, 0.05);
-  color: var(--paper);
-  font-family: var(--font-body);
-  font-size: 14px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.building-room-item:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.building-input {
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(234, 246, 255, 0.18);
-  background: rgba(234, 246, 255, 0.05);
-  color: var(--paper);
-  font-family: var(--font-body);
-  font-size: 14px;
-  margin-bottom: 10px;
-}
-
-.building-input::placeholder {
-  color: var(--ink-soft);
-  opacity: 0.5;
-}
-
-/* ============================================
-   Landing / Beranda -- layar sambutan sebelum peta
-   ============================================ */
-.landing {
-  position: relative;
-  z-index: 2;
-  height: 100vh;
-  width: 100%;
-  max-width: 480px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  padding: 20px 16px 96px;
-  overflow-y: auto;
-}
-
-.landing-topbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.landing-logo {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  object-fit: cover;
-  flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-}
-
-/* Fallback kalau /logo.png belum ada di folder public -- badge teks
-   biar layout topbar tetep rapi dan build gak pernah gagal. */
-.landing-logo-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-body);
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: 0.5px;
-  color: #04121c;
-  background: linear-gradient(135deg, var(--lantern), var(--accent));
-}
-
-.landing-topbar-text {
-  min-width: 0;
-}
-
-.landing-greeting {
-  margin: 0 0 4px;
-  font-family: var(--font-body);
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--paper);
-}
-
-.landing-phase {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--ink-soft);
-}
-
-/* Panggung karakter full-body -- ngisi sisa layar Beranda, bisa diputar
-   dengan geser jari/mouse kiri-kanan (lihat CharacterPreview draggable). */
-.landing-hero {
-  position: relative;
-  margin-top: 16px;
-  flex: 1;
-  min-height: 0;
-  border-radius: 24px;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 30%, rgba(34, 228, 255, 0.16), transparent 60%),
-    linear-gradient(180deg, rgba(234, 246, 255, 0.06) 0%, rgba(234, 246, 255, 0.02) 100%);
-  border: 1px solid rgba(234, 246, 255, 0.1);
-}
-
-.landing-hero-canvas {
-  width: 100%;
-  height: 100%;
-}
-
-.landing-hero-placeholder {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 48px;
-}
-
-.landing-hero-hint {
-  position: absolute;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
-  margin: 0;
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: rgba(8, 12, 24, 0.45);
-  backdrop-filter: blur(4px);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-  pointer-events: none;
-  white-space: nowrap;
-}
-
-/* ============================================
-   CharacterSelect -- layar pilih karakter (sekali, di awal)
-   ============================================ */
-.charselect {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100%;
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 24px 16px 20px;
-  background: linear-gradient(180deg, var(--sky-dusk-1) 0%, var(--sky-dusk-2) 55%, var(--sky-dusk-3) 100%);
-  overflow-y: auto;
-}
-
-.charselect-header {
-  text-align: center;
-  margin-bottom: 8px;
-}
-
-.charselect-eyebrow {
-  margin: 0 0 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--lantern-soft);
-}
-
-.charselect-title {
-  margin: 0 0 6px;
-  font-family: var(--font-display);
-  font-size: 21px;
-  font-weight: 600;
-  color: var(--paper);
-  line-height: 1.3;
-}
-
-.charselect-sub {
-  margin: 0;
-  font-size: 13px;
-  color: var(--ink-soft);
-  opacity: 0.85;
-}
-
-.charselect-stage {
-  position: relative;
-  margin: 14px 0 10px;
-  border-radius: 24px;
-  border: 1px solid rgba(34, 228, 255, 0.25);
-  background: radial-gradient(circle at 50% 30%, rgba(34, 228, 255, 0.14), transparent 65%);
-  overflow: hidden;
-  flex: 1;
-  min-height: 260px;
-  /* biar drag/swipe di mobile gak ke-trigger scroll/refresh browser */
-  touch-action: pan-y;
-}
-
-.charselect-stage-canvas {
-  width: 100%;
-  height: 100%;
-}
-
-.charselect-arrow {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 2;
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
-  border: 1px solid rgba(234, 246, 255, 0.25);
-  background: rgba(7, 11, 22, 0.55);
-  backdrop-filter: blur(4px);
-  color: var(--paper);
-  font-size: 22px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.charselect-arrow-left {
-  left: 10px;
-}
-
-.charselect-arrow-right {
-  right: 10px;
-}
-
-.charselect-dots {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 2px 24px 0;
-}
-
-.charselect-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(234, 246, 255, 0.22);
-}
-
-.charselect-dot.is-active {
-  background: var(--lantern);
-  box-shadow: 0 0 6px rgba(34, 228, 255, 0.6);
-}
-
-.charselect-stage-name {
-  margin: 0;
-  padding: 10px 0 4px;
-  text-align: center;
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 15px;
-  color: var(--paper);
-}
-
-.charselect-counter {
-  font-family: var(--font-mono);
-  font-weight: 400;
-  font-size: 12px;
-  color: var(--ink-soft);
-}
-
-.charselect-confirm {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: 16px;
-  border: none;
-  background: linear-gradient(135deg, var(--lantern), var(--accent));
-  color: #04121c;
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 16px;
-  cursor: pointer;
-  box-shadow: 0 8px 24px rgba(255, 61, 203, 0.32);
-}
-
-.charselect-confirm:disabled {
-  opacity: 0.7;
-}
-
-/* Tab pilihan pulau di panel Rumah Pulau */
-.housing-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.housing-tab {
-  flex: 1;
-  padding: 10px 8px;
-  border-radius: 12px;
-  border: 1px solid rgba(234, 246, 255, 0.18);
-  background: rgba(234, 246, 255, 0.06);
-  color: var(--paper);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.housing-tab-active {
-  background: rgba(34, 228, 255, 0.16);
-  border-color: rgba(34, 228, 255, 0.5);
-  color: var(--lantern);
-}
-
-.housing-note {
-  margin-top: 14px;
-  opacity: 0.7;
-}
-/* ============================================
-   MODE "JELAJAHI" — jalan-jalan 3D third-person.
-   Full-screen, gantiin seluruh UI town biasa selama aktif.
-   ============================================ */
-
-/* Bungkus clock + tombol Jelajahi jadi satu grup di kanan header */
-.town-header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-/* Tombol "Jelajahi" di header peta biasa, buka mode jalan */
-.explore-fab {
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(34, 228, 255, 0.5);
-  background: rgba(34, 228, 255, 0.16);
-  color: var(--lantern-soft);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.walk-root {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  background: var(--sky-dusk-1);
-  touch-action: none;
-}
-
-.walk-root canvas {
-  touch-action: none;
-}
-
-/* Area sentuh transparan penuh layar buat joystick (kiri) + putar kamera (kanan) */
-.walk-zone {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  touch-action: none;
-}
-
-.walk-joy-base {
-  position: absolute;
-  width: 108px;
-  height: 108px;
-  margin-left: -54px;
-  margin-top: -54px;
-  border-radius: 50%;
-  background: rgba(234, 246, 255, 0.1);
-  border: 1px solid rgba(234, 246, 255, 0.28);
-  backdrop-filter: blur(4px);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-}
-
-.walk-joy-knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 46px;
-  height: 46px;
-  margin-left: -23px;
-  margin-top: -23px;
-  border-radius: 50%;
-  background: rgba(34, 228, 255, 0.35);
-  border: 1px solid rgba(34, 228, 255, 0.6);
-  transform: translate(-50%, -50%);
-}
-
-.walk-jump {
-  position: absolute;
-  right: 20px;
-  bottom: 28px;
-  z-index: 5;
-  width: 74px;
-  height: 74px;
-  border-radius: 50%;
-  border: 1px solid rgba(34, 228, 255, 0.55);
-  background: rgba(11, 18, 32, 0.55);
-  backdrop-filter: blur(6px);
-  color: var(--lantern-soft);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  cursor: pointer;
-  touch-action: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.walk-jump span {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.3px;
-}
-
-.walk-jump:active {
-  background: rgba(34, 228, 255, 0.22);
-}
-
-/* Ajakan muter HP ke landscape (nongol kalau paksa-otomatisnya gak berhasil,
-   misalnya di iOS Safari yang emang gak dukung Screen Orientation API) */
-.walk-rotate-hint {
-  position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 86vw;
-  padding: 10px 16px;
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.75);
-  border: 1px solid rgba(234, 246, 255, 0.22);
-  backdrop-filter: blur(6px);
-  color: var(--paper);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.2px;
-  text-align: center;
-  pointer-events: none;
-}
-
-.walk-rotate-hint-icon {
-  font-size: 15px;
-  animation: walk-rotate-spin 1.6s ease-in-out infinite;
-}
-
-@keyframes walk-rotate-spin {
-  0%, 100% {
-    transform: rotate(0deg);
-  }
-  50% {
-    transform: rotate(90deg);
-  }
-}
-
-.walk-topbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 5;
-  padding: 20px 16px 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  pointer-events: none;
-}
-
-.walk-topbar > * {
-  pointer-events: auto;
-}
-
-.walk-pill-btn {
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(234, 246, 255, 0.22);
-  background: rgba(11, 18, 32, 0.55);
-  backdrop-filter: blur(6px);
-  color: var(--paper);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.walk-side {
-  position: absolute;
-  right: 20px;
-  bottom: 118px;
-  z-index: 5;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.walk-round-btn {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  border: 1px solid rgba(234, 246, 255, 0.22);
-  background: rgba(11, 18, 32, 0.55);
-  backdrop-filter: blur(6px);
-  color: var(--paper);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-/* Tombol pilih peta -- bulat kecil merah, kiri bawah, sejajar sama cluster
-   tombol di kanan (.walk-side). Ikonnya PNG hitam-di-atas-putih; ngilangin
-   kotak putihnya pake mix-blend-mode: multiply (putih -> nyatu ke warna
-   merah, hitam -> tetap keliatan) daripada ngandelin alpha channel. */
-.walk-map-picker {
-  position: absolute;
-  left: 20px;
-  bottom: 180px;
-  z-index: 6;
-}
-
-.walk-map-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 5;
-  background: transparent;
-}
-
-.walk-map-btn {
-  position: relative;
-  z-index: 6;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 138, 122, 0.55);
-  background: #e0483a;
-  box-shadow: 0 2px 10px rgba(224, 72, 58, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  isolation: isolate;
-  overflow: hidden;
-}
-
-.walk-map-btn-icon {
-  width: 26px;
-  height: 26px;
-  mix-blend-mode: multiply;
-  pointer-events: none;
-}
-
-.walk-map-popup {
-  position: absolute;
-  left: calc(100% + 8px);
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 6;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 4px;
-  width: max-content;
-  max-width: calc(100vw - 150px);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  padding: 6px;
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.85);
-  border: 1px solid rgba(234, 246, 255, 0.2);
-  backdrop-filter: blur(6px);
-  animation: walk-popup-slide 0.18s ease-out;
-}
-
-.walk-map-popup::-webkit-scrollbar {
-  display: none;
-}
-
-/* Popup bergulir keluar ke kanan dari tombolnya. */
-@keyframes walk-popup-slide {
-  from {
-    opacity: 0;
-    transform: translateY(-50%) translateX(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(-50%) translateX(0);
-  }
-}
-
-.walk-map-popup-item {
-  border: none;
-  background: transparent;
-  color: var(--ink-soft);
-  opacity: 0.7;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.2px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-  flex: none;
-}
-
-.walk-map-popup-item.is-active {
-  opacity: 1;
-  background: rgba(34, 228, 255, 0.16);
-  color: var(--lantern-soft);
-}
-
-/* Tombol tas (inventory) -- di atas tombol pilih peta (44px + 12px gap =
-   56px lebih tinggi). Ikon dikasih putih (bukan mix-blend-mode kayak PNG
-   map-pin) karena ini SVG langsung, bukan gambar. */
-.walk-inv-picker {
-  position: absolute;
-  left: 20px;
-  bottom: 236px;
-  z-index: 6;
-}
-
-/* Tombol HP -- persis di bawah tombol pilih peta (56px lebih rendah),
-   ukuran & gaya sama kayak tombol tas/peta. */
-.walk-hp-picker {
-  position: absolute;
-  left: 20px;
-  bottom: 124px;
-  z-index: 6;
-}
-
-.walk-inv-btn,
-.walk-hp-btn {
-  color: #fff;
-  position: relative;
-}
-
-.walk-inv-btn-dot {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #22e4ff;
-  border: 1.5px solid rgba(11, 18, 32, 0.9);
-}
-
-.walk-inv-popup {
-  min-width: 0;
-}
-
-.walk-inv-popup-wide {
-  width: max-content;
-}
-
-.walk-inv-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.walk-inv-item-count {
-  opacity: 0.6;
-  font-size: 10.5px;
-  text-align: right;
-}
-
-.walk-inv-back {
-  opacity: 0.85;
-  padding: 8px 12px;
-}
-
-.walk-inv-fold-btn,
-.walk-inv-unequip-btn,
-.walk-inv-screen-btn {
-  flex: none;
-  border: 1px solid rgba(234, 246, 255, 0.18);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--paper);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.walk-inv-screen-btn {
-  border-color: rgba(34, 228, 255, 0.45);
-  background: rgba(34, 228, 255, 0.14);
-  color: var(--lantern-soft);
-}
-
-.walk-inv-unequip-btn {
-  color: #ff8a7a;
-}
-
-.walk-hp-empty {
-  flex: none;
-  padding: 8px 12px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-  white-space: nowrap;
-}
-
-.walk-inv-empty {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-soft);
-  white-space: nowrap;
-}
-
-.walk-inv-claim-box-btn {
-  flex: none;
-  border: 1px solid rgba(34, 228, 255, 0.45);
-  background: rgba(34, 228, 255, 0.14);
-  color: var(--lantern-soft);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  padding: 7px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.walk-inv-claim-box-error {
-  color: #ff8a7a;
-}
-
-.walk-inv-phone-item {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  padding: 7px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.walk-inv-phone-item:active {
-  background: rgba(34, 228, 255, 0.14);
-}
-
-.walk-inv-phone-item.is-active {
-  background: rgba(34, 228, 255, 0.12);
-  border-color: rgba(34, 228, 255, 0.35);
-  color: var(--lantern-soft);
-}
-
-.walk-inv-phone-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(234, 246, 255, 0.35);
-  flex: none;
-}
-
-.walk-inv-phone-name {
-  flex: none;
-}
-
-.walk-inv-phone-type {
-  opacity: 0.5;
-  font-size: 10px;
-}
-
-.walk-inv-phone-check {
-  color: var(--lantern-soft);
-  font-size: 12px;
-}
-
-.walk-hint {
-  position: absolute;
-  left: 50%;
-  bottom: 118px;
-  transform: translateX(-50%);
-  z-index: 4;
-  max-width: 78vw;
-  text-align: center;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.6);
-  border: 1px solid rgba(234, 246, 255, 0.16);
-  backdrop-filter: blur(6px);
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.2px;
-  pointer-events: none;
-}
-
-.walk-loading {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(11, 18, 32, 0.55);
-  backdrop-filter: blur(2px);
-  pointer-events: none;
-}
-
-.walk-loading p {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--paper);
-  background: rgba(11, 18, 32, 0.7);
-  padding: 10px 18px;
-  border-radius: 999px;
-  border: 1px solid rgba(234, 246, 255, 0.18);
-}
-
-@media (min-width: 480px) {
-  .walk-topbar {
-    max-width: 480px;
-    margin: 0 auto;
-  }
-}
-
-/* ============================================================
-   GatchaReveal -- modal animasi multi-tahap box HP (starter box +
-   gatcha box reguler nanti). Warna rarity di sini SENGAJA angka yang
-   sama persis kayak GLOW_COLOR di GatchaReveal.jsx (#b36bff epic,
-   #ffb23f legendary) -- kalau salah satu diubah, yang satu lagi ikut
-   diubah manual, gak ada satu sumber kebenaran buat warna ini.
-   ============================================================ */
-.gatcha-reveal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: radial-gradient(circle at 50% 30%, var(--sky-dusk-2), var(--sky-dusk-1) 75%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem 1.25rem;
-}
-
-.gatcha-reveal-canvas-wrap {
-  position: relative;
-  width: 100%;
-  max-width: 420px;
-  height: 46vh;
-  min-height: 260px;
-}
-
-.gatcha-reveal-canvas-wrap canvas {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-/* Box-nya sendiri yang jadi tombol tap (4x) -- gak ada lagi teks
-   "sentuh buat buka", warga pasti udah paham ini box gatcha. cursor
-   pointer doang buat kasih tau area ini bisa ditekan di desktop/testing;
-   di HP cukup keliatan dari box-nya nongol di tengah. */
-.gatcha-reveal-canvas-wrap {
-  cursor: pointer;
-}
-
-/* Toast tap 1-3 ("Welcome to RP Town" dst) -- fade in/out sendiri,
-   BUKAN instruksi cara main, cuma flavor text pendek per tap. */
-.gatcha-toast {
-  position: absolute;
-  left: 50%;
-  bottom: 6%;
-  transform: translate(-50%, 6px);
-  background: rgba(10, 16, 28, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  padding: 0.5rem 1.1rem;
-  font-size: 0.82rem;
-  color: var(--paper);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s ease;
-}
-
-.gatcha-toast.show {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
-.gatcha-result-card {
-  margin-top: 1.75rem;
-  background: rgba(10, 16, 28, 0.85);
-  border: 1.5px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
-  padding: 1.25rem 1.5rem;
-  text-align: center;
-  min-width: 220px;
-  opacity: 0;
-  transform: translateY(14px) scale(0.96);
-  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(.2,.8,.2,1), border-color 0.35s ease, box-shadow 0.35s ease;
-  pointer-events: none;
-}
-
-.gatcha-result-card.show {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
-}
-
-.gatcha-result-card.rarity-common.show,
-.gatcha-result-card.rarity-rare.show { border-color: #cfd3d8; box-shadow: 0 0 28px -8px rgba(207, 211, 216, 0.5); }
-.gatcha-result-card.rarity-epic.show { border-color: #b36bff; box-shadow: 0 0 32px -6px rgba(179, 107, 255, 0.6); }
-.gatcha-result-card.rarity-legendary.show { border-color: #ffb23f; box-shadow: 0 0 36px -4px rgba(255, 178, 63, 0.7); }
-
-.gatcha-result-rarity {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  opacity: 0.75;
-  margin-bottom: 6px;
-}
-
-.gatcha-result-name {
-  font-family: var(--font-display);
-  font-size: 1.3rem;
-  font-weight: 600;
-  color: var(--paper);
-  margin: 0 0 1rem;
-}
-
-.gatcha-result-close {
-  background: var(--lantern);
-  color: var(--ink);
-  border: none;
-  border-radius: 999px;
-  padding: 0.55rem 1.6rem;
-  font-weight: 600;
-  font-size: 0.85rem;
-}
-
-.gatcha-confetti {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.gatcha-confetti span {
-  position: absolute;
-  top: -8px;
-  width: 6px;
-  height: 11px;
-  opacity: 0.9;
-  animation: gatchaFall 1.3s linear forwards;
-}
-
-.gatcha-confetti-epic span { background: #b36bff; }
-.gatcha-confetti-legendary span { background: #ffb23f; }
-
-@keyframes gatchaFall {
-  to { transform: translateY(46vh) rotate(480deg); opacity: 0.15; }
-}
-
-/* ============================================================
-   Chat global room Jelajahi (ChatPanel.jsx) + bubble di atas kepala
-   (ChatBubble3D.jsx). Tombolnya pakai gaya .walk-map-btn (bulat merah),
-   ditaruh di atas tombol tas (236px + 56px = 292px).
-   ============================================================ */
-.walk-chat-picker {
-  position: absolute;
-  right: 12px;
-  top: calc(env(safe-area-inset-top, 0px) + 84px);
-  z-index: 6;
-}
-
-.walk-chat-btn {
-  color: #fff;
-  position: relative;
-  overflow: visible;
-}
-
-.walk-chat-badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: #22e4ff;
-  color: #06202a;
-  border: 1.5px solid rgba(11, 18, 32, 0.9);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 15px;
-  text-align: center;
-}
-
-.walk-chat-badge.is-mention {
-  background: #ffd23f;
-  animation: walk-chat-pulse 1s ease-in-out infinite;
-}
-
-@keyframes walk-chat-pulse {
-  50% {
-    transform: scale(1.2);
-  }
-}
-
-.walk-chat-panel {
-  position: fixed;
-  right: 12px;
-  top: calc(env(safe-area-inset-top, 0px) + 136px);
-  z-index: 6;
-  width: clamp(300px, 26vw, 420px);
-  max-width: calc(100vw - 24px);
-  height: clamp(260px, 38vh, 400px);
-  display: flex;
-  flex-direction: column;
-  border-radius: 14px;
-  background: rgba(11, 18, 32, 0.72);
-  border: 1px solid rgba(234, 246, 255, 0.2);
-  backdrop-filter: blur(6px);
-  overflow: hidden;
-  animation: walk-chat-slide-down 0.18s ease-out;
-  font-family: var(--font-mono);
-}
-
-@keyframes walk-chat-slide-down {
-  from {
-    opacity: 0;
-    transform: translateY(-12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes walk-popup-slide-x {
-  from {
-    opacity: 0;
-    transform: translateX(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.walk-chat-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 6px 5px 12px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--paper);
-  border-bottom: 1px solid rgba(234, 246, 255, 0.12);
-}
-
-.walk-chat-close {
-  border: none;
-  background: transparent;
-  color: var(--ink-soft);
-  font-size: 13px;
-  width: 26px;
-  height: 22px;
-  cursor: pointer;
-}
-
-.walk-chat-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 6px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}
-
-.walk-chat-list::-webkit-scrollbar {
-  display: none;
-}
-
-.walk-chat-empty {
-  margin: auto;
-  font-size: 11px;
-  color: var(--ink-soft);
-  opacity: 0.8;
-  text-align: center;
-}
-
-.chat-row-wrap {
-  position: relative;
-  flex: none;
-}
-
-.chat-row-reply-hint {
-  position: absolute;
-  left: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 14px;
-  color: var(--ink-soft);
-  opacity: 0.6;
-}
-
-.chat-row {
-  position: relative;
-  padding: 3px 8px;
-  border-radius: 8px;
-  background: rgba(11, 18, 32, 0.55);
-  touch-action: pan-y;
-  user-select: none;
-  -webkit-user-select: none;
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: var(--paper);
-  word-break: break-word;
-}
-
-.chat-row.is-mine {
-  background: rgba(34, 228, 255, 0.14);
-}
-
-.chat-row.is-mention {
-  background: rgba(255, 210, 63, 0.2);
-  box-shadow: inset 2px 0 0 #ffd23f;
-}
-
-.chat-quote {
-  margin-bottom: 2px;
-  padding: 1px 6px;
-  border-left: 2px solid rgba(234, 246, 255, 0.4);
-  font-size: 10.5px;
-  color: var(--ink-soft);
-  opacity: 0.85;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chat-quote b {
-  font-weight: 700;
-}
-
-.chat-name {
-  border: none;
-  background: transparent;
-  padding: 0;
-  margin-right: 6px;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.chat-mention {
-  color: #ffd23f;
-  font-weight: 700;
-}
-
-.walk-chat-suggest {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 8px;
-  border-top: 1px solid rgba(234, 246, 255, 0.12);
-}
-
-.walk-chat-suggest button {
-  border: 1px solid rgba(255, 210, 63, 0.5);
-  background: rgba(255, 210, 63, 0.12);
-  color: #ffd23f;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.walk-chat-replybar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 3px 6px 3px 10px;
-  font-size: 10.5px;
-  color: var(--ink-soft);
-  background: rgba(234, 246, 255, 0.07);
-  border-top: 1px solid rgba(234, 246, 255, 0.12);
-}
-
-.walk-chat-replybar span {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.walk-chat-replybar button {
-  border: none;
-  background: transparent;
-  color: var(--ink-soft);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.walk-chat-form {
-  display: flex;
-  gap: 6px;
-  padding: 6px;
-  border-top: 1px solid rgba(234, 246, 255, 0.12);
-}
-
-.walk-chat-form input {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid rgba(234, 246, 255, 0.22);
-  background: rgba(11, 18, 32, 0.6);
-  color: var(--paper);
-  font-family: var(--font-mono);
-  font-size: 16px; /* >=16px: cegah iOS auto-zoom pas fokus */
-  padding: 5px 10px;
-  border-radius: 999px;
-  outline: none;
-}
-
-.walk-chat-form button {
-  flex: none;
-  width: 34px;
-  border: none;
-  border-radius: 50%;
-  background: #e0483a;
-  color: #fff;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.walk-chat-form button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* Bubble di atas kepala karakter */
-.walk-bubble {
-  position: relative;
-  width: max-content;
-  max-width: 280px;
-  padding: 5px 10px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.95);
-  color: #111a2b;
-  font-family: var(--font-mono, monospace);
-  font-size: 11.5px;
-  font-weight: 600;
-  line-height: 1.3;
-  text-align: left;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  pointer-events: none;
-  user-select: none;
-  transition: opacity 0.15s linear;
-  overflow: hidden;
-}
+.ph-status-icons { display: flex; align-items: center; gap: 6px; }
+.ph-screen[data-in-app="1"] .ph-status { background: var(--ph-app-bg); color: var(--ph-text); }
+.ph-island {
+  position: absolute; left: 50%; top: 9px; transform: translateX(-50%);
+  width: 92px; height: 26px; border-radius: 20px; background: #000;
+}
+.ph-punch {
+  position: absolute; left: 50%; top: 11px; transform: translateX(-50%);
+  width: 13px; height: 13px; border-radius: 50%; background: #000;
+}
+
+/* ---------- home ---------- */
+.ph-home {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  padding: 6px 18px 6px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.ph-screen[data-brand="google"] .ph-home,
+.ph-screen[data-brand="nothing"] .ph-home { text-shadow: none; }
+.ph-home-spacer { flex: 1; }
+.ph-os-name { text-align: center; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.5; margin: 4px 0 2px; }
+
+.ph-widget { margin-top: 14px; }
+.ph-widget-clock { font-size: 60px; font-weight: 300; line-height: 1.05; letter-spacing: -0.02em; }
+.ph-widget-date { font-size: 14px; opacity: 0.88; margin-top: 4px; text-transform: capitalize; }
+.ph-widget-center { text-align: center; }
+.ph-widget-left .ph-widget-clock, .ph-widget-xmode .ph-widget-clock { font-weight: 600; font-size: 52px; }
+.ph-widget-none { height: 10px; }
+
+.ph-widget-glance { margin-top: 18px; }
+.ph-glance-date { font-size: 26px; font-weight: 400; text-transform: capitalize; }
+.ph-glance-sub { font-size: 14px; margin-top: 6px; opacity: 0.8; }
+
+.ph-widget-dot {
+  background: #000; border: 1px solid var(--ph-line); border-radius: 30px;
+  padding: 18px 20px; text-shadow: none;
+}
+.ph-widget-dot .ph-widget-clock {
+  font-family: var(--ph-font); font-weight: 700; font-size: 54px; letter-spacing: 0.06em;
+  background-image: radial-gradient(circle, #fff 1.1px, transparent 1.5px);
+  background-size: 4px 4px;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+.ph-widget-dot .ph-widget-date { color: var(--ph-sub); }
+
+.ph-xmode {
+  display: inline-block; font-size: 10px; letter-spacing: 0.16em; padding: 3px 8px;
+  border: 1px solid var(--ph-accent); color: var(--ph-accent); margin-bottom: 6px;
+}
+.ph-widget-cards .ph-widget-clock { font-size: 46px; font-weight: 500; }
+.ph-cards-row { display: flex; gap: 10px; margin-top: 12px; }
+.ph-mini-card {
+  flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 18px;
+  background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(8px); font-size: 12px;
+}
+.ph-mini-card b { font-size: 13px; }
+
+.ph-widget-ios { display: flex; gap: 14px; margin-top: 18px; }
+.ph-ios-card {
+  flex: 1; aspect-ratio: 1; border-radius: 26px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;
+  background: rgba(255, 255, 255, 0.24); backdrop-filter: blur(16px); font-size: 12px; text-shadow: none;
+}
+.ph-ios-card b { font-size: 12px; letter-spacing: 0.04em; }
+.ph-ios-big { font-size: 44px; font-weight: 300; line-height: 1; }
+
+/* ---------- ikon aplikasi ---------- */
+.ph-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px 6px; margin-top: 28px; }
+.ph-app { display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: none; padding: 0; cursor: pointer; color: inherit; }
+.ph-app:active .ph-app-icon { transform: scale(0.92); }
+.ph-app-label { font-size: 11px; font-weight: 500; color: var(--ph-home-ink, #fff); max-width: 100%; }
+.ph-screen[data-brand="nothing"] .ph-app-label,
+.ph-screen[data-brand="asus"] .ph-app-label { text-transform: uppercase; letter-spacing: 0.08em; font-size: 9.5px; }
+
+.ph-app-icon {
+  width: 58px; height: 58px; display: grid; place-items: center;
+  color: var(--ic-ink, #fff); transition: transform 0.12s;
+}
+.ph-screen[data-icon-shape="squircle"] .ph-app-icon { border-radius: 27%; }
+.ph-screen[data-icon-shape="circle"] .ph-app-icon { border-radius: 50%; }
+.ph-screen[data-icon-shape="round"] .ph-app-icon { border-radius: 34%; }
+.ph-screen[data-icon-shape="chamfer"] .ph-app-icon { clip-path: polygon(22% 0, 100% 0, 100% 78%, 78% 100%, 0 100%, 0 22%); }
+
+.ph-screen[data-icon-style="gradient"] .ph-app-icon { background: linear-gradient(160deg, var(--ic1), var(--ic2)); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22); }
+.ph-screen[data-icon-style="flat"] .ph-app-icon { background: var(--ic1); }
+.ph-screen[data-icon-style="glass"] .ph-app-icon {
+  background: linear-gradient(160deg, var(--ic1), var(--ic2));
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 12px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.ph-screen[data-icon-style="mono"] .ph-app-icon { background: transparent; border: 2px dotted #fff; color: #fff; }
+.ph-screen[data-icon-style="outline"] .ph-app-icon { background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1.5px var(--ph-accent); color: #fff; }
+
+/* ---------- dock / search / dots ---------- */
+.ph-dock {
+  display: flex; justify-content: center; gap: 16px; padding: 12px 14px; margin: 0 2px 6px;
+  border-radius: 32px; background: rgba(255, 255, 255, 0.24); backdrop-filter: blur(14px);
+}
+.ph-searchbar {
+  display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 18px; margin-bottom: 6px;
+  border-radius: 999px; background: rgba(255, 255, 255, 0.22); backdrop-filter: blur(10px);
+  font-size: 15px; text-shadow: none;
+}
+.ph-screen[data-brand="google"] .ph-searchbar { background: #fff; color: #444; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12); }
+.ph-dots { display: flex; justify-content: center; gap: 6px; margin-bottom: 8px; }
+.ph-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.4); }
+.ph-dots i.is-on { background: #fff; }
+
+/* ---------- navigasi bawah ---------- */
+.ph-screen[data-in-app="1"] .ph-nav-gesture,
+.ph-screen[data-in-app="1"] .ph-nav-buttons { background: var(--ph-app-bg); color: var(--ph-text); }
+.ph-nav-gesture {
+  flex: none; height: 24px; border: none; background: transparent; cursor: pointer;
+  display: grid; place-items: center; padding: 0;
+}
+.ph-nav-gesture i { display: block; width: 118px; height: 5px; border-radius: 3px; background: var(--ph-home-ink, #fff); opacity: 0.85; }
+.ph-screen[data-in-app="1"] .ph-nav-gesture i { background: var(--ph-text); }
+.ph-screen[data-brand="apple"] .ph-nav-gesture i { width: 134px; }
+.ph-screen[data-brand="google"] .ph-nav-gesture i { width: 100px; }
+.ph-nav-buttons {
+  flex: none; height: 40px; display: flex; justify-content: space-around; align-items: center;
+  color: var(--ph-home-ink, #fff);
+}
+.ph-nav-buttons button { background: none; border: none; color: inherit; font-size: 18px; width: 64px; cursor: pointer; opacity: 0.85; }
+
+/* ---------- host aplikasi + header ---------- */
+.ph-app-host { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--ph-app-bg); color: var(--ph-text); }
+.ph-app-header { flex: none; display: flex; align-items: center; gap: 6px; padding: 2px 10px 8px; }
+.ph-app-header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.ph-back { background: none; border: none; color: var(--ph-accent); width: 36px; height: 36px; display: grid; place-items: center; cursor: pointer; border-radius: 50%; }
+.ph-screen[data-app="camera"] .ph-back { color: #fff; }
+
+.ph-screen[data-header="large"] .ph-app-header { flex-direction: column; align-items: flex-start; gap: 0; padding-bottom: 6px; }
+.ph-screen[data-header="large"] .ph-app-header h1 { font-size: 32px; font-weight: 700; padding: 0 8px; letter-spacing: -0.02em; }
+.ph-screen[data-header="collapse"] .ph-app-header { flex-direction: column; align-items: flex-start; gap: 0; padding-top: 14px; padding-bottom: 12px; }
+.ph-screen[data-header="collapse"] .ph-app-header h1 { font-size: 30px; font-weight: 500; padding: 14px 8px 0; }
+.ph-screen[data-header="plain"] .ph-app-header h1 { font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 700; }
+.ph-screen[data-brand="asus"] .ph-app-header { border-bottom: 1px solid var(--ph-line); }
+.ph-screen[data-brand="nothing"] .ph-app-header { border-bottom: 1px dotted var(--ph-line); }
+.ph-screen[data-app="camera"] .ph-app-header { position: absolute; top: 36px; left: 0; z-index: 3; padding: 0 6px; }
+.ph-screen[data-app="camera"] .ph-app-header h1 { display: none; }
+
+.ph-app-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 12px 14px; -webkit-overflow-scrolling: touch; }
+.ph-screen[data-app="camera"] .ph-app-body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ---------- komponen umum ---------- */
+.ph-card { background: var(--ph-surface); border-radius: var(--ph-radius); overflow: hidden; }
+.ph-sub { color: var(--ph-sub); font-size: 13px; margin: 0; }
+.ph-state { text-align: center; color: var(--ph-sub); font-size: 14px; padding: 22px 8px; margin: 0; }
+.ph-error { color: #ff5c6c; font-size: 12.5px; margin: 6px 0 0; }
+.ph-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; background: none; border: none; border-bottom: 1px solid var(--ph-line); color: var(--ph-text); text-align: left; cursor: pointer; }
+.ph-row:last-child { border-bottom: none; }
+.ph-row-text { display: flex; flex-direction: column; min-width: 0; }
+.ph-row-title { font-size: 15px; font-weight: 600; color: var(--ph-text); margin: 0; }
+.ph-row-sub { font-size: 12.5px; color: var(--ph-sub); }
+.ph-avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: var(--ph-accent); color: #fff; font-size: 14px; font-weight: 700; }
+.ph-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.ph-avatar-xl { width: 96px; height: 96px; font-size: 32px; }
+.ph-avatar-sm { width: 22px; height: 22px; font-size: 10px; }
+.ph-btn { border: 1px solid var(--ph-line); background: var(--ph-surface); color: var(--ph-text); font-size: 14px; font-weight: 600; padding: 10px 18px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.ph-btn:disabled { opacity: 0.45; cursor: default; }
+.ph-btn-primary { background: var(--ph-accent); border-color: transparent; color: #fff; }
+.ph-btn-sm { padding: 7px 14px; font-size: 13px; }
+.ph-screen[data-brand="asus"] .ph-btn, .ph-screen[data-brand="asus"] .ph-card { border-radius: 4px; }
+.ph-round { width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.16); color: #fff; display: grid; place-items: center; cursor: pointer; }
+
+/* kontak */
+.ph-search { display: flex; align-items: center; gap: 8px; background: var(--ph-surface); border-radius: 999px; padding: 8px 14px; margin: 2px 0 10px; color: var(--ph-sub); }
+.ph-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--ph-text); font: inherit; font-size: 16px; }
+.ph-group-letter { font-size: 12px; font-weight: 700; color: var(--ph-sub); padding: 8px 6px 4px; }
+.ph-contact-detail { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px 12px; gap: 8px; }
+.ph-contact-detail h2 { margin: 6px 0 0; font-size: 22px; }
+.ph-detail-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; justify-content: center; }
+
+/* sosmed */
+.ph-compose { padding: 12px; margin-bottom: 8px; }
+.ph-compose textarea { width: 100%; border: none; outline: none; resize: none; background: transparent; color: var(--ph-text); font: inherit; font-size: 16px; }
+.ph-compose-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.ph-refresh { display: flex; align-items: center; gap: 6px; margin: 2px auto 8px; background: none; border: none; color: var(--ph-sub); font-size: 12.5px; cursor: pointer; }
+.ph-post { padding: 12px; margin-bottom: 10px; }
+.ph-post header { display: flex; align-items: center; gap: 10px; }
+.ph-post-body { margin: 10px 0 6px; font-size: 15px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.ph-like { display: inline-flex; align-items: center; gap: 6px; background: none; border: none; color: var(--ph-sub); font-size: 13.5px; cursor: pointer; padding: 4px 0; }
+.ph-like.is-on { color: #ff3b6b; }
+.ph-like.is-on svg { fill: currentColor; }
+
+/* market */
+.ph-market-cta { padding: 14px; margin-bottom: 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.ph-listing { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 10px; }
+.ph-listing.is-mine { box-shadow: inset 0 0 0 1.5px var(--ph-accent); }
+.ph-listing-icon { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; background: rgba(127, 127, 127, 0.14); }
+.ph-listing-body { flex: 1; min-width: 0; }
+.ph-listing-seller { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.ph-price { flex: none; font-size: 12.5px; font-weight: 700; color: var(--ph-accent); }
+.ph-tag { margin-left: 6px; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 999px; background: var(--ph-accent); color: #fff; vertical-align: middle; }
+
+/* kamera */
+.ph-camera { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #000; }
+.ph-viewfinder { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; }
+.ph-viewfinder video { width: 100%; height: 100%; object-fit: cover; }
+.ph-viewfinder video.is-mirror { transform: scaleX(-1); }
+.ph-cam-note { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; text-align: center; padding: 24px; color: #cfcfd6; font-size: 14px; margin: 0; }
+.ph-flash { position: absolute; inset: 0; background: #fff; opacity: 0.8; }
+.ph-cam-controls { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 14px 26px 10px; background: #000; }
+.ph-shutter { width: 68px; height: 68px; border-radius: 50%; border: 4px solid #fff; background: transparent; padding: 4px; cursor: pointer; }
+.ph-shutter span { display: block; width: 100%; height: 100%; border-radius: 50%; background: #fff; }
+.ph-shutter:active span { transform: scale(0.9); }
+.ph-shutter:disabled { opacity: 0.4; }
+.ph-screen[data-brand="asus"] .ph-shutter { border-color: var(--ph-accent); border-radius: 12px; }
+.ph-screen[data-brand="asus"] .ph-shutter span { background: var(--ph-accent); border-radius: 8px; }
+.ph-screen[data-brand="nothing"] .ph-shutter { border-style: dotted; }
+.ph-screen[data-brand="nothing"] .ph-shutter span { background: var(--ph-accent); }
+.ph-cam-thumb { width: 46px; height: 46px; border-radius: 10px; overflow: hidden; border: 1.5px solid rgba(255, 255, 255, 0.35); background: rgba(255, 255, 255, 0.08); padding: 0; cursor: pointer; }
+.ph-cam-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ph-gallery { position: relative; flex: 1; overflow-y: auto; padding: 44px 8px 14px; background: #000; color: #fff; }
+.ph-gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.ph-thumb { aspect-ratio: 1; padding: 0; border: none; background: #111; overflow: hidden; cursor: pointer; }
+.ph-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ph-gallery-back { margin: 14px auto 0; display: flex; }
+.ph-photo-viewer { position: fixed; inset: 0; z-index: 20; background: #000; display: flex; align-items: center; justify-content: center; }
+.ph-photo-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.ph-photo-actions { position: absolute; bottom: 22px; left: 0; right: 0; display: flex; justify-content: center; gap: 16px; }
+
+/* ---------- layar sentuh landscape (game selalu landscape di HP) ---------- */
+@media (orientation: landscape) and (max-height: 560px) {
+  .ph-overlay-full .ph-status { height: 28px; }
+  .ph-overlay-full .ph-home { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px 28px; padding-top: 0; overflow-y: auto; }
+  .ph-overlay-full .ph-widget { margin-top: 0; flex: 1; }
+  .ph-overlay-full .ph-widget-clock { font-size: 44px; }
+  .ph-overlay-full .ph-grid { flex: 1.2; margin-top: 0; }
+  .ph-overlay-full .ph-app-icon { width: 50px; height: 50px; }
+  .ph-overlay-full .ph-home-spacer, .ph-overlay-full .ph-os-name { display: none; }
+  .ph-overlay-full .ph-widget-ios, .ph-overlay-full .ph-cards-row { display: none; }
+  .ph-overlay-full .ph-dock { justify-content: space-around; }
+  .ph-overlay-full .ph-dock, .ph-overlay-full .ph-searchbar, .ph-overlay-full .ph-dots { flex: 1 1 100%; }
+  .ph-overlay-full .ph-camera { flex-direction: row; }
+  .ph-overlay-full .ph-cam-controls { flex-direction: column; padding: 14px 12px; }
+  .ph-overlay-full .ph-nav-gesture { height: 16px; }
+  .ph-overlay-full .ph-screen[data-app="camera"] .ph-app-header { top: 28px; }
+  .ph-overlay-full .ph-app-body { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+}
+
+/* ---------- Sosmed (feed foto: cerita, post, komentar, tab bawah) ---------- */
+.ph-screen[data-app="social"] .ph-app-body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ph-ig { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.ph-ig-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.ph-avatar-sm2 { width: 32px; height: 32px; font-size: 12px; }
+
+.ph-stories { display: flex; gap: 14px; padding: 8px 12px 12px; overflow-x: auto; border-bottom: 1px solid var(--ph-line); }
+.ph-story { flex: none; display: flex; flex-direction: column; align-items: center; gap: 5px; width: 64px; background: none; border: none; padding: 0; color: var(--ph-text); font-size: 11px; cursor: pointer; }
+.ph-story span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ph-story-ring { position: relative; padding: 3px; border-radius: 50%; background: conic-gradient(var(--ph-accent), #ff7ab8, #ffb347, var(--ph-accent)); }
+.ph-story-ring .ph-avatar { width: 52px; height: 52px; border: 2.5px solid var(--ph-app-bg); }
+.ph-story-ring.is-self { background: var(--ph-line); }
+.ph-story-plus { position: absolute; right: -1px; bottom: -1px; width: 20px; height: 20px; border-radius: 50%; background: var(--ph-accent); color: #fff; font-style: normal; font-weight: 700; font-size: 14px; line-height: 17px; text-align: center; border: 2px solid var(--ph-app-bg); }
+.ph-story.is-picked .ph-story-ring { box-shadow: 0 0 0 2px var(--ph-text); }
+
+.ph-ig-post { padding-bottom: 6px; }
+.ph-ig-post header { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.ph-media { position: relative; width: 100%; aspect-ratio: 1; background: var(--ph-surface); overflow: hidden; }
+.ph-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph-media-text { display: flex; align-items: center; justify-content: center; padding: 22px; text-align: center; background: linear-gradient(145deg, var(--ph-accent), #ff7ab8); color: #fff; }
+.ph-media-text p { margin: 0; font-size: 19px; font-weight: 600; line-height: 1.35; word-break: break-word; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; }
+.ph-ig-actions { display: flex; gap: 14px; padding: 8px 12px 0; }
+.ph-ig-act { background: none; border: none; padding: 2px; color: var(--ph-text); cursor: pointer; display: grid; place-items: center; }
+.ph-ig-act.is-on { color: #ff3b5c; }
+.ph-ig-act.is-on svg { fill: currentColor; }
+.ph-ig-meta { padding: 4px 14px 0; }
+.ph-ig-meta p { margin: 3px 0; font-size: 14px; line-height: 1.35; }
+.ph-ig-likes { font-weight: 700; }
+.ph-ig-caption { word-break: break-word; }
+.ph-ig-viewall { background: none; border: none; padding: 0; color: var(--ph-sub); font-size: 13.5px; cursor: pointer; }
+.ph-ig-time { color: var(--ph-sub); font-size: 11px !important; text-transform: uppercase; letter-spacing: 0.03em; }
+
+.ph-tabbar { flex: none; display: flex; justify-content: space-around; border-top: 1px solid var(--ph-line); background: var(--ph-app-bg); padding: 6px 0; }
+.ph-tabbar button { flex: 1; background: none; border: none; color: var(--ph-sub); padding: 6px 0; cursor: pointer; display: grid; place-items: center; }
+.ph-tabbar button.is-on { color: var(--ph-text); }
+.ph-tabbar button.is-on svg { stroke-width: 2.4; }
+
+/* buat post */
+.ph-create { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.ph-create-preview { position: relative; aspect-ratio: 1; border-radius: var(--ph-radius); overflow: hidden; background: var(--ph-surface); display: grid; place-items: center; }
+.ph-create-preview img { width: 100%; height: 100%; object-fit: cover; }
+.ph-create-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--ph-sub); font-size: 13px; }
+.ph-create-remove { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%; border: none; background: rgba(0, 0, 0, 0.6); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.ph-create-picks { display: flex; gap: 6px; overflow-x: auto; }
+.ph-pick { flex: none; width: 52px; height: 52px; border-radius: 10px; overflow: hidden; padding: 0; border: 2px solid transparent; background: var(--ph-surface); cursor: pointer; display: grid; place-items: center; color: var(--ph-sub); }
+.ph-pick img { width: 100%; height: 100%; object-fit: cover; }
+.ph-pick.is-on { border-color: var(--ph-accent); }
+.ph-create textarea { width: 100%; border: none; outline: none; resize: none; background: var(--ph-surface); color: var(--ph-text); font: inherit; font-size: 16px; padding: 10px 12px; border-radius: var(--ph-radius); }
+
+/* profil */
+.ph-profile { padding: 14px 12px; }
+.ph-profile-head { display: flex; align-items: center; gap: 22px; }
+.ph-profile-stats { flex: 1; display: flex; justify-content: space-around; text-align: center; font-size: 12.5px; color: var(--ph-sub); }
+.ph-profile-stats span { display: flex; flex-direction: column; }
+.ph-profile-stats b { font-size: 18px; color: var(--ph-text); }
+.ph-profile-name { margin: 10px 0 0; font-weight: 700; font-size: 15px; }
+.ph-profile-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-top: 14px; }
+.ph-grid-cell { aspect-ratio: 1; padding: 0; border: none; overflow: hidden; background: linear-gradient(145deg, var(--ph-accent), #ff7ab8); color: #fff; cursor: pointer; display: grid; place-items: center; }
+.ph-grid-cell img { width: 100%; height: 100%; object-fit: cover; }
+.ph-grid-cell span { font-size: 10.5px; padding: 6px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; }
+
+/* komentar (bottom sheet) */
+.ph-sheet-wrap { position: absolute; inset: 0; z-index: 8; display: flex; flex-direction: column; justify-content: flex-end; }
+.ph-sheet-backdrop { position: absolute; inset: 0; border: none; background: rgba(0, 0, 0, 0.45); cursor: pointer; }
+.ph-sheet { position: relative; max-height: 78%; display: flex; flex-direction: column; background: var(--ph-app-bg); border-radius: 18px 18px 0 0; padding: 8px 14px 12px; animation: ph-sheet-up 0.18s ease-out; }
+@keyframes ph-sheet-up { from { transform: translateY(30px); opacity: 0 } to { transform: none; opacity: 1 } }
+.ph-sheet-grab { width: 38px; height: 4px; border-radius: 2px; background: var(--ph-line); margin: 0 auto 6px; }
+.ph-sheet h3 { margin: 0 0 8px; text-align: center; font-size: 15px; }
+.ph-sheet-list { flex: 1; min-height: 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 8px; }
+.ph-comment { display: flex; gap: 10px; align-items: flex-start; }
+.ph-comment p { margin: 0; font-size: 14px; line-height: 1.35; word-break: break-word; }
+.ph-sheet-input { display: flex; gap: 8px; align-items: center; padding-top: 8px; border-top: 1px solid var(--ph-line); }
+.ph-sheet-input input { flex: 1; min-width: 0; border: none; outline: none; background: var(--ph-surface); color: var(--ph-text); font: inherit; font-size: 16px; padding: 9px 14px; border-radius: 999px; }
+
+
+/* ===== Sosmed: profil orang, edit/hapus post, pencarian, chat ===== */
+.ph-ig-scroll.is-chat { display: flex; flex-direction: column; overflow: hidden; }
+.ph-who { background: none; border: none; padding: 0; text-align: left; cursor: pointer; align-items: flex-start; }
+.ph-avatar.is-tap { border: none; padding: 0; cursor: pointer; }
+.ph-tab-icon { position: relative; display: grid; place-items: center; }
+.ph-dot { position: absolute; top: -1px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: #ff3b5c; border: 2px solid var(--ph-app-bg); box-sizing: content-box; }
+.ph-section-title { margin: 12px 14px 8px; font-size: 18px; font-weight: 700; }
+.ph-inbox, .ph-searchview { padding: 0 12px 14px; }
+.ph-searchview { padding-top: 10px; }
+.ph-hint { text-align: center; margin-top: 10px; font-size: 12px; }
+.ph-pid { margin-top: 2px; }
+.ph-pid b { color: var(--ph-text); letter-spacing: 0.04em; }
+
+/* header kecil untuk layar yang ditumpuk (profil orang, chat) */
+.ph-subhead { flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--ph-line); background: var(--ph-app-bg); position: sticky; top: 0; z-index: 3; }
+.ph-subhead-title { font-weight: 700; font-size: 16px; }
+.ph-subhead-who { display: flex; align-items: center; gap: 10px; background: none; border: none; padding: 0; color: var(--ph-text); text-align: left; cursor: pointer; min-width: 0; }
+
+/* tombol Chat di profil */
+.ph-profile-actions { display: flex; gap: 8px; margin-top: 12px; }
+.ph-profile-actions .ph-btn { flex: 1; }
+
+/* inbox */
+.ph-grow { flex: 1; min-width: 0; }
+.ph-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.ph-row-sub.is-unread { color: var(--ph-text); font-weight: 600; }
+.ph-inbox-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.ph-badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--ph-accent); color: #fff; font-style: normal; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+
+/* chat */
+.ph-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ph-chat-list { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; -webkit-overflow-scrolling: touch; }
+.ph-bubble-row { display: flex; }
+.ph-bubble-row.is-mine { justify-content: flex-end; }
+.ph-bubble { max-width: 78%; padding: 8px 12px 6px; border-radius: 18px 18px 18px 5px; background: var(--ph-surface); color: var(--ph-text); font-size: 14.5px; line-height: 1.35; word-break: break-word; }
+.ph-bubble.is-mine { border-radius: 18px 18px 5px 18px; background: var(--ph-accent); color: #fff; }
+.ph-bubble.is-pending { opacity: 0.6; }
+.ph-bubble i { display: block; margin-top: 2px; font-style: normal; font-size: 10px; opacity: 0.65; text-align: right; }
+.ph-chat-error { flex: none; padding: 0 14px; margin: 0 0 4px; }
+.ph-chat-input { flex: none; display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--ph-line); background: var(--ph-app-bg); }
+.ph-chat-input input { flex: 1; min-width: 0; border: none; outline: none; background: var(--ph-surface); color: var(--ph-text); font: inherit; font-size: 16px; padding: 9px 14px; border-radius: 999px; }
+
+/* detail post + edit/hapus */
+.ph-sheet.ph-sheet-tall { max-height: 92%; padding: 8px 0 0; }
+.ph-viewer { padding: 0 0 14px; gap: 0; }
+.ph-viewer-head { display: flex; align-items: center; gap: 10px; padding: 4px 14px 10px; }
+.ph-viewer-actions { padding-top: 8px; }
+.ph-viewer-meta { padding-bottom: 4px; }
+.ph-owner-btns { display: flex; gap: 8px; padding: 10px 14px 0; }
+.ph-owner-btns .ph-btn { flex: 1; }
+.ph-btn-danger { color: #ff4d5e; border-color: rgba(255, 77, 94, 0.5); }
+.ph-btn-danger-solid { background: #ff3b4e; border-color: transparent; color: #fff; }
+.ph-edit { padding: 10px 14px 0; }
+.ph-edit textarea { width: 100%; border: none; outline: none; resize: none; background: var(--ph-surface); color: var(--ph-text); font: inherit; font-size: 16px; padding: 10px 12px; border-radius: var(--ph-radius); box-sizing: border-box; }
+.ph-edit .ph-compose-bar { margin-top: 8px; }
+.ph-edit-btns { display: inline-flex; gap: 8px; }
+.ph-confirm { padding: 10px 14px 0; }
+.ph-confirm p { margin: 0; font-size: 13.5px; color: var(--ph-sub); line-height: 1.4; }
+.ph-viewer .ph-error { padding: 0 14px; }
+
+
+/* ===== Kamera: switch Real | RP (kecil, redup) + tag foto RP di galeri ===== */
+.ph-cam-mode { position: absolute; top: 8px; left: 8px; z-index: 3; display: inline-flex; padding: 2px; border-radius: 999px; background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(4px); }
+.ph-cam-mode button { border: none; background: none; color: rgba(255, 255, 255, 0.6); font-size: 11px; font-weight: 600; line-height: 1; padding: 5px 11px; border-radius: 999px; cursor: pointer; }
+.ph-cam-mode button.is-on { background: rgba(255, 255, 255, 0.22); color: #fff; cursor: default; }
+.ph-thumb { position: relative; }
+.ph-thumb-tag { position: absolute; left: 4px; bottom: 4px; font-style: normal; font-size: 9px; font-weight: 700; line-height: 1; padding: 3px 5px; border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: #fff; }
+
+/* ===== Kontak berbasis ID RP Town ===== */
+.ph-myid { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--ph-surface); border-radius: var(--ph-radius); padding: 10px 12px; margin: 2px 0 10px; }
+.ph-myid-text { display: flex; flex-direction: column; min-width: 0; }
+.ph-myid-text b { font-size: 17px; letter-spacing: 0.05em; user-select: all; -webkit-user-select: all; }
+.ph-contact-info { align-self: stretch; margin: 14px 0 4px; background: var(--ph-surface); border-radius: var(--ph-radius); overflow: hidden; text-align: left; }
+.ph-contact-info > div { padding: 10px 14px; border-bottom: 1px solid var(--ph-line); }
+.ph-contact-info > div:last-child { border-bottom: none; }
+.ph-contact-info b { display: block; font-size: 15px; font-weight: 600; word-break: break-word; }
+.ph-contact-info span { font-size: 12px; color: var(--ph-sub); }
+
+
+/* ===== Panel "Tutup HP" (khusus HP) -- muncul dari tepi kanan seperti panel volume ===== */
+.ph-sidepanel-backdrop { position: absolute; inset: 0; z-index: 40; background: transparent; }
+.ph-sidepanel {
+  position: absolute; z-index: 41;
+  right: 10px; top: 24%;
+  width: 68px; padding: 16px 0 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  background: #fff; color: #222;
+  border-radius: 18px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  animation: ph-side-in 0.2s ease-out;
+}
+.ph-sidepanel-track { width: 6px; height: 150px; border-radius: 3px; background: #ececec; position: relative; overflow: hidden; }
+.ph-sidepanel-track i { position: absolute; inset: 0; border-radius: 3px; background: #555; }
+.ph-sidepanel-btn {
+  width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer;
+  display: grid; place-items: center;
+  background: #ef4444; color: #fff;
+}
+.ph-sidepanel-btn:active { transform: scale(0.94); }
+.ph-sidepanel-label { font-size: 11px; font-weight: 600; color: #555; }
+@keyframes ph-side-in { from { opacity: 0; transform: translateX(24px) } to { opacity: 1; transform: translateX(0) } }
