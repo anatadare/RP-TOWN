@@ -57,6 +57,22 @@ function Wall({ seg, outer }) {
   )
 }
 
+// List dinding (plint) di kaki dinding, biar ruangan kelihatan "jadi".
+function Baseboard({ seg }) {
+  const { wallT } = HOUSE
+  const horizontal = seg.z1 === seg.z2
+  const len = horizontal ? Math.abs(seg.x2 - seg.x1) : Math.abs(seg.z2 - seg.z1)
+  const cx = (seg.x1 + seg.x2) / 2
+  const cz = (seg.z1 + seg.z2) / 2
+  const t = wallT + 0.05
+  return (
+    <mesh position={[cx, 0.07, cz]} scale={horizontal ? [len + wallT, 0.14, t] : [t, 0.14, len + wallT]}>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshStandardMaterial color="#b9ad9a" roughness={0.8} />
+    </mesh>
+  )
+}
+
 // Kusen di atas bukaan pintu (dari tinggi pintu sampai langit-langit).
 function Lintel({ d }) {
   const { wallH, wallT, doorH } = HOUSE
@@ -92,8 +108,42 @@ export default function HouseInterior() {
       {layout.walls.map((s, i) => (
         <Wall key={i} seg={s} outer={isOuter(s)} />
       ))}
+      {layout.walls.map((s, i) => (
+        <Baseboard key={`b${i}`} seg={s} />
+      ))}
       {layout.doorways.map((d, i) => (
         <Lintel key={i} d={d} />
+      ))}
+
+      {/* plafon (menghadap ke bawah) -- rumah tertutup, gak ada area kosong di luar */}
+      <mesh position={[W / 2, HOUSE.wallH, D / 2]} rotation-x={Math.PI / 2}>
+        <planeGeometry args={[W + HOUSE.wallT, D + HOUSE.wallT]} />
+        <meshStandardMaterial color="#f7f3ec" roughness={1} />
+      </mesh>
+
+      {/* pintu depan (tertutup); keluar lewat pop up "Keluar rumah" */}
+      <group position={[frontDoor.x, 0, D]}>
+        <mesh position={[0, HOUSE.doorH / 2, 0]} scale={[frontDoor.w, HOUSE.doorH, 0.08]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#7b5232" roughness={0.7} />
+        </mesh>
+        <mesh position={[frontDoor.w / 2 - 0.2, 1.0, -0.08]}>
+          <sphereGeometry args={[0.05, 12, 12]} />
+          <meshStandardMaterial color="#d9b44a" metalness={0.6} roughness={0.35} />
+        </mesh>
+      </group>
+
+      {/* lampu tiap ruangan (hangat) */}
+      <ambientLight intensity={0.55} />
+      {HOUSE.rooms.map((r) => (
+        <pointLight
+          key={`l-${r.id}`}
+          position={[(r.x1 + r.x2) / 2, HOUSE.wallH - 0.35, (r.z1 + r.z2) / 2]}
+          intensity={14}
+          distance={9}
+          decay={1.6}
+          color="#fff1d6"
+        />
       ))}
 
       {/* keset di depan pintu keluar biar gampang ketemu */}
