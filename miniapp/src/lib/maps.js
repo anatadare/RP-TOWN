@@ -29,6 +29,11 @@
 // - Kawasan Pantai: 2 di pulau (persimpangan utara & timur) + 1 di daratan
 //   sebelum jalan masuk ke kawasan dermaga/air (sisi darat, bukan di laut).
 // - imageUrl: sama seperti billboard besar, kosong = putih polos.
+// `landRaise`: (opsional, meter, default 0) daratan di peta 3D tampilan luar
+// (TownMap3D) diangkat segini terhadap laut. Dipakai kalau ombak laut
+// nongol/nutupin daratan. Tinggi ombak laut otomatis dikecilin supaya puncak
+// ombak selalu ada di bawah permukaan daratan (lihat OceanSurface). Gak
+// ngaruh ke mode Jelajahi (TownWalk) — itu punya lautnya sendiri.
 // `enterableBuildings`: true = di mode Jelajahi, tiap bangunan bernomor
 // (TPX_Buildings_N) bisa dimasuki lewat pop up "Masuki rumah". Interiornya
 // denah standar (lib/houseInterior.js): 3 kamar, 1 dapur, 1 ruang tamu.
@@ -48,6 +53,7 @@ export const MAPS = [
     key: 'lpm',
     name: 'LPM',
     modelUrl: '/models/lpm.glb',
+    landRaise: 2, // daratan +2 m di atas laut, biar ombak gak naik ke atas pulau
     enterableBuildings: true, // semua bangunan bisa dimasuki di mode Jelajahi (lihat houseInterior.js)
     billboard: { offsetXFactor: -0.3, offsetZFactor: -1.15, imageUrl: null },
     walkBillboards: [
