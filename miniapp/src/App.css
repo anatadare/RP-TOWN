@@ -2970,3 +2970,8 @@ body {
     opacity: 0;
   }
 }
+
+.walk-enter-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
