@@ -61,6 +61,11 @@ const OCEAN_SCALE_Y = 0.05
 // biar masih "nyentuh" pantai, bukan ngambang jauh di bawah tanah.
 const OCEAN_BASE_Y_FALLBACK = -1.45 // dipakai sebentar sebelum footprint pulau kehitung
 const OCEAN_BASE_OFFSET = 0.5 // jarak air di atas titik terendah pulau
+// Ayunan naik-turun laut (lihat useFrame di OceanSurface) & jarak aman antara
+// puncak ombak tertinggi dan permukaan daratan. Dipakai buat ngitung tinggi
+// ombak maksimum kalau peta punya `landRaise` (lihat OceanSurface).
+const OCEAN_BOB_AMPLITUDE = 0.15
+const OCEAN_CREST_CLEARANCE = 0.3
 
 // ============================================================
 // Matahari / Bulan / Bintang — benda langit low-poly yang beneran nyala
@@ -325,7 +330,7 @@ function CelestialSystem({ footprint }) {
 // sudah "dipahat" statis (gak dianimasiin per-vertex) — dianggap cukup
 // hidup dengan cuma di-ayun naik-turun pelan-pelan tiap frame (jauh lebih
 // murah daripada animasi per-vertex kayak versi shader sebelumnya).
-function OceanSurface({ footprint }) {
+function OceanSurface({ footprint, landRaise = 0 }) {
   const { scene } = useGLTF(OCEAN_SURFACE_URL)
   const groupRef = useRef()
 
@@ -358,12 +363,31 @@ function OceanSurface({ footprint }) {
     const box = new THREE.Box3().setFromObject(scene)
     const size = new THREE.Vector3()
     box.getSize(size)
-    return { x: size.x, z: size.z }
+    return { x: size.x, z: size.z, maxY: box.max.y }
   }, [scene])
 
-  const { scaleXZ, centerX, centerZ, baseY } = useMemo(() => {
+  const { scaleXZ, scaleY, centerX, centerZ, baseY } = useMemo(() => {
     if (!footprint) {
-      return { scaleXZ: OCEAN_SCALE_XZ_FALLBACK, centerX: 0, centerZ: 0, baseY: OCEAN_BASE_Y_FALLBACK }
+      return {
+        scaleXZ: OCEAN_SCALE_XZ_FALLBACK,
+        scaleY: OCEAN_SCALE_Y,
+        centerX: 0,
+        centerZ: 0,
+        baseY: OCEAN_BASE_Y_FALLBACK,
+      }
+    }
+    // Daratan sudah diangkat `landRaise` meter di TownModel (footprint ikut
+    // naik), sedangkan laut tetap di tempatnya -> kurangi dari baseY.
+    const baseYValue = footprint.center.y - footprint.size.y / 2 + OCEAN_BASE_OFFSET - landRaise
+    // Permukaan daratan = titik terendah pulau + OCEAN_BASE_OFFSET (laut
+    // aslinya 0.5 m di bawah tanah) + landRaise. Puncak ombak (maxY mentah x
+    // scaleY) + ayunan harus tetap di bawah permukaan itu dikurangi jarak aman.
+    // Cuma dikecilin kalau perlu, gak pernah dibesarin dari OCEAN_SCALE_Y.
+    let scaleYValue = OCEAN_SCALE_Y
+    if (landRaise > 0 && oceanRawSize.maxY > 0) {
+      const landY = baseYValue + OCEAN_BASE_OFFSET + landRaise
+      const maxCrest = landY - OCEAN_CREST_CLEARANCE - OCEAN_BOB_AMPLITUDE - baseYValue
+      scaleYValue = Math.min(OCEAN_SCALE_Y, Math.max(maxCrest, 0.01) / oceanRawSize.maxY)
     }
     // Hitung scale yang dibutuhkan di masing-masing sumbu (lebar & kedalaman)
     // secara terpisah, lalu pakai yang paling besar — biar laut dijamin
@@ -372,21 +396,22 @@ function OceanSurface({ footprint }) {
     const scaleForZ = (footprint.size.z * OCEAN_COVERAGE_MARGIN) / oceanRawSize.z
     return {
       scaleXZ: Math.max(scaleForX, scaleForZ),
+      scaleY: scaleYValue,
       centerX: footprint.center.x,
       centerZ: footprint.center.z,
       // Titik terendah pulau = pusat bounding-box dikurangi setengah tingginya.
-      baseY: footprint.center.y - footprint.size.y / 2 + OCEAN_BASE_OFFSET,
+      baseY: baseYValue,
     }
-  }, [footprint, oceanRawSize])
+  }, [footprint, oceanRawSize, landRaise])
 
   useFrame(({ clock }) => {
     if (groupRef.current) {
-      groupRef.current.position.y = baseY + Math.sin(clock.elapsedTime * 0.6) * 0.15
+      groupRef.current.position.y = baseY + Math.sin(clock.elapsedTime * 0.6) * OCEAN_BOB_AMPLITUDE
     }
   })
 
   return (
-    <group ref={groupRef} position={[centerX, baseY, centerZ]} scale={[scaleXZ, OCEAN_SCALE_Y, scaleXZ]}>
+    <group ref={groupRef} position={[centerX, baseY, centerZ]} scale={[scaleXZ, scaleY, scaleXZ]}>
       <primitive object={clonedScene} />
     </group>
   )
@@ -403,6 +428,7 @@ function TownModel({
   onFootprintComputed,
   onBuildingsFootprintComputed,
   focusedKey,
+  landRaise = 0,
 }) {
   const { scene } = useGLTF(modelUrl)
   const rotatedGroupRef = useRef()
@@ -428,7 +454,10 @@ function TownModel({
     box.getSize(size)
     box.getCenter(center)
 
-    rotatedGroupRef.current.position.set(-center.x, -center.y, -center.z)
+    // landRaise: daratan diangkat terhadap laut (laut dipasang terpisah di
+    // OceanSurface & tidak ikut naik). Dilakukan SEBELUM footprint dilaporkan
+    // supaya kamera, billboard, dan matahari ikut posisi daratan yang baru.
+    rotatedGroupRef.current.position.set(-center.x, -center.y + landRaise, -center.z)
     rotatedGroupRef.current.updateMatrixWorld(true)
 
     // Laporkan footprint setelah pivot diterapkan supaya laut yang terpisah
@@ -467,7 +496,7 @@ function TownModel({
         onBuildingsFootprintComputed({ size: bSize, center: bCenter })
       }
     }
-  }, [scene, onFootprintComputed, onBuildingsFootprintComputed])
+  }, [scene, onFootprintComputed, onBuildingsFootprintComputed, landRaise])
 
 
   // Sungai/kanal kecil bawaan tiap peta disembunyiin — laut utamanya sekarang
@@ -836,6 +865,8 @@ export default function TownMap3D({
   // Config billboard punya peta yang lagi aktif (posisi & imageUrl-nya diatur
   // di lib/maps.js per-peta, lihat komentar di sana).
   const billboardConfig = useMemo(() => getMapByKey(mapKey)?.billboard || {}, [mapKey])
+  // Berapa meter daratan peta ini diangkat terhadap laut (default 0).
+  const landRaise = useMemo(() => getMapByKey(mapKey)?.landRaise ?? 0, [mapKey])
 
   const assignedByKey = useMemo(() => {
     const map = {}
@@ -881,7 +912,7 @@ export default function TownMap3D({
             (footprint pulau masih null sebentar, dipakai fallback dulu). */}
         <CelestialSystem footprint={islandFootprint} />
         <Suspense fallback={null}>
-          <OceanSurface footprint={islandFootprint} />
+          <OceanSurface footprint={islandFootprint} landRaise={landRaise} />
           <AdBillboard
             footprint={islandFootprint}
             boundsFootprint={buildingsFootprint}
@@ -901,6 +932,7 @@ export default function TownMap3D({
               onFootprintComputed={setIslandFootprint}
               onBuildingsFootprintComputed={setBuildingsFootprint}
               focusedKey={focusRequest?.buildingKey || null}
+              landRaise={landRaise}
             />
           </group>
         </Suspense>
