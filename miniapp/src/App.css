@@ -2869,3 +2869,104 @@ body {
   transition: opacity 0.15s linear;
   overflow: hidden;
 }
+
+
+/* ============================================================
+   Masuk / keluar rumah (mode Jelajahi) -- pop up, badge ruangan, fade
+   ============================================================ */
+.walk-enter-popup {
+  position: absolute;
+  left: 50%;
+  bottom: 124px;
+  transform: translateX(-50%);
+  z-index: 7;
+  min-width: 190px;
+  padding: 12px 16px 14px;
+  border-radius: 16px;
+  background: rgba(11, 18, 32, 0.82);
+  border: 1px solid rgba(234, 246, 255, 0.24);
+  backdrop-filter: blur(8px);
+  color: var(--paper);
+  text-align: center;
+  font-family: var(--font-mono);
+  animation: walk-enter-pop 0.18s ease-out;
+}
+
+.walk-enter-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.walk-enter-sub {
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--ink-soft);
+}
+
+.walk-enter-btn {
+  margin-top: 10px;
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 138, 122, 0.55);
+  background: #e0483a;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.walk-enter-btn:active {
+  filter: brightness(0.9);
+}
+
+@keyframes walk-enter-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.walk-room-badge {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(11, 18, 32, 0.6);
+  border: 1px solid rgba(234, 246, 255, 0.2);
+  backdrop-filter: blur(6px);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.walk-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  background: #000;
+  pointer-events: none;
+  opacity: 0;
+  animation: walk-fade-in 0.55s ease-out;
+}
+
+@keyframes walk-fade-in {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
