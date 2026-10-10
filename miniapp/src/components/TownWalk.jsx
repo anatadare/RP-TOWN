@@ -789,12 +789,12 @@ function NearHouseWatcher({ buildings, selfRef, onNear }) {
 const NO_CANOPIES = []
 
 // Isi scene saat karakter ada DI DALAM rumah.
-function InteriorScene({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo }) {
-  const world = useMemo(() => buildInteriorWorld(), [])
+function InteriorScene({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo, doorsRef }) {
+  const world = useMemo(() => buildInteriorWorld({ isDoorOpen: (id) => !!doorsRef.current[id] }), [doorsRef])
   const spawn = useMemo(() => world.findSpawn(), [world])
   return (
     <>
-      <HouseInterior />
+      <HouseInterior doorsRef={doorsRef} />
       <WalkPlayer
         world={world}
         spawn={spawn}
@@ -809,7 +809,7 @@ function InteriorScene({ character, inputRef, selfRef, net, onReady, equippedPho
         camPreset={INTERIOR_CAM}
       />
       <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
-      <InteriorWatcher selfRef={selfRef} onInfo={onInfo} />
+      <InteriorWatcher selfRef={selfRef} doorsRef={doorsRef} onInfo={onInfo} />
     </>
   )
 }
@@ -1065,7 +1065,9 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   const [interior, setInterior] = useState(null)
   const [nearHouse, setNearHouse] = useState(null) // { key, number } | null
   const [returnSpot, setReturnSpot] = useState(null) // posisi di luar pas mau masuk -> tempat muncul lagi pas keluar
-  const [interiorInfo, setInteriorInfo] = useState({ room: null, emoji: null, atDoor: false })
+  const [interiorInfo, setInteriorInfo] = useState({ room: null, emoji: null, atDoor: false, door: null })
+  // status pintu kamar yang lagi dibuka (id pintu -> true); direset tiap masuk rumah
+  const doorsRef = useRef({})
   const netKey = interior ? `${mapKey}-h${interior.number}` : mapKey
   const net = useWalkNet({ mapKey: netKey, characterId: character?.id, selfRef })
   const sky = useMemo(getSky, [])
@@ -1246,7 +1248,8 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
     setReturnSpot({ x: me.x, y: me.y, z: me.z, yaw: me.yaw })
     selfRef.current.ready = false // jangan kirim posisi luar ke room rumah
     setNearHouse(null)
-    setInteriorInfo({ room: null, emoji: null, atDoor: false })
+    doorsRef.current = {} // semua pintu kamar tertutup lagi
+    setInteriorInfo({ room: null, emoji: null, atDoor: false, door: null })
     setInterior({ key: house.key, number: house.number })
   }
 
@@ -1254,16 +1257,27 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
     if (!interior) return
     hapticSelect()
     selfRef.current.ready = false
-    setInteriorInfo({ room: null, emoji: null, atDoor: false })
+    setInteriorInfo({ room: null, emoji: null, atDoor: false, door: null })
     setInterior(null)
   }
 
-  // Tombol E (desktop) = aksi pop up yang lagi tampil (masuk / keluar rumah).
+  function toggleDoor() {
+    const d = interiorInfo.door
+    if (!d || d.blocked) return
+    const next = !doorsRef.current[d.id]
+    doorsRef.current[d.id] = next
+    hapticSelect()
+    setInteriorInfo((cur) => (cur.door ? { ...cur, door: { ...cur.door, open: next } } : cur))
+  }
+
+  // Tombol E (desktop) = aksi pop up yang lagi tampil (masuk / keluar rumah, buka / tutup pintu kamar).
   const doorActionRef = useRef(null)
   doorActionRef.current = interior
     ? interiorInfo.atDoor
       ? exitHouse
-      : null
+      : interiorInfo.door
+        ? toggleDoor
+        : null
     : nearHouse
       ? () => enterHouse(nearHouse)
       : null
@@ -1355,6 +1369,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
               equippedPhone={equippedPhone}
               phoneFoldT={phoneFoldT}
               onInfo={setInteriorInfo}
+              doorsRef={doorsRef}
             />
           ) : (
             <WalkScene
@@ -1403,6 +1418,14 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
           <div className="walk-room-badge">
             {interiorInfo.room ? `${interiorInfo.emoji} ${interiorInfo.room}` : `🏠 Rumah No. ${interior.number}`}
           </div>
+          {!interiorInfo.atDoor && interiorInfo.door && (
+            <div className="walk-enter-popup" role="dialog" aria-label={interiorInfo.door.name}>
+              <div className="walk-enter-title">🚪 {interiorInfo.door.name}</div>
+              <button type="button" className="walk-enter-btn" onClick={toggleDoor} disabled={interiorInfo.door.blocked}>
+                {interiorInfo.door.blocked ? 'Menghalangi pintu' : interiorInfo.door.open ? 'Tutup pintu' : 'Buka pintu'}
+              </button>
+            </div>
+          )}
           {interiorInfo.atDoor && (
             <div className="walk-enter-popup" role="dialog" aria-label="Keluar rumah">
               <div className="walk-enter-title">🚪 Pintu depan</div>
