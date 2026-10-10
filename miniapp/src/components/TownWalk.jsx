@@ -6,6 +6,9 @@ import { MAPS } from '../lib/maps'
 import { WalkBillboard } from './Billboard3D'
 import { buildWalkWorld, ROAD_LIFT } from '../lib/walkWorld'
 import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
+import { buildInteriorWorld, HOUSE } from '../lib/houseInterior'
+import { makeVisitBuilding, nearestVisitBuilding } from '../lib/houseVisit'
+import HouseInterior, { InteriorWatcher } from './HouseInterior'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
 import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, PHONE_GRIP_SHIFT, PHONE_BACK_SHIFT, applyPhonePose, alignPhoneUpright } from './PhonePose'
 import FoldablePhone from './FoldablePhone'
@@ -136,7 +139,20 @@ const CAM_DEFAULT_PITCH = 0.42
 // jarak segini kepala karakter (1.75 m) bisa nembus ujung panel.
 const BILLBOARD_COLLIDER_RADIUS = 0.9
 
+// Kamera di dalam rumah: sudut pandang "rumah boneka" dari atas tembok (tembok
+// 2.6 m, jadi kamera harus cukup tinggi). Pitch minimum dikunci supaya kamera
+// gak turun nembus tembok.
+const INTERIOR_CAM = { pitch: 1.05, dist: 7.5, minPitch: 0.8 }
+
 const JOY_RADIUS = 54 // px, jarak geser maksimum knob joystick
+
+// Nama node bangunan bernomor ("TPX_Buildings_12") dari mesh itu atau induknya.
+function buildingKeyOf(obj) {
+  for (let o = obj; o; o = o.parent) {
+    if (/^TPX_Buildings_\d+$/.test(o.name || '')) return o.name
+  }
+  return null
+}
 
 function groupOf(obj) {
   for (let o = obj; o; o = o.parent) {
@@ -160,6 +176,7 @@ function getSky() {
 // ---------------------------------------------------------------------------
 function extractWorldData(root) {
   const out = { water: [], green: [], roads: [], buildings: [], buildingBases: [], trunks: [] }
+  const perBuilding = new Map() // 'TPX_Buildings_12' -> [x,y,z,...] (segitiga bangunan itu)
   const targets = {
     TPX_Waterways: out.water,
     TPX_GreenAreas: out.green,
@@ -223,11 +240,26 @@ function extractWorldData(root) {
 
     const idx = obj.geometry.index
     const n = idx ? idx.count : pos.count
+    let own = null
+    if (grp === 'TPX_Buildings') {
+      const bk = buildingKeyOf(obj)
+      if (bk) {
+        own = perBuilding.get(bk)
+        if (!own) perBuilding.set(bk, (own = []))
+      }
+    }
     for (let k = 0; k < n; k++) {
       const v = idx ? idx.getX(k) : k
       target.push(world[v * 3], world[v * 3 + 1], world[v * 3 + 2])
+      if (own) own.push(world[v * 3], world[v * 3 + 1], world[v * 3 + 2])
     }
   })
+
+  const visit = []
+  for (const [bk, tris] of perBuilding) {
+    const number = Number(/(\d+)\s*$/.exec(bk)?.[1] || 0)
+    visit.push(makeVisitBuilding(bk, number, tris))
+  }
 
   return {
     water: Float32Array.from(out.water),
@@ -236,6 +268,7 @@ function extractWorldData(root) {
     buildings: Float32Array.from(out.buildings),
     buildingBases: Float32Array.from(out.buildingBases),
     trunks: out.trunks,
+    visit,
   }
 }
 
@@ -373,7 +406,7 @@ function prepareWalkScene(scene) {
 // Karakter + fisika + kamera. Semua di satu useFrame supaya urutannya pasti:
 // input -> fisika -> posisi model -> animasi -> kamera.
 // ---------------------------------------------------------------------------
-function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies, onReady, equippedPhone, phoneFoldT }) {
+function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies, onReady, equippedPhone, phoneFoldT, camPreset }) {
   const { scene: charScene, animations } = useGLTF(character.modelUrl)
   const { camera } = useThree()
 
@@ -463,18 +496,21 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies,
     const cz = (world.bounds.minZ + world.bounds.maxZ) / 2
     const dx = cx - spawn.x, dz = cz - spawn.z
     inp.yaw = Math.hypot(dx, dz) > 1 ? Math.atan2(-dx, -dz) : 0
-    inp.pitch = CAM_DEFAULT_PITCH
-    inp.dist = CAM_DEFAULT_DIST
+    // spawn.yaw (opsional) = arah hadap karakter -> kamera di belakangnya
+    // (dipakai pas keluar rumah, biar hadap ke arah yang sama dengan pas masuk)
+    if (spawn.yaw !== undefined) inp.yaw = spawn.yaw + Math.PI
+    inp.pitch = camPreset?.pitch ?? CAM_DEFAULT_PITCH
+    inp.dist = camPreset?.dist ?? CAM_DEFAULT_DIST
     return {
       p: createPlayer(spawn.x, spawn.y, spawn.z, Math.atan2(-Math.sin(inp.yaw), -Math.cos(inp.yaw))),
       tx: spawn.x,
       ty: spawn.y + 1.35,
       tz: spawn.z,
-      curDist: CAM_DEFAULT_DIST,
+      curDist: inp.dist,
       anim: null,
       ready: false,
     }
-  }, [world, spawn, inputRef])
+  }, [world, spawn, inputRef, camPreset])
 
   // Jump cuma dimainkan sekali (bukan loop); sisanya loop biasa.
   useEffect(() => {
@@ -507,6 +543,8 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies,
     }
     inp.moveX = mx
     inp.moveY = my
+    // di dalam rumah kamera gak boleh turun di bawah tinggi tembok
+    if (camPreset && inp.pitch < camPreset.minPitch) inp.pitch = camPreset.minPitch
 
     let jumpedNow = false
     let remaining = Math.min(delta, 0.1)
@@ -700,29 +738,86 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies,
 // ---------------------------------------------------------------------------
 // Isi scene: peta (salinan), tanah buatan, laut, dan pemain.
 // ---------------------------------------------------------------------------
-function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT }) {
-  const { scene } = useGLTF(modelUrl)
-  const built = useMemo(() => prepareWalkScene(scene), [scene])
-  // Billboard kecil peta ini (posisi x/z diatur di lib/maps.js).
-  const billboardDefs = useMemo(
-    () => MAPS.find((m) => m.modelUrl === modelUrl)?.walkBillboards || [],
-    [modelUrl]
-  )
-  const world = useMemo(
-    () =>
-      buildWalkWorld({
-        ...built.data,
-        props: billboardDefs.map((b) => ({
-          x: b.x,
-          z: b.z,
-          r: BILLBOARD_COLLIDER_RADIUS,
-          y0: -1e4, // penghalang setinggi apa pun (tiang + panel)
-          y1: 1e4,
-        })),
-      }),
-    [built, billboardDefs]
-  )
+// Dunia luar (scene salinan + tabrakan) di-cache per scene .glb, supaya keluar
+// dari rumah gak perlu membangun ulang tanah & tabrakan satu peta penuh.
+const WALK_CACHE = new WeakMap() // scene -> { built, world, defs }
+
+function getWalkCache(scene, modelUrl) {
+  let c = WALK_CACHE.get(scene)
+  if (!c) {
+    const built = prepareWalkScene(scene)
+    const defs = MAPS.find((m) => m.modelUrl === modelUrl)?.walkBillboards || []
+    const world = buildWalkWorld({
+      ...built.data,
+      props: defs.map((b) => ({
+        x: b.x,
+        z: b.z,
+        r: BILLBOARD_COLLIDER_RADIUS,
+        y0: -1e4, // penghalang setinggi apa pun (tiang + panel)
+        y1: 1e4,
+      })),
+    })
+    c = { built, world, defs }
+    WALK_CACHE.set(scene, c)
+  }
+  return c
+}
+
+// Pantau bangunan terdekat -> kabari TownWalk (cuma pas berubah) buat pop up
+// "Masuki rumah".
+function NearHouseWatcher({ buildings, selfRef, onNear }) {
+  const acc = useRef(0)
+  const last = useRef(null)
+  useFrame((_, delta) => {
+    acc.current += delta
+    if (acc.current < 0.15) return
+    acc.current = 0
+    const me = selfRef.current
+    if (!me.ready) return
+    const b = nearestVisitBuilding(buildings, me.x, me.y, me.z)
+    const k = b ? b.key : null
+    if (k === last.current) return
+    last.current = k
+    onNear(b ? { key: b.key, number: b.number } : null)
+  })
+  return null
+}
+
+const NO_CANOPIES = []
+
+// Isi scene saat karakter ada DI DALAM rumah.
+function InteriorScene({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo }) {
+  const world = useMemo(() => buildInteriorWorld(), [])
   const spawn = useMemo(() => world.findSpawn(), [world])
+  return (
+    <>
+      <HouseInterior />
+      <WalkPlayer
+        world={world}
+        spawn={spawn}
+        character={character}
+        inputRef={inputRef}
+        selfRef={selfRef}
+        net={net}
+        canopies={NO_CANOPIES}
+        onReady={onReady}
+        equippedPhone={equippedPhone}
+        phoneFoldT={phoneFoldT}
+        camPreset={INTERIOR_CAM}
+      />
+      <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
+      <InteriorWatcher selfRef={selfRef} onInfo={onInfo} />
+    </>
+  )
+}
+
+function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT, enterable, onNearHouse, spawnOverride }) {
+  const { scene } = useGLTF(modelUrl)
+  const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
+  const { built, world } = cached
+  // Billboard kecil peta ini (posisi x/z diatur di lib/maps.js).
+  const billboardDefs = cached.defs
+  const spawn = useMemo(() => spawnOverride || world.findSpawn(), [world, spawnOverride])
   // Tinggi tanah di kaki tiap billboard (kalau di luar daratan -> dilewati).
   const billboards = useMemo(
     () =>
@@ -781,6 +876,7 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, 
         phoneFoldT={phoneFoldT}
       />
       <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
+      {enterable && <NearHouseWatcher buildings={built.data.visit} selfRef={selfRef} onNear={onNearHouse} />}
     </>
   )
 }
@@ -790,7 +886,7 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, 
 // tombol lompat, plus keyboard (WASD/panah, Shift lari, Spasi lompat) &
 // mouse (drag = putar kamera, roda = zoom) buat dites di desktop.
 // ---------------------------------------------------------------------------
-function WalkControls({ inputRef }) {
+function WalkControls({ inputRef, minPitch = CAM_MIN_PITCH }) {
   const zoneRef = useRef(null)
   const baseRef = useRef(null)
   const knobRef = useRef(null)
@@ -892,7 +988,7 @@ function WalkControls({ inputRef }) {
       ptr.x = e.clientX
       ptr.y = e.clientY
       inp.yaw -= dx * 0.0055
-      inp.pitch = THREE.MathUtils.clamp(inp.pitch + dy * 0.004, CAM_MIN_PITCH, CAM_MAX_PITCH)
+      inp.pitch = THREE.MathUtils.clamp(inp.pitch + dy * 0.004, minPitch, CAM_MAX_PITCH)
     }
   }
 
@@ -958,7 +1054,17 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // Posisi karakter sendiri (ditulis WalkPlayer tiap frame, dibaca walkNet
   // buat dikirim ke pemain lain di peta yang sama).
   const selfRef = useRef({ ready: false, x: 0, y: 0, z: 0, yaw: 0, anim: 0 })
-  const net = useWalkNet({ mapKey, characterId: character?.id, selfRef })
+  // ---- Masuk / keluar rumah -------------------------------------------------
+  // `interior` = rumah yang lagi dimasuki ({ key, number }) atau null (di luar).
+  // Interior = scene terpisah + room multiplayer terpisah per rumah.
+  const mapDef = MAPS.find((m) => m.key === mapKey)
+  const enterable = !!mapDef?.enterableBuildings
+  const [interior, setInterior] = useState(null)
+  const [nearHouse, setNearHouse] = useState(null) // { key, number } | null
+  const [returnSpot, setReturnSpot] = useState(null) // posisi di luar pas mau masuk -> tempat muncul lagi pas keluar
+  const [interiorInfo, setInteriorInfo] = useState({ room: null, emoji: null, atDoor: false })
+  const netKey = interior ? `${mapKey}-h${interior.number}` : mapKey
+  const net = useWalkNet({ mapKey: netKey, characterId: character?.id, selfRef })
   const sky = useMemo(getSky, [])
   const isLandscape = useLandscapeLock()
   const [ready, setReady] = useState(false)
@@ -1130,6 +1236,45 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   }
   const handleReady = useCallback(() => setReady(true), [])
 
+  function enterHouse(house) {
+    if (!house || interior) return
+    const me = selfRef.current
+    hapticSelect()
+    setReturnSpot({ x: me.x, y: me.y, z: me.z, yaw: me.yaw })
+    selfRef.current.ready = false // jangan kirim posisi luar ke room rumah
+    setNearHouse(null)
+    setInteriorInfo({ room: null, emoji: null, atDoor: false })
+    setInterior({ key: house.key, number: house.number })
+  }
+
+  function exitHouse() {
+    if (!interior) return
+    hapticSelect()
+    selfRef.current.ready = false
+    setInteriorInfo({ room: null, emoji: null, atDoor: false })
+    setInterior(null)
+  }
+
+  // Tombol E (desktop) = aksi pop up yang lagi tampil (masuk / keluar rumah).
+  const doorActionRef = useRef(null)
+  doorActionRef.current = interior
+    ? interiorInfo.atDoor
+      ? exitHouse
+      : null
+    : nearHouse
+      ? () => enterHouse(nearHouse)
+      : null
+  useEffect(() => {
+    function onKey(e) {
+      if (e.code !== 'KeyE' || e.repeat) return
+      const t = e.target
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      doorActionRef.current?.()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   function openRpCamera() {
     setPhoneScreenOpen(false)
     setRpCam(true)
@@ -1145,6 +1290,9 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // Ganti peta = Canvas remount (key) -> tampilkan loading lagi.
   useEffect(() => {
     setReady(false)
+    setInterior(null)
+    setNearHouse(null)
+    setReturnSpot(null)
     setShowHint(true)
     const t = setTimeout(() => setShowHint(false), 6000)
     return () => clearTimeout(t)
@@ -1168,7 +1316,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // kalau multiplayer gak tersedia -- mode Jelajahi tetap jalan solo.
   const netBadge =
     net.status === 'online'
-      ? `👥 ${net.peerIds.length + 1} di peta ini`
+      ? `👥 ${net.peerIds.length + 1} di ${interior ? 'rumah' : 'peta'} ini`
       : net.status === 'connecting'
         ? 'Menyambung…'
         : net.status === 'offline'
@@ -1187,27 +1335,76 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         camera={{ fov: 55, near: 0.3, far: 4000 }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
-        <color attach="background" args={[sky.color]} />
+        <color attach="background" args={[interior ? '#14161f' : sky.color]} />
         <ambientLight intensity={sky.ambient} />
         <hemisphereLight args={[sky.hemi[0], sky.hemi[1], 0.55]} />
         <directionalLight position={[80, 140, 60]} intensity={sky.sun} />
         <Suspense fallback={null}>
-          <WalkScene
-            modelUrl={modelUrl}
-            character={character}
-            inputRef={inputRef}
-            selfRef={selfRef}
-            net={net}
-            sky={sky}
-            onReady={handleReady}
-            equippedPhone={equippedPhone}
-            phoneFoldT={phoneFoldT}
-          />
+          {interior ? (
+            <InteriorScene
+              key={`in-${interior.key}`}
+              character={character}
+              inputRef={inputRef}
+              selfRef={selfRef}
+              net={net}
+              onReady={handleReady}
+              equippedPhone={equippedPhone}
+              phoneFoldT={phoneFoldT}
+              onInfo={setInteriorInfo}
+            />
+          ) : (
+            <WalkScene
+              key="outdoor"
+              modelUrl={modelUrl}
+              character={character}
+              inputRef={inputRef}
+              selfRef={selfRef}
+              net={net}
+              sky={sky}
+              onReady={handleReady}
+              equippedPhone={equippedPhone}
+              phoneFoldT={phoneFoldT}
+              enterable={enterable}
+              onNearHouse={setNearHouse}
+              spawnOverride={returnSpot}
+            />
+          )}
         </Suspense>
         <RpCaptureBridge />
       </Canvas>
 
-      <WalkControls inputRef={inputRef} />
+      <WalkControls inputRef={inputRef} minPitch={interior ? INTERIOR_CAM.minPitch : CAM_MIN_PITCH} />
+
+      {/* transisi masuk/keluar rumah: layar hitam yang memudar */}
+      <div key={interior ? `in-${interior.key}` : 'out'} className="walk-fade" />
+
+      {/* Pop up masuk rumah: muncul pas karakter berdiri dekat dinding rumah */}
+      {!interior && nearHouse && ready && (
+        <div className="walk-enter-popup" role="dialog" aria-label={`Rumah nomor ${nearHouse.number}`}>
+          <div className="walk-enter-title">🏠 Rumah No. {nearHouse.number}</div>
+          <div className="walk-enter-sub">3 kamar · dapur · ruang tamu</div>
+          <button type="button" className="walk-enter-btn" onClick={() => enterHouse(nearHouse)}>
+            Masuki rumah
+          </button>
+        </div>
+      )}
+
+      {/* di dalam rumah: nama ruangan + pop up keluar kalau dekat pintu depan */}
+      {interior && (
+        <>
+          <div className="walk-room-badge">
+            {interiorInfo.room ? `${interiorInfo.emoji} ${interiorInfo.room}` : `🏠 Rumah No. ${interior.number}`}
+          </div>
+          {interiorInfo.atDoor && (
+            <div className="walk-enter-popup" role="dialog" aria-label="Keluar rumah">
+              <div className="walk-enter-title">🚪 Pintu depan</div>
+              <button type="button" className="walk-enter-btn" onClick={exitHouse}>
+                Keluar rumah
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
       {(showRotateHint || !isLandscape) && (
         <div className="walk-rotate-hint">
