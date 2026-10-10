@@ -40,7 +40,8 @@
 // = tinggi tanah). Cuma visual: area yang bisa dipijak & tabrakan gak berubah.
 // `enterableBuildings`: true = di mode Jelajahi, tiap bangunan bernomor
 // (TPX_Buildings_N) bisa dimasuki lewat pop up "Masuki rumah". Interiornya
-// denah standar (lib/houseInterior.js): 3 kamar, 1 dapur, 1 ruang tamu.
+// denah standar "Desain Rumah RP Town" (lib/houseInterior.js): 3 kamar tidur,
+// 2 kamar mandi, dapur, ruang makan, ruang tamu, ruang cuci.
 export const MAPS = [
   {
     key: 'kawasan-pantai',
