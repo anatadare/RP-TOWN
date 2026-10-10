@@ -23,7 +23,7 @@
 export const HOUSE = {
   width: 12, // sumbu X
   depth: 10, // sumbu Z
-  wallH: 2.6,
+  wallH: 2.8,
   wallT: 0.2,
   doorH: 2.1, // tinggi bukaan pintu (di atasnya ada "kusen")
   // bukaan pintu kamar (lebar) dan pintu depan
@@ -111,8 +111,12 @@ export function distToExit(x, z) {
 // castWalls2D, findSpawn, ...
 // ---------------------------------------------------------------------------
 export function buildInteriorWorld() {
-  const { walls } = buildHouseLayout()
+  const { walls, doorways } = buildHouseLayout()
   const W = HOUSE.width, D = HOUSE.depth
+  // pintu depan tertutup = penghalang juga (buat karakter & kamera); keluar
+  // rumah lewat pop up "Keluar rumah", bukan jalan menembus pintu.
+  const fd = HOUSE.frontDoor
+  walls.push({ x1: fd.x - fd.w / 2, z1: D, x2: fd.x + fd.w / 2, z2: D })
 
   function groundY(x, z, yMax = Infinity) {
     if (x < 0 || x > W || z < 0 || z > D) return null
@@ -159,9 +163,22 @@ export function buildInteriorWorld() {
     walls,
     groundY,
     resolveWalls,
-    // Kamera interior ada di ATAS tembok (sudut pandang "rumah boneka"), jadi
-    // gak perlu ditarik mendekat oleh tembok.
-    castWalls2D: () => 1,
+    // Kamera third-person di DALAM rumah (ala GTA): tembok narik kamera
+    // mendekat ke karakter supaya gak tembus ke ruangan sebelah / luar rumah.
+    // Balik t di [0..1] (1 = bebas), sama seperti castWalls2D di walkWorld.js.
+    castWalls2D(ox, oz, ex, ez) {
+      const dx = ex - ox, dz = ez - oz
+      let best = 1
+      for (const w of walls) {
+        const sx = w.x2 - w.x1, sz = w.z2 - w.z1
+        const denom = dx * sz - dz * sx
+        if (denom > -1e-9 && denom < 1e-9) continue
+        const t = ((w.x1 - ox) * sz - (w.z1 - oz) * sx) / denom
+        const u = ((w.x1 - ox) * dz - (w.z1 - oz) * dx) / denom
+        if (t >= 0 && t < best && u >= 0 && u <= 1) best = t
+      }
+      return best
+    },
     clearanceAt: () => 99,
     insideBuilding: () => false,
     isWaterXZ: () => false,
