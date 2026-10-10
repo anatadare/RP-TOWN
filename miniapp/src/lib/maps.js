@@ -29,6 +29,9 @@
 // - Kawasan Pantai: 2 di pulau (persimpangan utara & timur) + 1 di daratan
 //   sebelum jalan masuk ke kawasan dermaga/air (sisi darat, bukan di laut).
 // - imageUrl: sama seperti billboard besar, kosong = putih polos.
+// `enterableBuildings`: true = di mode Jelajahi, tiap bangunan bernomor
+// (TPX_Buildings_N) bisa dimasuki lewat pop up "Masuki rumah". Interiornya
+// denah standar (lib/houseInterior.js): 3 kamar, 1 dapur, 1 ruang tamu.
 export const MAPS = [
   {
     key: 'kawasan-pantai',
@@ -45,6 +48,7 @@ export const MAPS = [
     key: 'lpm',
     name: 'LPM',
     modelUrl: '/models/lpm.glb',
+    enterableBuildings: true, // semua bangunan bisa dimasuki di mode Jelajahi (lihat houseInterior.js)
     billboard: { offsetXFactor: -0.3, offsetZFactor: -1.15, imageUrl: null },
     walkBillboards: [
       { x: 76.1, z: -104.2, imageUrl: null },
