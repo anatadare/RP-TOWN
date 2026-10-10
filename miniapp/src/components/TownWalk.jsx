@@ -139,10 +139,11 @@ const CAM_DEFAULT_PITCH = 0.42
 // jarak segini kepala karakter (1.75 m) bisa nembus ujung panel.
 const BILLBOARD_COLLIDER_RADIUS = 0.9
 
-// Kamera di dalam rumah: sudut pandang "rumah boneka" dari atas tembok (tembok
-// 2.6 m, jadi kamera harus cukup tinggi). Pitch minimum dikunci supaya kamera
-// gak turun nembus tembok.
-const INTERIOR_CAM = { pitch: 1.05, dist: 7.5, minPitch: 0.8 }
+// Kamera di dalam rumah: third-person dekat di belakang karakter (ala GTA).
+// Ada plafon, jadi tinggi kamera dibatasi (maxY) dan sudut mendongak/menunduk
+// dibatasi. Kalau ada tembok di belakang, kamera ditarik mendekat otomatis
+// (castWalls2D di houseInterior.js). maxY = tinggi plafon - 0.3.
+const INTERIOR_CAM = { pitch: 0.2, dist: 3.2, minPitch: 0.03, maxPitch: 0.5, maxY: HOUSE.wallH - 0.3 }
 
 const JOY_RADIUS = 54 // px, jarak geser maksimum knob joystick
 
@@ -544,7 +545,7 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies,
     inp.moveX = mx
     inp.moveY = my
     // di dalam rumah kamera gak boleh turun di bawah tinggi tembok
-    if (camPreset && inp.pitch < camPreset.minPitch) inp.pitch = camPreset.minPitch
+    if (camPreset) inp.pitch = THREE.MathUtils.clamp(inp.pitch, camPreset.minPitch, camPreset.maxPitch)
 
     let jumpedNow = false
     let remaining = Math.min(delta, 0.1)
@@ -651,6 +652,8 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies,
     let camZ = s.tz + dirZ * s.curDist
     const groundUnderCam = world.groundY(camX, camZ, camY + 3)
     if (groundUnderCam !== null && camY < groundUnderCam + 0.45) camY = groundUnderCam + 0.45
+    // di dalam rumah: kamera gak boleh tembus plafon
+    if (camPreset && camY > camPreset.maxY) camY = camPreset.maxY
     camera.position.set(camX, camY, camZ)
     camera.lookAt(s.tx, s.ty, s.tz)
 
@@ -886,7 +889,7 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, 
 // tombol lompat, plus keyboard (WASD/panah, Shift lari, Spasi lompat) &
 // mouse (drag = putar kamera, roda = zoom) buat dites di desktop.
 // ---------------------------------------------------------------------------
-function WalkControls({ inputRef, minPitch = CAM_MIN_PITCH }) {
+function WalkControls({ inputRef, minPitch = CAM_MIN_PITCH, maxPitch = CAM_MAX_PITCH }) {
   const zoneRef = useRef(null)
   const baseRef = useRef(null)
   const knobRef = useRef(null)
@@ -988,7 +991,7 @@ function WalkControls({ inputRef, minPitch = CAM_MIN_PITCH }) {
       ptr.x = e.clientX
       ptr.y = e.clientY
       inp.yaw -= dx * 0.0055
-      inp.pitch = THREE.MathUtils.clamp(inp.pitch + dy * 0.004, minPitch, CAM_MAX_PITCH)
+      inp.pitch = THREE.MathUtils.clamp(inp.pitch + dy * 0.004, minPitch, maxPitch)
     }
   }
 
@@ -1336,9 +1339,10 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <color attach="background" args={[interior ? '#14161f' : sky.color]} />
-        <ambientLight intensity={sky.ambient} />
-        <hemisphereLight args={[sky.hemi[0], sky.hemi[1], 0.55]} />
-        <directionalLight position={[80, 140, 60]} intensity={sky.sun} />
+        {/* di dalam rumah lampu luar diredupkan; lampu ruangan ada di HouseInterior */}
+        <ambientLight intensity={interior ? 0.25 : sky.ambient} />
+        <hemisphereLight args={[sky.hemi[0], sky.hemi[1], interior ? 0.2 : 0.55]} />
+        <directionalLight position={[80, 140, 60]} intensity={interior ? 0.2 : sky.sun} />
         <Suspense fallback={null}>
           {interior ? (
             <InteriorScene
@@ -1373,7 +1377,11 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         <RpCaptureBridge />
       </Canvas>
 
-      <WalkControls inputRef={inputRef} minPitch={interior ? INTERIOR_CAM.minPitch : CAM_MIN_PITCH} />
+      <WalkControls
+        inputRef={inputRef}
+        minPitch={interior ? INTERIOR_CAM.minPitch : CAM_MIN_PITCH}
+        maxPitch={interior ? INTERIOR_CAM.maxPitch : CAM_MAX_PITCH}
+      />
 
       {/* transisi masuk/keluar rumah: layar hitam yang memudar */}
       <div key={interior ? `in-${interior.key}` : 'out'} className="walk-fade" />
