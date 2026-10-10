@@ -324,7 +324,7 @@ function raiseTrees(root) {
 // & dipakai bareng TownMap3D (yang memodifikasinya), jadi di sini SELALU
 // bekerja di salinan (clone) supaya peta tampilan luar gak ikut berubah.
 // ---------------------------------------------------------------------------
-function prepareWalkScene(scene) {
+function prepareWalkScene(scene, waterDrop = 0) {
   const root = scene.clone(true)
   root.position.set(0, 0, 0)
   root.scale.set(1, 1, 1)
@@ -338,6 +338,13 @@ function prepareWalkScene(scene) {
 
   // data tabrakan dibaca SEBELUM modifikasi visual di bawah
   const data = extractWorldData(root)
+
+  // waterDrop: turunkan permukaan air (data tabrakan/tanah DAN visualnya di
+  // bawah) supaya air gak rata dengan tanah. Gak ngaruh ke area yang bisa
+  // dipijak (itu ditentukan bentuk poligon air di bidang XZ, bukan tingginya).
+  if (waterDrop > 0) {
+    for (let i = 1; i < data.water.length; i += 3) data.water[i] -= waterDrop
+  }
 
   let groundColor = null
   const waterMat = new THREE.MeshStandardMaterial({
@@ -368,6 +375,12 @@ function prepareWalkScene(scene) {
     if (grp === 'TPX_Waterways') {
       obj.visible = true // TownMap3D menyembunyikannya di scene cache
       obj.material = waterMat
+      if (waterDrop > 0 && obj.parent) {
+        const inv = new THREE.Matrix4().copy(obj.parent.matrixWorld).invert()
+        const a = new THREE.Vector3(0, 0, 0).applyMatrix4(inv)
+        lift.set(0, -waterDrop, 0).applyMatrix4(inv).sub(a)
+        obj.position.add(lift)
+      }
     } else if (grp === 'TPX_RoadsOutlines') {
       // jalan diangkat ROAD_LIFT (di ruang dunia) -- harus sama dengan fisikanya
       if (obj.parent) {
@@ -386,6 +399,10 @@ function prepareWalkScene(scene) {
       obj.material.emissiveIntensity = 0
     } else if (grp === 'TPX_GreenAreas') {
       if (!groundColor && obj.material?.color) groundColor = obj.material.color.clone()
+      // Mesh hijau di LPM itu dasar laut (menutupi area air, bukan daratan).
+      // Kalau air diturunkan, dasar ini bakal nutupin air -> sembunyikan.
+      // Tanah yang kelihatan tetap dari mesh tanah buatan (groundGeo).
+      if (waterDrop > 0) obj.visible = false
     } else if (grp === 'TPX_Trees') {
       const count = obj.geometry?.getAttribute('position')?.count || 0
       if (count > TRUNK_MAX_VERTS) {
@@ -748,8 +765,9 @@ const WALK_CACHE = new WeakMap() // scene -> { built, world, defs }
 function getWalkCache(scene, modelUrl) {
   let c = WALK_CACHE.get(scene)
   if (!c) {
-    const built = prepareWalkScene(scene)
-    const defs = MAPS.find((m) => m.modelUrl === modelUrl)?.walkBillboards || []
+    const mapDef = MAPS.find((m) => m.modelUrl === modelUrl)
+    const built = prepareWalkScene(scene, mapDef?.walkWaterDrop ?? 0)
+    const defs = mapDef?.walkBillboards || []
     const world = buildWalkWorld({
       ...built.data,
       props: defs.map((b) => ({
