@@ -4,101 +4,146 @@
 // walkWorld.js -- supaya logika tabrakannya bisa dites di Node. Yang nggambar
 // ke layar ada di components/HouseInterior.jsx.
 //
-// Semua rumah di peta yang bisa dimasuki pakai denah YANG SAMA (kosong dulu):
+// Semua rumah di peta yang bisa dimasuki pakai denah YANG SAMA ("Desain Rumah
+// RP Town": modern minimalis, 1 lantai, 3 kamar tidur). Denah 10 x 10 m, tanpa
+// teras depan/belakang & tanpa furnitur (ruangan kosong dulu):
 //
-//        x=0        4        8        12
-//   z=0  +---------+--------+---------+
-//        | Kamar 1 | Kamar 2| Kamar 3 |
-//        |         |        |         |
-//  z=4.5 +--[ ]----+---[ ]--+---[ ]----+   <- pintu tiap kamar
-//        |         |                  |
-//        | Dapur   : Ruang Tamu       |
-//        |         :                  |
-//  z=10  +---------+------[PINTU]-----+   <- pintu depan (keluar rumah)
-//                  4.5
+//        x=0     3   5   7        10
+//   z=0  +-------+---+---+---------+
+//        |Kamar 2|KM2|KM1| Kamar 3 |
+//   z=2  |       +[ ]+[ ]+         |   <- pintu kamar mandi
+//        |      [ ] lorong [ ]     |   <- pintu kamar 2 & 3
+//   z=3  +-------+               +-+
+//        | Dapur  : Ruang Makan | Cuci |
+//        |        :              [ ]   <- pintu ruang cuci
+//   z=6  +--------+---------+----+------+
+//        | Kamar  [ ]  Ruang Tamu      |
+//        | Utama  |                    |
+//  z=10  +--------+------[PINTU]-------+
+//        x=0      4      7
+//
+// Dapur terbuka ke ruang makan (bukaan lebar, tanpa daun pintu), ruang makan
+// menyatu dengan ruang tamu. Pintu kamar tidur, kamar mandi, dan ruang cuci
+// adalah daun pintu beneran (bisa dibuka/ditutup).
 //
 // Interior ini dunia TERPISAH dari peta luar (karakter "teleport" masuk),
 // jadi ukurannya gak tergantung ukuran bangunan di peta. 1 satuan = 1 meter.
 
 export const HOUSE = {
-  width: 12, // sumbu X
+  width: 10, // sumbu X
   depth: 10, // sumbu Z
   wallH: 2.8,
   wallT: 0.2,
   doorH: 2.1, // tinggi bukaan pintu (di atasnya ada "kusen")
-  // bukaan pintu kamar (lebar) dan pintu depan
-  roomDoorW: 1.2,
-  // Pintu kamar yang bisa dibuka/ditutup (engsel di sisi kiri/barat bukaan,
-  // daun pintu mengayun masuk ke kamar). cz = posisi dinding pemisah.
-  roomDoors: [
-    { id: 'kamar-1', name: 'Pintu Kamar 1', cx: 2, cz: 4.5 },
-    { id: 'kamar-2', name: 'Pintu Kamar 2', cx: 6, cz: 4.5 },
-    { id: 'kamar-3', name: 'Pintu Kamar 3', cx: 10, cz: 4.5 },
+
+  // Ruangan (persegi). `name` dipakai badge nama ruangan di layar.
+  rooms: [
+    { id: 'kamar-2', name: 'Kamar Tidur 2', emoji: '🛏️', x1: 0, z1: 0, x2: 3, z2: 3, color: '#c7a67f' },
+    { id: 'km-2', name: 'Kamar Mandi 2', emoji: '🚿', x1: 3, z1: 0, x2: 5, z2: 2, color: '#9aa3a9' },
+    { id: 'km-1', name: 'Kamar Mandi 1', emoji: '🚿', x1: 5, z1: 0, x2: 7, z2: 2, color: '#9aa3a9' },
+    { id: 'kamar-3', name: 'Kamar Tidur 3', emoji: '🛏️', x1: 7, z1: 0, x2: 10, z2: 3, color: '#c7a67f' },
+    { id: 'dapur', name: 'Dapur', emoji: '🍳', x1: 0, z1: 3, x2: 3, z2: 6, color: '#d9d3c8' },
+    // ruang makan = lorong depan kamar mandi (z 2..3) + area makan (z 3..6)
+    { id: 'ruang-makan', name: 'Ruang Makan', emoji: '🍽️', x1: 3, z1: 2, x2: 7, z2: 6, color: '#e3dccf' },
+    { id: 'cuci', name: 'Ruang Cuci/Jemur', emoji: '🧺', x1: 7, z1: 3, x2: 10, z2: 6, color: '#cfd3d6' },
+    { id: 'kamar-utama', name: 'Kamar Tidur Utama', emoji: '🛏️', x1: 0, z1: 6, x2: 4, z2: 10, color: '#b98f64' },
+    { id: 'ruang-tamu', name: 'Ruang Tamu', emoji: '🛋️', x1: 4, z1: 6, x2: 10, z2: 10, color: '#e8e2d6' },
+  ],
+
+  // Dinding lurus. axis 'x' = membentang sepanjang X di z=`at`; axis 'z' =
+  // membentang sepanjang Z di x=`at`. Bukaan (pintu/bukaan/pintu depan) yang
+  // letaknya di garis dinding ini otomatis jadi celah.
+  runs: [
+    // dinding luar
+    { axis: 'x', at: 0, from: 0, to: 10 },
+    { axis: 'x', at: 10, from: 0, to: 10 },
+    { axis: 'z', at: 0, from: 0, to: 10 },
+    { axis: 'z', at: 10, from: 0, to: 10 },
+    // dinding dalam
+    { axis: 'z', at: 3, from: 0, to: 6 }, // kamar 2 | km 2 | dapur | ruang makan
+    { axis: 'z', at: 5, from: 0, to: 2 }, // km 2 | km 1
+    { axis: 'z', at: 7, from: 0, to: 6 }, // km 1 / kamar 3 | ruang makan / cuci
+    { axis: 'x', at: 2, from: 3, to: 7 }, // muka kamar mandi
+    { axis: 'x', at: 3, from: 0, to: 3 }, // kamar 2 | dapur
+    { axis: 'x', at: 3, from: 7, to: 10 }, // kamar 3 | cuci
+    { axis: 'x', at: 6, from: 0, to: 4 }, // dapur | kamar utama
+    { axis: 'x', at: 6, from: 7, to: 10 }, // cuci | ruang tamu
+    { axis: 'z', at: 4, from: 6, to: 10 }, // kamar utama | ruang tamu
+  ],
+
+  // Pintu beneran. `at` = garis dinding, `pos` = titik tengah celah di sepanjang
+  // dinding, `w` = lebar. `hinge` = engsel di ujung 'start' (nilai kecil) atau
+  // 'end'; `swing` = arah daun mengayun saat dibuka (-1/+1 pada sumbu tegak
+  // lurus dinding) -- selalu mengayun MASUK ke ruangan yang dituju.
+  doors: [
+    { id: 'kamar-2', name: 'Pintu Kamar Tidur 2', axis: 'z', at: 3, pos: 2.5, w: 1.0, hinge: 'end', swing: -1 },
+    { id: 'kamar-3', name: 'Pintu Kamar Tidur 3', axis: 'z', at: 7, pos: 2.5, w: 1.0, hinge: 'end', swing: 1 },
+    { id: 'km-2', name: 'Pintu Kamar Mandi 2', axis: 'x', at: 2, pos: 4, w: 1.0, hinge: 'start', swing: -1 },
+    { id: 'km-1', name: 'Pintu Kamar Mandi 1', axis: 'x', at: 2, pos: 6, w: 1.0, hinge: 'end', swing: -1 },
+    { id: 'cuci', name: 'Pintu Ruang Cuci', axis: 'z', at: 7, pos: 4.5, w: 1.0, hinge: 'end', swing: 1 },
+    { id: 'kamar-utama', name: 'Pintu Kamar Tidur Utama', axis: 'z', at: 4, pos: 7.3, w: 1.0, hinge: 'end', swing: -1 },
   ],
   // jarak (m) dari tengah pintu di mana pop up "Buka pintu" muncul
-  doorRange: 1.7,
-  frontDoor: { x: 8.5, z: 10, w: 1.6 },
+  doorRange: 1.5,
+
+  // Bukaan tanpa daun pintu (dapur terbuka ke ruang makan)
+  openings: [{ axis: 'z', at: 3, pos: 4.5, w: 1.8 }],
+
+  // Pintu depan: tertutup, keluar lewat pop up "Keluar rumah".
+  frontDoor: { x: 7, z: 10, w: 1.6 },
   // jarak (m) dari pintu depan di mana pop up "Keluar rumah" muncul
-  exitRange: 2.4,
-  spawn: { x: 8.5, z: 6.8 },
-  rooms: [
-    { id: 'kamar-1', name: 'Kamar 1', emoji: '🛏️', x1: 0, z1: 0, x2: 4, z2: 4.5, color: '#c9d4f2' },
-    { id: 'kamar-2', name: 'Kamar 2', emoji: '🛏️', x1: 4, z1: 0, x2: 8, z2: 4.5, color: '#f0cdd2' },
-    { id: 'kamar-3', name: 'Kamar 3', emoji: '🛏️', x1: 8, z1: 0, x2: 12, z2: 4.5, color: '#cdeccf' },
-    { id: 'dapur', name: 'Dapur', emoji: '🍳', x1: 0, z1: 4.5, x2: 4.5, z2: 10, color: '#dde3e6' },
-    { id: 'ruang-tamu', name: 'Ruang Tamu', emoji: '🛋️', x1: 4.5, z1: 4.5, x2: 12, z2: 10, color: '#d2b48c' },
-  ],
+  exitRange: 2.0,
+  spawn: { x: 7, z: 7.5 },
 }
 
 // Potong ruas lurus [a, b] menjadi potongan-potongan solid, menyisakan bukaan
-// (gap) di tempat pintu. gaps = [[g1, g2], ...] (urut, gak saling tumpang).
+// (gap) di tempat pintu. gaps = [[g1, g2], ...] (akan diurutkan).
 function splitWithGaps(a, b, gaps) {
   const pieces = []
   let cur = a
-  for (const [g1, g2] of gaps) {
+  for (const [g1, g2] of [...gaps].sort((p, q) => p[0] - q[0])) {
     if (g1 > cur + 1e-6) pieces.push([cur, g1])
-    cur = g2
+    cur = Math.max(cur, g2)
   }
   if (b > cur + 1e-6) pieces.push([cur, b])
   return pieces
 }
 
-const centeredGap = (c, w) => [c - w / 2, c + w / 2]
+// Semua celah di dinding: pintu kamar + bukaan + pintu depan, dengan
+// koordinat garis dinding (axis/at) dan rentang di sepanjang dinding.
+function allGaps() {
+  const f = HOUSE.frontDoor
+  return [
+    ...HOUSE.doors.map((d) => ({ axis: d.axis, at: d.at, pos: d.pos, w: d.w })),
+    ...HOUSE.openings,
+    { axis: 'x', at: f.z, pos: f.x, w: f.w },
+  ]
+}
 
-// Bangun daftar dinding + bukaan pintu dari konstanta HOUSE di atas.
+// Bangun daftar dinding + celah dari konstanta HOUSE di atas.
 //   walls   : ruas dinding solid  { x1, z1, x2, z2 }  (sejajar sumbu)
-//   doorways: bukaan yang dikasih kusen { cx, cz, w, axis }  axis 'x' = bukaan di dinding horizontal
+//   doorways: celah yang dikasih kusen { cx, cz, w, axis }
+//             axis 'x' = celah di dinding yang membentang sepanjang X
 export function buildHouseLayout() {
-  const W = HOUSE.width, D = HOUSE.depth
+  const gaps = allGaps()
   const walls = []
   const doorways = []
-
-  const addH = (z, x1, x2, gaps = []) => {
-    for (const [a, b] of splitWithGaps(x1, x2, gaps)) walls.push({ x1: a, z1: z, x2: b, z2: z })
-    for (const [g1, g2] of gaps) doorways.push({ cx: (g1 + g2) / 2, cz: z, w: g2 - g1, axis: 'x' })
+  for (const run of HOUSE.runs) {
+    const mine = gaps.filter((g) => g.axis === run.axis && g.at === run.at && g.pos >= run.from && g.pos <= run.to)
+    const ranges = mine.map((g) => [g.pos - g.w / 2, g.pos + g.w / 2])
+    for (const [a, b] of splitWithGaps(run.from, run.to, ranges)) {
+      walls.push(
+        run.axis === 'x' ? { x1: a, z1: run.at, x2: b, z2: run.at } : { x1: run.at, z1: a, x2: run.at, z2: b }
+      )
+    }
+    for (const g of mine) {
+      doorways.push(
+        run.axis === 'x'
+          ? { cx: g.pos, cz: g.at, w: g.w, axis: 'x' }
+          : { cx: g.at, cz: g.pos, w: g.w, axis: 'z' }
+      )
+    }
   }
-  const addV = (x, z1, z2, gaps = []) => {
-    for (const [a, b] of splitWithGaps(z1, z2, gaps)) walls.push({ x1: x, z1: a, x2: x, z2: b })
-    for (const [g1, g2] of gaps) doorways.push({ cx: x, cz: (g1 + g2) / 2, w: g2 - g1, axis: 'z' })
-  }
-
-  // dinding luar
-  addH(0, 0, W)
-  addH(D, 0, W, [centeredGap(HOUSE.frontDoor.x, HOUSE.frontDoor.w)])
-  addV(0, 0, D)
-  addV(W, 0, D)
-
-  // pemisah barisan kamar (belakang) dengan dapur/ruang tamu (depan), 3 pintu kamar
-  const roomDoors = HOUSE.roomDoors.map((d) => centeredGap(d.cx, HOUSE.roomDoorW))
-  addH(4.5, 0, W, roomDoors)
-
-  // sekat antar kamar
-  addV(4, 0, 4.5)
-  addV(8, 0, 4.5)
-
-  // sekat dapur | ruang tamu dengan bukaan lebar (dapur terbuka)
-  addV(4.5, 4.5, D, [[6.3, 8.7]])
-
   return { walls, doorways }
 }
 
@@ -109,14 +154,69 @@ export function roomAt(x, z) {
   return null
 }
 
-// Pintu kamar terdekat yang masih dalam jangkauan interaksi (atau null).
-export function nearestDoor(x, z) {
+// Titik tengah celah pintu (koordinat dunia interior).
+export function doorCenter(d) {
+  return d.axis === 'x' ? { x: d.pos, z: d.at } : { x: d.at, z: d.pos }
+}
+
+function wrapAngle(a) {
+  let r = a
+  while (r > Math.PI) r -= Math.PI * 2
+  while (r <= -Math.PI) r += Math.PI * 2
+  return r
+}
+
+// Letak engsel & sudut ayun daun pintu (rotasi sumbu Y, model daun dibangun
+// membentang ke +X lokal dari engsel; rotation.y = r  =>  arah (cos r, -sin r)
+// di bidang XZ). `closedRot` = menutup celah, `openRot` = terbuka ke arah swing.
+//   seg = ruas dinding yang dibentuk daun pintu saat TERTUTUP (buat tabrakan).
+export function doorPlacement(d) {
+  const start = d.pos - d.w / 2
+  const end = d.pos + d.w / 2
+  const hingeAt = d.hinge === 'start' ? start : end
+  const dir = d.hinge === 'start' ? 1 : -1 // arah daun dari engsel (menutup celah)
+  let hx, hz, cdx, cdz, odx, odz, seg
+  if (d.axis === 'x') {
+    hx = hingeAt
+    hz = d.at
+    cdx = dir
+    cdz = 0
+    odx = 0
+    odz = d.swing
+    seg = { x1: start, z1: d.at, x2: end, z2: d.at }
+  } else {
+    hx = d.at
+    hz = hingeAt
+    cdx = 0
+    cdz = dir
+    odx = d.swing
+    odz = 0
+    seg = { x1: d.at, z1: start, x2: d.at, z2: end }
+  }
+  const closedRot = Math.atan2(-cdz, cdx)
+  const openRot = closedRot + wrapAngle(Math.atan2(-odz, odx) - closedRot)
+  return { hx, hz, closedRot, openRot, seg }
+}
+
+// Pintu terdekat yang masih dalam jangkauan interaksi (atau null).
+// Kalau `yaw` (arah hadap karakter, sama seperti p.yaw di walkController.js:
+// menghadap (sin yaw, cos yaw)) diberikan, pintu yang SEDANG DIHADAPI diutamakan.
+// Ini penting di lorong depan kamar mandi, di mana pintu kamar & pintu kamar
+// mandi cuma berjarak ~1 m: tanpa arah hadap, pop up bisa salah pintu.
+export function nearestDoor(x, z, yaw) {
   let best = null
-  let bestD = HOUSE.doorRange
-  for (const d of HOUSE.roomDoors) {
-    const dist = Math.hypot(x - d.cx, z - d.cz)
-    if (dist < bestD) {
-      bestD = dist
+  let bestScore = Infinity
+  const fx = yaw === undefined ? 0 : Math.sin(yaw)
+  const fz = yaw === undefined ? 0 : Math.cos(yaw)
+  for (const d of HOUSE.doors) {
+    const c = doorCenter(d)
+    const dx = c.x - x, dz = c.z - z
+    const dist = Math.hypot(dx, dz)
+    if (dist >= HOUSE.doorRange) continue
+    const facing = dist > 0.05 ? (fx * dx + fz * dz) / dist : 0 // 1 = tepat menghadap pintu
+    const score = dist - 0.5 * facing
+    if (score < bestScore) {
+      bestScore = score
       best = d
     }
   }
@@ -125,7 +225,10 @@ export function nearestDoor(x, z) {
 
 // Karakter lagi berdiri di ambang pintu (jangan ditutup, nanti kejepit).
 export function inDoorway(d, x, z) {
-  return Math.abs(z - d.cz) < 0.6 && Math.abs(x - d.cx) < HOUSE.roomDoorW / 2 + 0.2
+  const c = doorCenter(d)
+  const along = d.axis === 'x' ? Math.abs(x - c.x) : Math.abs(z - c.z)
+  const across = d.axis === 'x' ? Math.abs(z - c.z) : Math.abs(x - c.x)
+  return across < 0.6 && along < d.w / 2 + 0.2
 }
 
 export function distToExit(x, z) {
@@ -144,15 +247,12 @@ export function buildInteriorWorld({ isDoorOpen = () => false } = {}) {
   // pintu depan tertutup = penghalang juga (buat karakter & kamera); keluar
   // rumah lewat pop up "Keluar rumah", bukan jalan menembus pintu.
   const fd = HOUSE.frontDoor
-  walls.push({ x1: fd.x - fd.w / 2, z1: D, x2: fd.x + fd.w / 2, z2: D })
+  walls.push({ x1: fd.x - fd.w / 2, z1: fd.z, x2: fd.x + fd.w / 2, z2: fd.z })
 
-  // Daun pintu kamar: jadi dinding (buat karakter & kamera) selama TERTUTUP.
-  // Daftar dinding aktif di-cache & dibangun ulang cuma kalau ada pintu yang
-  // berubah status (isDoorOpen dibaca dari state TownWalk lewat ref).
-  const doorLeaves = HOUSE.roomDoors.map((d) => ({
-    id: d.id,
-    seg: { x1: d.cx - HOUSE.roomDoorW / 2, z1: d.cz, x2: d.cx + HOUSE.roomDoorW / 2, z2: d.cz },
-  }))
+  // Daun pintu: jadi dinding (buat karakter & kamera) selama TERTUTUP. Daftar
+  // dinding aktif di-cache & dibangun ulang cuma kalau ada pintu yang berubah
+  // status (isDoorOpen dibaca dari state TownWalk lewat ref).
+  const doorLeaves = HOUSE.doors.map((d) => ({ id: d.id, seg: doorPlacement(d).seg }))
   let cacheSig = null
   let cacheWalls = walls
   function activeWalls() {
