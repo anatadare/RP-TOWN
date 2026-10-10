@@ -1,43 +1,13 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import * as THREE from 'three'
-import { HOUSE, buildHouseLayout, roomAt, distToExit } from '../lib/houseInterior'
+import { HOUSE, buildHouseLayout, roomAt, distToExit, nearestDoor, inDoorway } from '../lib/houseInterior'
 
 // Gambar interior rumah (kosong): lantai per ruangan, dinding, kusen pintu, dan
-// label nama ruangan di lantai. Fisikanya ada di lib/houseInterior.js.
+// pintu kamar yang bisa dibuka. Fisikanya ada di lib/houseInterior.js.
 
 const WALL_COLOR = '#f2ede4'
 const OUTER_WALL_COLOR = '#e4dccf'
 const FRAME_COLOR = '#8a6a48'
-
-function makeLabelTexture(text) {
-  const c = document.createElement('canvas')
-  c.width = 512
-  c.height = 160
-  const g = c.getContext('2d')
-  g.clearRect(0, 0, c.width, c.height)
-  g.font = '700 64px system-ui, sans-serif'
-  g.textAlign = 'center'
-  g.textBaseline = 'middle'
-  g.fillStyle = 'rgba(40, 32, 24, 0.55)'
-  g.fillText(text, c.width / 2, c.height / 2)
-  const tex = new THREE.CanvasTexture(c)
-  tex.anisotropy = 4
-  return tex
-}
-
-function RoomLabel({ room }) {
-  const tex = useMemo(() => makeLabelTexture(`${room.emoji} ${room.name}`), [room])
-  useEffect(() => () => tex.dispose(), [tex])
-  const cx = (room.x1 + room.x2) / 2
-  const cz = (room.z1 + room.z2) / 2
-  return (
-    <mesh position={[cx, 0.02, cz]} rotation-x={-Math.PI / 2}>
-      <planeGeometry args={[3.2, 1]} />
-      <meshBasicMaterial map={tex} transparent depthWrite={false} />
-    </mesh>
-  )
-}
 
 function Wall({ seg, outer }) {
   const { wallH, wallT } = HOUSE
@@ -86,7 +56,42 @@ function Lintel({ d }) {
   )
 }
 
-export default function HouseInterior() {
+// Pintu kamar: daun pintu mengayun di engsel (sisi barat bukaan) ke dalam kamar
+// (arah -Z). Status buka/tutup dibaca dari doorsRef (diatur TownWalk); animasi
+// ayunan lewat useFrame tanpa re-render React. Tabrakannya ada di
+// lib/houseInterior.js (daun pintu = dinding selama tertutup).
+const DOOR_OPEN_ANGLE = Math.PI / 2
+function Door({ def, doorsRef }) {
+  const pivot = useRef(null)
+  const angle = useRef(0)
+  const w = HOUSE.roomDoorW
+  useFrame((_, delta) => {
+    const target = doorsRef.current[def.id] ? DOOR_OPEN_ANGLE : 0
+    angle.current += (target - angle.current) * (1 - Math.exp(-9 * delta))
+    if (Math.abs(target - angle.current) < 0.002) angle.current = target
+    if (pivot.current) pivot.current.rotation.y = angle.current
+  })
+  return (
+    <group position={[def.cx - w / 2, 0, def.cz]}>
+      <group ref={pivot}>
+        {/* daun pintu: engsel di x=0 (lokal), membentang ke +x */}
+        <mesh position={[w / 2, HOUSE.doorH / 2, 0]} scale={[w - 0.04, HOUSE.doorH - 0.03, 0.06]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="#8b5e3c" roughness={0.65} />
+        </mesh>
+        {/* gagang di kedua sisi */}
+        {[-1, 1].map((side) => (
+          <mesh key={side} position={[w - 0.14, 1.0, side * 0.055]}>
+            <sphereGeometry args={[0.045, 12, 12]} />
+            <meshStandardMaterial color="#d9b44a" metalness={0.6} roughness={0.35} />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  )
+}
+
+export default function HouseInterior({ doorsRef }) {
   const layout = useMemo(() => buildHouseLayout(), [])
   const { width: W, depth: D, frontDoor } = HOUSE
 
@@ -101,7 +106,6 @@ export default function HouseInterior() {
             <planeGeometry args={[r.x2 - r.x1, r.z2 - r.z1]} />
             <meshStandardMaterial color={r.color} roughness={0.95} />
           </mesh>
-          <RoomLabel room={r} />
         </group>
       ))}
 
@@ -113,6 +117,9 @@ export default function HouseInterior() {
       ))}
       {layout.doorways.map((d, i) => (
         <Lintel key={i} d={d} />
+      ))}
+      {HOUSE.roomDoors.map((d) => (
+        <Door key={d.id} def={d} doorsRef={doorsRef} />
       ))}
 
       {/* plafon (menghadap ke bawah) -- rumah tertutup, gak ada area kosong di luar */}
@@ -157,7 +164,7 @@ export default function HouseInterior() {
 
 // Kabari TownWalk (lewat callback, cuma pas berubah) soal posisi karakter di
 // dalam rumah: lagi di ruangan apa & lagi dekat pintu keluar atau nggak.
-export function InteriorWatcher({ selfRef, onInfo }) {
+export function InteriorWatcher({ selfRef, doorsRef, onInfo }) {
   const acc = useRef(0)
   const last = useRef('')
   useFrame((_, delta) => {
@@ -168,10 +175,18 @@ export function InteriorWatcher({ selfRef, onInfo }) {
     if (!me.ready) return
     const room = roomAt(me.x, me.z)
     const atDoor = distToExit(me.x, me.z) <= HOUSE.exitRange
-    const k = `${room ? room.id : ''}|${atDoor ? 1 : 0}`
+    const d = nearestDoor(me.x, me.z)
+    const open = d ? !!doorsRef.current[d.id] : false
+    const blocked = d ? inDoorway(d, me.x, me.z) : false
+    const k = `${room ? room.id : ''}|${atDoor ? 1 : 0}|${d ? d.id : ''}|${open ? 1 : 0}|${blocked ? 1 : 0}`
     if (k === last.current) return
     last.current = k
-    onInfo({ room: room ? room.name : null, emoji: room ? room.emoji : null, atDoor })
+    onInfo({
+      room: room ? room.name : null,
+      emoji: room ? room.emoji : null,
+      atDoor,
+      door: d ? { id: d.id, name: d.name, open, blocked } : null,
+    })
   })
   return null
 }
