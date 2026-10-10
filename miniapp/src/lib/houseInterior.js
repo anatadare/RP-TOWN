@@ -28,6 +28,15 @@ export const HOUSE = {
   doorH: 2.1, // tinggi bukaan pintu (di atasnya ada "kusen")
   // bukaan pintu kamar (lebar) dan pintu depan
   roomDoorW: 1.2,
+  // Pintu kamar yang bisa dibuka/ditutup (engsel di sisi kiri/barat bukaan,
+  // daun pintu mengayun masuk ke kamar). cz = posisi dinding pemisah.
+  roomDoors: [
+    { id: 'kamar-1', name: 'Pintu Kamar 1', cx: 2, cz: 4.5 },
+    { id: 'kamar-2', name: 'Pintu Kamar 2', cx: 6, cz: 4.5 },
+    { id: 'kamar-3', name: 'Pintu Kamar 3', cx: 10, cz: 4.5 },
+  ],
+  // jarak (m) dari tengah pintu di mana pop up "Buka pintu" muncul
+  doorRange: 1.7,
   frontDoor: { x: 8.5, z: 10, w: 1.6 },
   // jarak (m) dari pintu depan di mana pop up "Keluar rumah" muncul
   exitRange: 2.4,
@@ -80,7 +89,7 @@ export function buildHouseLayout() {
   addV(W, 0, D)
 
   // pemisah barisan kamar (belakang) dengan dapur/ruang tamu (depan), 3 pintu kamar
-  const roomDoors = [2, 6, 10].map((c) => centeredGap(c, HOUSE.roomDoorW))
+  const roomDoors = HOUSE.roomDoors.map((d) => centeredGap(d.cx, HOUSE.roomDoorW))
   addH(4.5, 0, W, roomDoors)
 
   // sekat antar kamar
@@ -100,6 +109,25 @@ export function roomAt(x, z) {
   return null
 }
 
+// Pintu kamar terdekat yang masih dalam jangkauan interaksi (atau null).
+export function nearestDoor(x, z) {
+  let best = null
+  let bestD = HOUSE.doorRange
+  for (const d of HOUSE.roomDoors) {
+    const dist = Math.hypot(x - d.cx, z - d.cz)
+    if (dist < bestD) {
+      bestD = dist
+      best = d
+    }
+  }
+  return best
+}
+
+// Karakter lagi berdiri di ambang pintu (jangan ditutup, nanti kejepit).
+export function inDoorway(d, x, z) {
+  return Math.abs(z - d.cz) < 0.6 && Math.abs(x - d.cx) < HOUSE.roomDoorW / 2 + 0.2
+}
+
 export function distToExit(x, z) {
   return Math.hypot(x - HOUSE.frontDoor.x, z - HOUSE.frontDoor.z)
 }
@@ -110,13 +138,32 @@ export function distToExit(x, z) {
 // WalkPlayer / RemotePlayers: bounds, waterLevel, groundY, resolveWalls,
 // castWalls2D, findSpawn, ...
 // ---------------------------------------------------------------------------
-export function buildInteriorWorld() {
-  const { walls, doorways } = buildHouseLayout()
+export function buildInteriorWorld({ isDoorOpen = () => false } = {}) {
+  const { walls } = buildHouseLayout()
   const W = HOUSE.width, D = HOUSE.depth
   // pintu depan tertutup = penghalang juga (buat karakter & kamera); keluar
   // rumah lewat pop up "Keluar rumah", bukan jalan menembus pintu.
   const fd = HOUSE.frontDoor
   walls.push({ x1: fd.x - fd.w / 2, z1: D, x2: fd.x + fd.w / 2, z2: D })
+
+  // Daun pintu kamar: jadi dinding (buat karakter & kamera) selama TERTUTUP.
+  // Daftar dinding aktif di-cache & dibangun ulang cuma kalau ada pintu yang
+  // berubah status (isDoorOpen dibaca dari state TownWalk lewat ref).
+  const doorLeaves = HOUSE.roomDoors.map((d) => ({
+    id: d.id,
+    seg: { x1: d.cx - HOUSE.roomDoorW / 2, z1: d.cz, x2: d.cx + HOUSE.roomDoorW / 2, z2: d.cz },
+  }))
+  let cacheSig = null
+  let cacheWalls = walls
+  function activeWalls() {
+    let sig = ''
+    for (const d of doorLeaves) sig += isDoorOpen(d.id) ? '1' : '0'
+    if (sig !== cacheSig) {
+      cacheSig = sig
+      cacheWalls = walls.concat(doorLeaves.filter((d) => !isDoorOpen(d.id)).map((d) => d.seg))
+    }
+    return cacheWalls
+  }
 
   function groundY(x, z, yMax = Infinity) {
     if (x < 0 || x > W || z < 0 || z > D) return null
@@ -127,9 +174,10 @@ export function buildInteriorWorld() {
   // diabaikan (semua dinding setinggi ruangan, karakter gak bisa lewat atasnya).
   function resolveWalls(x, z, feetY, radius) {
     let hit = false
+    const list = activeWalls()
     for (let iter = 0; iter < 4; iter++) {
       let moved = false
-      for (const w of walls) {
+      for (const w of list) {
         const ex = w.x2 - w.x1, ez = w.z2 - w.z1
         const len2 = ex * ex + ez * ez
         let t = len2 > 0 ? ((x - w.x1) * ex + (z - w.z1) * ez) / len2 : 0
@@ -169,7 +217,7 @@ export function buildInteriorWorld() {
     castWalls2D(ox, oz, ex, ez) {
       const dx = ex - ox, dz = ez - oz
       let best = 1
-      for (const w of walls) {
+      for (const w of activeWalls()) {
         const sx = w.x2 - w.x1, sz = w.z2 - w.z1
         const denom = dx * sz - dz * sx
         if (denom > -1e-9 && denom < 1e-9) continue
