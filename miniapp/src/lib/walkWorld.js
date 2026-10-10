@@ -622,7 +622,7 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], pr
 // horizontal dengan rentang tinggi [y1, y2]. Duplikat (2 segitiga per sisi
 // dinding) digabung.
 // ---------------------------------------------------------------------------
-function extractWalls(tris) {
+export function extractWalls(tris) {
   const map = new Map()
   for (let i = 0; i + 8 < tris.length; i += 9) {
     const ax = tris[i], ay = tris[i + 1], az = tris[i + 2]
