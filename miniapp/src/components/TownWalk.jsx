@@ -1423,7 +1423,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
       {!interior && nearHouse && ready && (
         <div className="walk-enter-popup" role="dialog" aria-label={`Rumah nomor ${nearHouse.number}`}>
           <div className="walk-enter-title">🏠 Rumah No. {nearHouse.number}</div>
-          <div className="walk-enter-sub">3 kamar · dapur · ruang tamu</div>
+          <div className="walk-enter-sub">3 kamar tidur · 2 kamar mandi · dapur · ruang tamu</div>
           <button type="button" className="walk-enter-btn" onClick={() => enterHouse(nearHouse)}>
             Masuki rumah
           </button>
