@@ -34,6 +34,10 @@
 // nongol/nutupin daratan. Tinggi ombak laut otomatis dikecilin supaya puncak
 // ombak selalu ada di bawah permukaan daratan (lihat OceanSurface). Gak
 // ngaruh ke mode Jelajahi (TownWalk) — itu punya lautnya sendiri.
+// `walkWaterDrop`: (opsional, meter, default 0) di mode Jelajahi (TownWalk)
+// permukaan air (laut, teluk, kolam) diturunkan segini terhadap daratan.
+// Dipakai kalau air kelihatan "menggenang" rata di atas daratan (tinggi air
+// = tinggi tanah). Cuma visual: area yang bisa dipijak & tabrakan gak berubah.
 // `enterableBuildings`: true = di mode Jelajahi, tiap bangunan bernomor
 // (TPX_Buildings_N) bisa dimasuki lewat pop up "Masuki rumah". Interiornya
 // denah standar (lib/houseInterior.js): 3 kamar, 1 dapur, 1 ruang tamu.
@@ -54,6 +58,7 @@ export const MAPS = [
     name: 'LPM',
     modelUrl: '/models/lpm.glb',
     landRaise: 2, // daratan +2 m di atas laut, biar ombak gak naik ke atas pulau
+    walkWaterDrop: 0.6, // mode Jelajahi: air 0.6 m di bawah daratan, bukan rata = gak kelihatan genangan
     enterableBuildings: true, // semua bangunan bisa dimasuki di mode Jelajahi (lihat houseInterior.js)
     billboard: { offsetXFactor: -0.3, offsetZFactor: -1.15, imageUrl: null },
     walkBillboards: [
