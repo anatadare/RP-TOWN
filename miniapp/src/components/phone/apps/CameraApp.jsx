@@ -14,7 +14,10 @@ function shrinkToDataUrl(source, sw, sh) {
   return c.toDataURL('image/jpeg', 0.7)
 }
 
-export default function CameraApp({ onOpenApp, onOpenRpCamera }) {
+export default function CameraApp({ onOpenApp, onOpenRpCamera, mode }) {
+  // HP (mode 'full'): switch Real|RP & ganti kamera dipadatkan di bar bawah,
+  // karena pojok kiri atas bertumpuk dengan tombol "Tutup" mini app. PC tidak berubah.
+  const compact = mode === 'full'
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const fileRef = useRef(null)
@@ -141,15 +144,27 @@ export default function CameraApp({ onOpenApp, onOpenRpCamera }) {
     )
   }
 
+  const modePill = (
+    <div className="ph-cam-mode" role="group" aria-label="Mode kamera">
+      <button type="button" className="is-on" aria-pressed="true">Real</button>
+      <button type="button" onClick={() => { hapticSelect(); onOpenRpCamera() }}>RP</button>
+    </div>
+  )
+  const flipBtn = (
+    <button
+      type="button"
+      className="ph-round"
+      aria-label="Ganti kamera"
+      onClick={() => { hapticSelect(); setFacing((f) => (f === 'environment' ? 'user' : 'environment')) }}
+    >
+      <IconSwap width={compact ? 20 : 22} height={compact ? 20 : 22} />
+    </button>
+  )
+
   return (
     <div className="ph-camera">
       <div className="ph-viewfinder">
-        {onOpenRpCamera && (
-          <div className="ph-cam-mode" role="group" aria-label="Mode kamera">
-            <button type="button" className="is-on" aria-pressed="true">Real</button>
-            <button type="button" onClick={() => { hapticSelect(); onOpenRpCamera() }}>RP</button>
-          </div>
-        )}
+        {onOpenRpCamera && !compact && modePill}
         <video ref={videoRef} playsInline muted className={facing === 'user' ? 'is-mirror' : ''} />
         {!ready && !streamError && <p className="ph-cam-note">Membuka kamera...</p>}
         {streamError && (
@@ -170,14 +185,12 @@ export default function CameraApp({ onOpenApp, onOpenRpCamera }) {
         <button type="button" className="ph-shutter" aria-label="Ambil foto" onClick={snap} disabled={!ready}>
           <span />
         </button>
-        <button
-          type="button"
-          className="ph-round"
-          aria-label="Ganti kamera"
-          onClick={() => { hapticSelect(); setFacing((f) => (f === 'environment' ? 'user' : 'environment')) }}
-        >
-          <IconSwap width={22} height={22} />
-        </button>
+        {compact ? (
+          <div className="ph-cam-side">
+            {onOpenRpCamera && modePill}
+            {flipBtn}
+          </div>
+        ) : flipBtn}
       </div>
     </div>
   )
