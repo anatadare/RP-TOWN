@@ -132,6 +132,13 @@ const CAM_DEFAULT_DIST = 6.5
 const CAM_MIN_PITCH = 0.04
 const CAM_MAX_PITCH = 1.25
 const CAM_DEFAULT_PITCH = 0.42
+// Kamera RP (kamera HP karakter): rentang miring lebih lebar biar bisa dongak.
+// Jarak selfie = panjang lengan; FOV beda dikit antara kamera belakang & depan.
+const RP_MIN_PITCH = -0.6
+const RP_MAX_PITCH = 0.9
+const RP_SELFIE_DIST = 0.95
+const RP_FOV = { back: 62, front: 70 }
+const WORLD_FOV = 55
 
 // Tiang billboard kecil dianggap penghalang bulat (kayak batang pohon) supaya
 // karakter gak tembus. Sengaja lebih lebar dari tiangnya yang tipis: panel
@@ -562,7 +569,8 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies,
     inp.moveX = mx
     inp.moveY = my
     // di dalam rumah kamera gak boleh turun di bawah tinggi tembok
-    if (camPreset) inp.pitch = THREE.MathUtils.clamp(inp.pitch, camPreset.minPitch, camPreset.maxPitch)
+    if (inp.rpFacing) inp.pitch = THREE.MathUtils.clamp(inp.pitch, RP_MIN_PITCH, RP_MAX_PITCH)
+    else if (camPreset) inp.pitch = THREE.MathUtils.clamp(inp.pitch, camPreset.minPitch, camPreset.maxPitch)
 
     let jumpedNow = false
     let remaining = Math.min(delta, 0.1)
@@ -571,6 +579,16 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies,
       stepPlayer(p, inp, h, world, inp.yaw)
       jumpedNow = jumpedNow || p.justJumped
       remaining -= h
+    }
+
+    // Mode kamera HP RP: kalau karakter diam, badannya pelan-pelan nengok ke
+    // arah pandang kamera belakang / ke arah lensa kamera depan (selfie).
+    // Keduanya sama: arah kamera orbit dibalik 180 derajat.
+    if (inp.rpFacing && p.speed < 0.4) {
+      let d = (inp.yaw + Math.PI - p.yaw) % (Math.PI * 2)
+      if (d > Math.PI) d -= Math.PI * 2
+      else if (d < -Math.PI) d += Math.PI * 2
+      p.yaw += d * (1 - Math.exp(-9 * delta))
     }
 
     // jatuh ke tempat aneh / nilai rusak -> balik ke titik lahir
@@ -639,7 +657,7 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies,
       const sc = Math.max(0.3, 1 - h * 0.25)
       shadow.position.set(p.x, base + 0.06, p.z)
       shadow.scale.set(sc, sc, sc)
-      shadow.visible = true
+      shadow.visible = inp.rpFacing !== 'back'
     }
 
     // ---- kamera orbit third-person --------------------------------------------------
@@ -671,8 +689,51 @@ function WalkPlayer({ world, spawn, character, inputRef, selfRef, net, canopies,
     if (groundUnderCam !== null && camY < groundUnderCam + 0.45) camY = groundUnderCam + 0.45
     // di dalam rumah: kamera gak boleh tembus plafon
     if (camPreset && camY > camPreset.maxY) camY = camPreset.maxY
-    camera.position.set(camX, camY, camZ)
-    camera.lookAt(s.tx, s.ty, s.tz)
+
+    // ---- kamera HP RP (muka / belakang) -----------------------------------------------
+    // 'back'  = kamera belakang HP: dari posisi mata karakter, ngeliat ke depan
+    //           (badan & HP disembunyiin biar gak nutupin lensa).
+    // 'front' = kamera depan HP (selfie): lensa di depan wajah sejauh lengan,
+    //           ngeliat balik ke karakter. Geser layar = muter sudut selfie.
+    const rpFacing = inp.rpFacing || null
+    const wantFov = rpFacing ? RP_FOV[rpFacing] : WORLD_FOV
+    const wantNear = rpFacing ? 0.05 : 0.3
+    if (camera.fov !== wantFov || camera.near !== wantNear) {
+      camera.fov = wantFov
+      camera.near = wantNear
+      camera.updateProjectionMatrix()
+    }
+    model.visible = rpFacing !== 'back'
+    if (phoneGroupRef.current) phoneGroupRef.current.visible = !rpFacing
+    if (rpFacing === 'back') {
+      const eyeY = p.y + PLAYER.height * 0.92
+      const fx = -Math.sin(inp.yaw), fz = -Math.cos(inp.yaw)
+      camX = p.x + fx * 0.3
+      camZ = p.z + fz * 0.3
+      camY = eyeY
+      if (world.castWalls2D(p.x, p.z, camX, camZ, eyeY - 0.2, eyeY + 0.2) < 1) { camX = p.x; camZ = p.z }
+      if (camPreset && camY > camPreset.maxY) camY = camPreset.maxY
+      const lookY = -Math.sin(inp.pitch), lookH = Math.cos(inp.pitch)
+      camera.position.set(camX, camY, camZ)
+      camera.lookAt(camX + fx * lookH * 5, camY + lookY * 5, camZ + fz * lookH * 5)
+    } else if (rpFacing === 'front') {
+      const headY = p.y + PLAYER.height * 0.88
+      const sx = -Math.sin(inp.yaw), sz = -Math.cos(inp.yaw)
+      const cpp = Math.cos(inp.pitch)
+      const hitS = world.castWalls2D(p.x, p.z, p.x + sx * RP_SELFIE_DIST, p.z + sz * RP_SELFIE_DIST, headY - 0.3, headY + 0.3)
+      const d = hitS >= 1 ? RP_SELFIE_DIST : RP_SELFIE_DIST * Math.max(0.3, hitS - 0.15)
+      camX = p.x + sx * cpp * d
+      camZ = p.z + sz * cpp * d
+      camY = headY + Math.sin(inp.pitch) * d
+      const gy = world.groundY(camX, camZ, camY + 3)
+      if (gy !== null && camY < gy + 0.3) camY = gy + 0.3
+      if (camPreset && camY > camPreset.maxY) camY = camPreset.maxY
+      camera.position.set(camX, camY, camZ)
+      camera.lookAt(p.x, headY, p.z)
+    } else {
+      camera.position.set(camX, camY, camZ)
+      camera.lookAt(s.tx, s.ty, s.tz)
+    }
 
     // ---- tajuk pohon memudar kalau kamera/kepala di dalamnya ------------------------
     const headY = p.y + PLAYER.height
@@ -1122,6 +1183,9 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // Kamera RP (foto dunia RP): layar HP ditutup, HUD tipis nongol di atas peta.
   // phoneStartApp = app yang langsung dibuka saat layar HP dibuka lagi (balik ke kamera Real).
   const [rpCam, setRpCam] = useState(false)
+  // Kamera RP: 'back' = kamera belakang HP, 'front' = kamera depan (selfie).
+  const [rpFacing, setRpFacing] = useState('back')
+  const rpPrevPitch = useRef(null)
   const [phoneStartApp, setPhoneStartApp] = useState(null)
   // ---- Chat global room ---------------------------------------------------
   // Auto-buka CUMA SEKALI per sesi: pas ada chat masuk dari orang lain (atau
@@ -1314,6 +1378,20 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
     setPhoneScreenOpen(false)
     setRpCam(true)
   }
+  // Nyalain / matiin kamera HP RP di dunia 3D (dibaca WalkPlayer lewat inputRef).
+  // Pas masuk: simpan sudut kamera orbit & set sudut awal; pas keluar: balikin.
+  useEffect(() => {
+    const inp = inputRef.current
+    if (rpCam) {
+      if (rpPrevPitch.current === null) rpPrevPitch.current = inp.pitch
+      inp.rpFacing = rpFacing
+      inp.pitch = rpFacing === 'front' ? 0.12 : 0
+    } else if (rpPrevPitch.current !== null) {
+      inp.rpFacing = null
+      inp.pitch = rpPrevPitch.current
+      rpPrevPitch.current = null
+    }
+  }, [rpCam, rpFacing])
   function closeRpCamera({ backToPhone }) {
     setRpCam(false)
     if (backToPhone) {
@@ -1412,8 +1490,8 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
 
       <WalkControls
         inputRef={inputRef}
-        minPitch={interior ? INTERIOR_CAM.minPitch : CAM_MIN_PITCH}
-        maxPitch={interior ? INTERIOR_CAM.maxPitch : CAM_MAX_PITCH}
+        minPitch={rpCam ? RP_MIN_PITCH : interior ? INTERIOR_CAM.minPitch : CAM_MIN_PITCH}
+        maxPitch={rpCam ? RP_MAX_PITCH : interior ? INTERIOR_CAM.maxPitch : CAM_MAX_PITCH}
       />
 
       {/* transisi masuk/keluar rumah: layar hitam yang memudar */}
@@ -1545,6 +1623,8 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
 
       {rpCam && (
         <RpCameraHud
+          facing={rpFacing}
+          onFlip={() => setRpFacing((f) => (f === 'back' ? 'front' : 'back'))}
           onSwitchReal={() => closeRpCamera({ backToPhone: true })}
           onClose={() => closeRpCamera({ backToPhone: false })}
         />
