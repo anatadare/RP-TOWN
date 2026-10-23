@@ -252,7 +252,7 @@ export default function PhoneScreen({ variant, citizenId, onClose, initialApp, o
             <h1>{app.label}</h1>
           </header>
           <div className="ph-app-body">
-            <app.Component citizenId={citizenId} onOpenApp={open} onOpenRpCamera={onOpenRpCamera} />
+            <app.Component citizenId={citizenId} onOpenApp={open} onOpenRpCamera={onOpenRpCamera} mode={mode} />
           </div>
         </div>
       )}
