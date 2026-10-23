@@ -44,3 +44,25 @@
 .walk-root.is-rpcam .walk-inv-picker,
 .walk-root.is-rpcam .walk-hp-picker,
 .walk-root.is-rpcam .walk-hint { display: none; }
+
+/* tombol ganti kamera depan/belakang (ikon + label kecil) */
+.rpcam-top-left { display: flex; align-items: center; gap: 8px; }
+.rpcam-flip {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px 0 8px; border: none; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(4px); color: rgba(255, 255, 255, 0.9);
+  font: 600 11px/1 system-ui, sans-serif; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.rpcam-flip:active { background: rgba(255, 255, 255, 0.22); }
+
+/* HP: semua kontrol dipadatkan di satu bar bawah (switch Real|RP, ganti kamera, tutup) */
+.rpcam-bar {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(6px);
+}
+.rpcam-bar .rpcam-switch,
+.rpcam-bar .rpcam-flip,
+.rpcam-bar .rpcam-x { background: rgba(255, 255, 255, 0.1); backdrop-filter: none; }
+.rpcam-bar .rpcam-x { width: 26px; height: 26px; font-size: 12px; padding: 0; }
+.rpcam-hud.is-compact .rpcam-toast { bottom: calc(env(safe-area-inset-bottom, 0px) + 62px); }
