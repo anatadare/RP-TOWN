@@ -5,22 +5,25 @@
 // ke layar ada di components/HouseInterior.jsx.
 //
 // Semua rumah di peta yang bisa dimasuki pakai denah YANG SAMA ("Desain Rumah
-// RP Town": modern minimalis, 1 lantai, 3 kamar tidur). Denah 10 x 10 m, tanpa
-// teras depan/belakang & tanpa furnitur (ruangan kosong dulu):
+// RP Town": modern minimalis, 1 lantai, 3 kamar tidur, 1 kamar mandi).
+// Denah di bawah digambar dalam satuan DASAR 10 x 10, lalu seluruh posisi
+// dikali HOUSE_SCALE (sekarang 2 => rumah 20 x 20 m, luas 4x lebih besar).
+// Tinggi dinding, lebar pintu, dll TIDAK ikut diskala (pintu tetap ukuran
+// pintu normal). Mau lebih besar/kecil? Ganti HOUSE_SCALE saja.
 //
-//        x=0     3   5   7        10
-//   z=0  +-------+---+---+---------+
-//        |Kamar 2|KM2|KM1| Kamar 3 |
-//   z=2  |       +[ ]+[ ]+         |   <- pintu kamar mandi
-//        |      [ ] lorong [ ]     |   <- pintu kamar 2 & 3
-//   z=3  +-------+               +-+
-//        | Dapur  : Ruang Makan | Cuci |
-//        |        :              [ ]   <- pintu ruang cuci
-//   z=6  +--------+---------+----+------+
-//        | Kamar  [ ]  Ruang Tamu      |
-//        | Utama  |                    |
-//  z=10  +--------+------[PINTU]-------+
-//        x=0      4      7
+//        x=0     3        7       10     (satuan dasar, sebelum dikali HOUSE_SCALE)
+//   z=0  +-------+--------+--------+
+//        |Kamar 2|  Kamar | Kamar 3|   <- 1 kamar mandi (x 3..7), 1 pintu
+//   z=2  |       | Mandi  |        |
+//        |       +--[ ]---+        |   <- pintu kamar mandi
+//   z=3  +--[ ]--+  lorong +--[ ]--+   <- pintu kamar 2 & 3
+//        | Dapur : Ruang Makan| Cuci|
+//        |       :            [ ]     <- pintu ruang cuci
+//   z=6  +-------+-----+------+-----+
+//        | Kamar [ ]  Ruang Tamu    |
+//        | Utama |                  |
+//  z=10  +-------+------[PINTU]-----+
+//        x=0     4       7
 //
 // Dapur terbuka ke ruang makan (bukaan lebar, tanpa daun pintu), ruang makan
 // menyatu dengan ruang tamu. Pintu kamar tidur, kamar mandi, dan ruang cuci
@@ -29,9 +32,13 @@
 // Interior ini dunia TERPISAH dari peta luar (karakter "teleport" masuk),
 // jadi ukurannya gak tergantung ukuran bangunan di peta. 1 satuan = 1 meter.
 
+// Skala denah: 1 = 10 x 10 m, 2 = 20 x 20 m (4x luas).
+export const HOUSE_SCALE = 2
+const S = HOUSE_SCALE
+
 export const HOUSE = {
-  width: 10, // sumbu X
-  depth: 10, // sumbu Z
+  width: 10 * S, // sumbu X
+  depth: 10 * S, // sumbu Z
   wallH: 2.8,
   wallT: 0.2,
   doorH: 2.1, // tinggi bukaan pintu (di atasnya ada "kusen")
@@ -39,8 +46,7 @@ export const HOUSE = {
   // Ruangan (persegi). `name` dipakai badge nama ruangan di layar.
   rooms: [
     { id: 'kamar-2', name: 'Kamar Tidur 2', emoji: '🛏️', x1: 0, z1: 0, x2: 3, z2: 3, color: '#c7a67f' },
-    { id: 'km-2', name: 'Kamar Mandi 2', emoji: '🚿', x1: 3, z1: 0, x2: 5, z2: 2, color: '#9aa3a9' },
-    { id: 'km-1', name: 'Kamar Mandi 1', emoji: '🚿', x1: 5, z1: 0, x2: 7, z2: 2, color: '#9aa3a9' },
+    { id: 'kamar-mandi', name: 'Kamar Mandi', emoji: '🚿', x1: 3, z1: 0, x2: 7, z2: 2, color: '#9aa3a9' },
     { id: 'kamar-3', name: 'Kamar Tidur 3', emoji: '🛏️', x1: 7, z1: 0, x2: 10, z2: 3, color: '#c7a67f' },
     { id: 'dapur', name: 'Dapur', emoji: '🍳', x1: 0, z1: 3, x2: 3, z2: 6, color: '#d9d3c8' },
     // ruang makan = lorong depan kamar mandi (z 2..3) + area makan (z 3..6)
@@ -48,7 +54,7 @@ export const HOUSE = {
     { id: 'cuci', name: 'Ruang Cuci/Jemur', emoji: '🧺', x1: 7, z1: 3, x2: 10, z2: 6, color: '#cfd3d6' },
     { id: 'kamar-utama', name: 'Kamar Tidur Utama', emoji: '🛏️', x1: 0, z1: 6, x2: 4, z2: 10, color: '#b98f64' },
     { id: 'ruang-tamu', name: 'Ruang Tamu', emoji: '🛋️', x1: 4, z1: 6, x2: 10, z2: 10, color: '#e8e2d6' },
-  ],
+  ].map((r) => ({ ...r, x1: r.x1 * S, z1: r.z1 * S, x2: r.x2 * S, z2: r.z2 * S })),
 
   // Dinding lurus. axis 'x' = membentang sepanjang X di z=`at`; axis 'z' =
   // membentang sepanjang Z di x=`at`. Bukaan (pintu/bukaan/pintu depan) yang
@@ -60,40 +66,38 @@ export const HOUSE = {
     { axis: 'z', at: 0, from: 0, to: 10 },
     { axis: 'z', at: 10, from: 0, to: 10 },
     // dinding dalam
-    { axis: 'z', at: 3, from: 0, to: 6 }, // kamar 2 | km 2 | dapur | ruang makan
-    { axis: 'z', at: 5, from: 0, to: 2 }, // km 2 | km 1
-    { axis: 'z', at: 7, from: 0, to: 6 }, // km 1 / kamar 3 | ruang makan / cuci
+    { axis: 'z', at: 3, from: 0, to: 6 }, // kamar 2 | kamar mandi | dapur | ruang makan
+    { axis: 'z', at: 7, from: 0, to: 6 }, // kamar mandi / kamar 3 | ruang makan / cuci
     { axis: 'x', at: 2, from: 3, to: 7 }, // muka kamar mandi
     { axis: 'x', at: 3, from: 0, to: 3 }, // kamar 2 | dapur
     { axis: 'x', at: 3, from: 7, to: 10 }, // kamar 3 | cuci
     { axis: 'x', at: 6, from: 0, to: 4 }, // dapur | kamar utama
     { axis: 'x', at: 6, from: 7, to: 10 }, // cuci | ruang tamu
     { axis: 'z', at: 4, from: 6, to: 10 }, // kamar utama | ruang tamu
-  ],
+  ].map((r) => ({ ...r, at: r.at * S, from: r.from * S, to: r.to * S })),
 
   // Pintu beneran. `at` = garis dinding, `pos` = titik tengah celah di sepanjang
-  // dinding, `w` = lebar. `hinge` = engsel di ujung 'start' (nilai kecil) atau
-  // 'end'; `swing` = arah daun mengayun saat dibuka (-1/+1 pada sumbu tegak
-  // lurus dinding) -- selalu mengayun MASUK ke ruangan yang dituju.
+  // dinding, `w` = lebar (TIDAK diskala). `hinge` = engsel di ujung 'start' (nilai
+  // kecil) atau 'end'; `swing` = arah daun mengayun saat dibuka (-1/+1 pada sumbu
+  // tegak lurus dinding) -- selalu mengayun MASUK ke ruangan yang dituju.
   doors: [
     { id: 'kamar-2', name: 'Pintu Kamar Tidur 2', axis: 'z', at: 3, pos: 2.5, w: 1.0, hinge: 'end', swing: -1 },
     { id: 'kamar-3', name: 'Pintu Kamar Tidur 3', axis: 'z', at: 7, pos: 2.5, w: 1.0, hinge: 'end', swing: 1 },
-    { id: 'km-2', name: 'Pintu Kamar Mandi 2', axis: 'x', at: 2, pos: 4, w: 1.0, hinge: 'start', swing: -1 },
-    { id: 'km-1', name: 'Pintu Kamar Mandi 1', axis: 'x', at: 2, pos: 6, w: 1.0, hinge: 'end', swing: -1 },
+    { id: 'kamar-mandi', name: 'Pintu Kamar Mandi', axis: 'x', at: 2, pos: 5, w: 1.0, hinge: 'start', swing: -1 },
     { id: 'cuci', name: 'Pintu Ruang Cuci', axis: 'z', at: 7, pos: 4.5, w: 1.0, hinge: 'end', swing: 1 },
     { id: 'kamar-utama', name: 'Pintu Kamar Tidur Utama', axis: 'z', at: 4, pos: 7.3, w: 1.0, hinge: 'end', swing: -1 },
-  ],
+  ].map((d) => ({ ...d, at: d.at * S, pos: d.pos * S })),
   // jarak (m) dari tengah pintu di mana pop up "Buka pintu" muncul
   doorRange: 1.5,
 
   // Bukaan tanpa daun pintu (dapur terbuka ke ruang makan)
-  openings: [{ axis: 'z', at: 3, pos: 4.5, w: 1.8 }],
+  openings: [{ axis: 'z', at: 3 * S, pos: 4.5 * S, w: 1.8 * S }],
 
   // Pintu depan: tertutup, keluar lewat pop up "Keluar rumah".
-  frontDoor: { x: 7, z: 10, w: 1.6 },
+  frontDoor: { x: 7 * S, z: 10 * S, w: 1.6 },
   // jarak (m) dari pintu depan di mana pop up "Keluar rumah" muncul
   exitRange: 2.0,
-  spawn: { x: 7, z: 7.5 },
+  spawn: { x: 7 * S, z: 7.5 * S },
 }
 
 // Potong ruas lurus [a, b] menjadi potongan-potongan solid, menyisakan bukaan
