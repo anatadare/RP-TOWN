@@ -37,6 +37,18 @@ const FACING_LABEL = { back: 'Belakang', front: 'Depan' }
 
 export default function RpCameraHud({ facing = 'back', onFlip, onSwitchReal, onClose }) {
   const compact = getPhoneUiMode() === 'full'
+  // Portrait / landscape dideteksi lewat ukuran jendela (sama seperti hint "Muter HP"
+  // di TownWalk), bukan media query, biar pasti ikut berubah saat HP diputar.
+  const [portrait, setPortrait] = useState(() => window.innerWidth < window.innerHeight)
+  useEffect(() => {
+    const check = () => setPortrait(window.innerWidth < window.innerHeight)
+    window.addEventListener('resize', check)
+    window.addEventListener('orientationchange', check)
+    return () => {
+      window.removeEventListener('resize', check)
+      window.removeEventListener('orientationchange', check)
+    }
+  }, [])
   const [flash, setFlash] = useState(false)
   const [toast, setToast] = useState(null) // { src } | { error }
   const timer = useRef(null)
@@ -84,7 +96,7 @@ export default function RpCameraHud({ facing = 'back', onFlip, onSwitchReal, onC
   )
 
   return (
-    <div className={`rpcam-hud${compact ? ' is-compact' : ''}`}>
+    <div className={`rpcam-hud${compact ? ' is-compact' : ''}${compact && portrait ? ' is-portrait' : ''}`}>
       {compact ? (
         <div className="rpcam-bar">
           {modeSwitch}
