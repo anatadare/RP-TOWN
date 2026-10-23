@@ -491,3 +491,8 @@
 .ph-sidepanel-btn:active { transform: scale(0.94); }
 .ph-sidepanel-label { font-size: 11px; font-weight: 600; color: #555; }
 @keyframes ph-side-in { from { opacity: 0; transform: translateX(24px) } to { opacity: 1; transform: translateX(0) } }
+
+/* Kamera di HP (mode 'full'): switch Real|RP + ganti kamera ditumpuk kecil di kanan bar bawah */
+.ph-cam-side { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ph-cam-side .ph-cam-mode { position: static; background: rgba(255, 255, 255, 0.12); backdrop-filter: none; }
+.ph-cam-side .ph-round { width: 38px; height: 38px; }
