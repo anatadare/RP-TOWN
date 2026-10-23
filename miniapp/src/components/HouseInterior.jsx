@@ -95,11 +95,13 @@ function Door({ def, doorsRef }) {
 // Titik lampu (x, z) -- cuma beberapa supaya ringan di HP; sisanya kena
 // ambientLight. Ganti angka di sini kalau mau lebih terang/gelap per area.
 const LIGHT_SPOTS = [
-  [1.5, 1.5], // kamar tidur 2
-  [8.5, 1.5], // kamar tidur 3
-  [5, 4], // ruang makan
-  [2, 8], // kamar tidur utama
-  [7, 8], // ruang tamu
+  [3, 3], // kamar tidur 2
+  [10, 2], // kamar mandi
+  [17, 3], // kamar tidur 3
+  [10, 9], // ruang makan / dapur
+  [17, 9], // ruang cuci
+  [4, 16], // kamar tidur utama
+  [14, 16], // ruang tamu
 ]
 
 export default function HouseInterior({ doorsRef }) {
@@ -152,13 +154,13 @@ export default function HouseInterior({ doorsRef }) {
       </group>
 
       {/* lampu hangat di beberapa titik */}
-      <ambientLight intensity={0.8} />
+      <ambientLight intensity={0.9} />
       {LIGHT_SPOTS.map(([lx, lz]) => (
         <pointLight
           key={`l-${lx}-${lz}`}
           position={[lx, HOUSE.wallH - 0.35, lz]}
           intensity={12}
-          distance={9}
+          distance={13}
           decay={1.6}
           color="#fff1d6"
         />
