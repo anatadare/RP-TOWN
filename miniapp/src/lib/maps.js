@@ -42,11 +42,23 @@
 // (TPX_Buildings_N) bisa dimasuki lewat pop up "Masuki rumah". Interiornya
 // denah standar "Desain Rumah RP Town" (lib/houseInterior.js): 3 kamar tidur,
 // 1 kamar mandi, dapur, ruang makan, ruang tamu, ruang cuci.
+// `interiorPlan`: (opsional) denah interior yang dipakai kalau `enterableBuildings`
+// true. Kosong = denah standar 1 lantai (lib/houseInterior.js). 'pantai' = Rumah
+// Pantai 2 lantai (lib/houseInteriorPantai.js).
+// `enterableNumbers`: (opsional) kalau diisi, cuma bangunan dengan nomor di daftar
+// ini yang muncul pop up "Masuki rumah" (kosong = semua bangunan bernomor).
 export const MAPS = [
   {
     key: 'kawasan-pantai',
     name: 'Kawasan Pantai',
     modelUrl: '/models/kawasan-pantai.glb',
+    // Rumah di daratan bisa dimasuki di mode Jelajahi, pakai denah "Rumah Pantai"
+    // 2 lantai (lib/houseInteriorPantai.js). Cuma bangunan yang punya model
+    // BeachHouse_N di .glb (nomor 0-17 & 45-47). Bangunan nomor 18-44 ada di
+    // area perairan/dermaga, sengaja belum bisa dimasuki (desainnya beda, nanti).
+    enterableBuildings: true,
+    interiorPlan: 'pantai',
+    enterableNumbers: [...Array(18).keys(), 45, 46, 47],
     billboard: { offsetXFactor: -0.15, offsetZFactor: -1.2, imageUrl: null },
     walkBillboards: [
       { x: 242.4, z: -124.5, imageUrl: null }, // samping persimpangan utara pulau
