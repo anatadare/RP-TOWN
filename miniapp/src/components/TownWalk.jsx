@@ -9,6 +9,8 @@ import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
 import { buildInteriorWorld, HOUSE } from '../lib/houseInterior'
 import { makeVisitBuilding, nearestVisitBuilding } from '../lib/houseVisit'
 import HouseInterior, { InteriorWatcher } from './HouseInterior'
+import HouseInteriorPantai, { PantaiInteriorWatcher } from './HouseInteriorPantai'
+import { buildPantaiInteriorWorld, makeInteriorCam } from '../lib/houseInteriorPantai'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
 import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, PHONE_GRIP_SHIFT, PHONE_BACK_SHIFT, applyPhonePose, alignPhoneUpright } from './PhonePose'
 import FoldablePhone from './FoldablePhone'
@@ -893,10 +895,43 @@ function InteriorScene({ character, inputRef, selfRef, net, onReady, equippedPho
   )
 }
 
-function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT, enterable, onNearHouse, spawnOverride }) {
+// Interior "Rumah Pantai" 2 lantai (peta Kawasan Pantai). Fisika & denahnya di
+// lib/houseInteriorPantai.js, gambarnya di HouseInteriorPantai.jsx.
+function InteriorScenePantai({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo, doorsRef }) {
+  const world = useMemo(() => buildPantaiInteriorWorld({ isDoorOpen: (id) => !!doorsRef.current[id] }), [doorsRef])
+  const spawn = useMemo(() => world.findSpawn(), [world])
+  const cam = useMemo(() => makeInteriorCam(world), [world])
+  return (
+    <>
+      <HouseInteriorPantai doorsRef={doorsRef} />
+      <WalkPlayer
+        world={world}
+        spawn={spawn}
+        character={character}
+        inputRef={inputRef}
+        selfRef={selfRef}
+        net={net}
+        canopies={NO_CANOPIES}
+        onReady={onReady}
+        equippedPhone={equippedPhone}
+        phoneFoldT={phoneFoldT}
+        camPreset={cam}
+      />
+      <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
+      <PantaiInteriorWatcher selfRef={selfRef} doorsRef={doorsRef} onInfo={onInfo} />
+    </>
+  )
+}
+
+function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT, enterable, enterableNumbers, onNearHouse, spawnOverride }) {
   const { scene } = useGLTF(modelUrl)
   const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
   const { built, world } = cached
+  // Bangunan yang boleh dimasuki (kalau peta membatasi nomornya, lihat maps.js)
+  const visitBuildings = useMemo(
+    () => (enterableNumbers ? built.data.visit.filter((b) => enterableNumbers.includes(b.number)) : built.data.visit),
+    [built, enterableNumbers]
+  )
   // Billboard kecil peta ini (posisi x/z diatur di lib/maps.js).
   const billboardDefs = cached.defs
   const spawn = useMemo(() => spawnOverride || world.findSpawn(), [world, spawnOverride])
@@ -958,7 +993,7 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, 
         phoneFoldT={phoneFoldT}
       />
       <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
-      {enterable && <NearHouseWatcher buildings={built.data.visit} selfRef={selfRef} onNear={onNearHouse} />}
+      {enterable && <NearHouseWatcher buildings={visitBuildings} selfRef={selfRef} onNear={onNearHouse} />}
     </>
   )
 }
@@ -1141,7 +1176,10 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // Interior = scene terpisah + room multiplayer terpisah per rumah.
   const mapDef = MAPS.find((m) => m.key === mapKey)
   const enterable = !!mapDef?.enterableBuildings
+  const interiorPlan = mapDef?.interiorPlan || null // 'pantai' = rumah 2 lantai (lihat maps.js)
   const [interior, setInterior] = useState(null)
+  // rumah Pantai punya jendela yang melihat keluar -> langit & cahaya luar tetap dipakai (bukan ruang gelap)
+  const interiorOpen = !!interior && interiorPlan === 'pantai'
   const [nearHouse, setNearHouse] = useState(null) // { key, number } | null
   const [returnSpot, setReturnSpot] = useState(null) // posisi di luar pas mau masuk -> tempat muncul lagi pas keluar
   const [interiorInfo, setInteriorInfo] = useState({ room: null, emoji: null, atDoor: false, door: null })
@@ -1448,13 +1486,26 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         camera={{ fov: 55, near: 0.3, far: 4000 }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
-        <color attach="background" args={[interior ? '#14161f' : sky.color]} />
+        <color attach="background" args={[interior && !interiorOpen ? '#14161f' : sky.color]} />
         {/* di dalam rumah lampu luar diredupkan; lampu ruangan ada di HouseInterior */}
-        <ambientLight intensity={interior ? 0.25 : sky.ambient} />
-        <hemisphereLight args={[sky.hemi[0], sky.hemi[1], interior ? 0.2 : 0.55]} />
-        <directionalLight position={[80, 140, 60]} intensity={interior ? 0.2 : sky.sun} />
+        <ambientLight intensity={interior && !interiorOpen ? 0.25 : interiorOpen ? 0.3 : sky.ambient} />
+        <hemisphereLight args={[sky.hemi[0], sky.hemi[1], interior && !interiorOpen ? 0.2 : interiorOpen ? 0.2 : 0.55]} />
+        <directionalLight position={[80, 140, 60]} intensity={interior ? (interiorOpen ? 0.35 : 0.2) : sky.sun} />
         <Suspense fallback={null}>
-          {interior ? (
+          {interior && interiorPlan === 'pantai' ? (
+            <InteriorScenePantai
+              key={`in-${interior.key}`}
+              character={character}
+              inputRef={inputRef}
+              selfRef={selfRef}
+              net={net}
+              onReady={handleReady}
+              equippedPhone={equippedPhone}
+              phoneFoldT={phoneFoldT}
+              onInfo={setInteriorInfo}
+              doorsRef={doorsRef}
+            />
+          ) : interior ? (
             <InteriorScene
               key={`in-${interior.key}`}
               character={character}
@@ -1480,6 +1531,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
               equippedPhone={equippedPhone}
               phoneFoldT={phoneFoldT}
               enterable={enterable}
+              enterableNumbers={mapDef?.enterableNumbers}
               onNearHouse={setNearHouse}
               spawnOverride={returnSpot}
             />
