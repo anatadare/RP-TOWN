@@ -119,7 +119,7 @@ function RemotePlayer({ id, peersRef, selfRef, bubblesRef, world }) {
     // ---- bayangan bulat di tanah ---------------------------------------------------
     const shadow = shadowRef.current
     if (shadow) {
-      const gy = world.groundY(s.x, s.z, s.y + 0.6)
+      const gy = (world.groundYAny || world.groundY)(s.x, s.z, s.y + 0.6)
       const base = gy === null ? s.y : gy
       const h = Math.max(0, s.y - base)
       const sc = Math.max(0.3, 1 - h * 0.25)
