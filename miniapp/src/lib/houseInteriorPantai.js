@@ -471,7 +471,10 @@ const C = {
 }
 const FLOOR_COLOR = { living: C.tile, dining: C.tile, kitchen: C.tile, hall: C.tile, stair: C.tile, bath: C.tileDark, bed: C.wood, corridor: C.wood, lounge: C.wood }
 
-export function buildStaticBoxes() {
+export function buildStaticBoxes(opts = {}) {
+  // opts.exterior: cuma kulit luar rumah (dinding, jendela, pelat, balkon) buat
+  // dipasang di peta; tanpa furnitur, tangga, dan lantai tiap ruangan.
+  const ext = !!opts.exterior
   const solid = [], glass = []
   const B = (list, x0, y0, h0, x1, y1, h1, c) => {
     if (Math.abs(x1 - x0) < 1e-4 || Math.abs(y1 - y0) < 1e-4 || Math.abs(h1 - h0) < 1e-4) return
@@ -486,8 +489,9 @@ export function buildStaticBoxes() {
     // ---- lantai ruangan ----
     for (const r of fl.rooms) {
       if (r.type === 'void' || r.type === 'stair') continue
-      S(r.x0, r.y0, z - 0.02, r.x1, r.y1, z + 0.004, FLOOR_COLOR[r.type] || C.tile)
+      if (!ext) S(r.x0, r.y0, z - 0.02, r.x1, r.y1, z + 0.004, FLOOR_COLOR[r.type] || C.tile)
     }
+    if (ext && li === 0) S(0, 0, z - 0.02, PLAN.W, PLAN.D, z + 0.004, C.tile)
     // ---- dinding & bukaan ----
     for (const p of wallPieces(fl)) {
       const hw = p.t / 2, a = p.s0, b = p.s1
@@ -521,10 +525,14 @@ export function buildStaticBoxes() {
       S(-0.1, -0.1, top, sx.x0, PLAN.D + 0.1, top + 0.2, C.ceil); S(sx.x0, -0.1, top, PLAN.W + 0.1, sx.y0, top + 0.2, C.ceil)
       S(sx.x0, sx.y1, top, PLAN.W + 0.1, PLAN.D + 0.1, top + 0.2, C.ceil); S(PLAN.W, sx.y0, top, PLAN.W + 0.1, sx.y1, top + 0.2, C.ceil)
       // lantai papan di atas pelat (lantai 2)
-      for (const r of PLAN.floors[1].rooms) { if (r.type === 'void') continue; S(r.x0, r.y0, top + 0.2, r.x1, r.y1, top + 0.205, FLOOR_COLOR[r.type] || C.tile) }
+      if (!ext) for (const r of PLAN.floors[1].rooms) { if (r.type === 'void') continue; S(r.x0, r.y0, top + 0.2, r.x1, r.y1, top + 0.205, FLOOR_COLOR[r.type] || C.tile) }
     } else {
       S(-0.45, -0.45, top, PLAN.W + 0.45, PLAN.D + 0.45, top + 0.25, C.ceil)
       S(-0.45, -0.45, top + 0.25, PLAN.W + 0.45, -0.33, top + 0.6, C.white); S(-0.45, PLAN.D + 0.33, top + 0.25, PLAN.W + 0.45, PLAN.D + 0.45, top + 0.6, C.white)
+      if (ext) { // tutup atap: list charcoal di atas parapet + pelat atap rapat
+        S(-0.47, -0.47, top + 0.6, PLAN.W + 0.47, -0.31, top + 0.66, C.charcoal); S(-0.47, PLAN.D + 0.31, top + 0.6, PLAN.W + 0.47, PLAN.D + 0.47, top + 0.66, C.charcoal)
+        S(-0.45, -0.33, top + 0.25, -0.33, PLAN.D + 0.33, top + 0.3, C.white); S(PLAN.W + 0.33, -0.33, top + 0.25, PLAN.W + 0.45, PLAN.D + 0.33, top + 0.3, C.white)
+      }
     }
   })
   // ---- balkon ----
@@ -533,8 +541,13 @@ export function buildStaticBoxes() {
   S(-0.1, -1.4, zb - 0.2, PLAN.W + 0.1, -1.34, zb, C.charcoal)
   const brail = (x0, y0, x1, y1) => { S(x0 - 0.03, y0 - 0.03, zb, x1 + 0.03, y1 + 0.03, zb + 0.08, C.steel); G(x0 - 0.01, y0 - 0.01, zb + 0.08, x1 + 0.01, y1 + 0.01, zb + 1.0); S(x0 - 0.035, y0 - 0.035, zb + 1.0, x1 + 0.035, y1 + 0.035, zb + 1.06, C.steel) }
   brail(0.03, -1.35, PLAN.W - 0.03, -1.35); brail(0.03, -1.35, 0.03, -0.1); brail(PLAN.W - 0.03, -1.35, PLAN.W - 0.03, -0.1)
+  // ---- kulit luar: pondasi & teras (hanya tampak luar) ----
+  if (ext) {
+    S(-0.12, -0.12, -0.4, PLAN.W + 0.12, PLAN.D + 0.12, 0.0, C.charcoal)
+    S(3.6, -1.2, -0.4, 7.4, 0, 0.06, C.balcony); S(3.4, -1.45, -0.4, 7.6, -1.2, 0.0, C.balcony)
+  }
   // ---- tangga ----
-  {
+  if (!ext) {
     const n = sx.treadsPerFlight, T = sx.tread, land = LAND_X, sy0 = sx.y1 - sx.width, ny1 = sx.y0 + sx.width
     const step = (x0, x1, y0, y1, i) => { const top = i * RISE; S(x0, y0, top - 0.32, x1, y1, top, C.stairBody); S(x0, y0, top - 0.04, x1 + 0.03, y1, top + 0.01, C.oak) }
     for (let i = 1; i <= n; i++) step(sx.x0 + (i - 1) * T, sx.x0 + i * T, sy0, sx.y1, i)
@@ -546,7 +559,7 @@ export function buildStaticBoxes() {
     for (let j = n + 2; j <= 2 * n + 1; j++) { const k = j - (n + 1); S(land - k * T, ny1 - 0.03, j * RISE + 0.9, land - (k - 1) * T, ny1 + 0.03, j * RISE + 0.96, C.oak) }
   }
   // ---- furnitur ----
-  PLAN.floors.forEach((fl, li) => {
+  if (!ext) PLAN.floors.forEach((fl, li) => {
     const z = LEVEL_Y[li]
     for (const f of fl.furniture) {
       const w = f.x1 - f.x0, d = f.y1 - f.y0, mxp = (f.x0 + f.x1) / 2, myp = (f.y0 + f.y1) / 2
