@@ -26,6 +26,7 @@ import GatchaReveal from './GatchaReveal'
 import PhoneOverlay from './phone/PhoneOverlay'
 import RpCameraHud, { RpCaptureBridge } from './RpCameraHud'
 import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/items'
+import { addPantaiHouses } from '../lib/pantaiHouses'
 import {
   lockTelegramSwipe,
   unlockTelegramSwipe,
@@ -197,6 +198,8 @@ function extractWorldData(root) {
 
   root.traverse((obj) => {
     if (!obj.isMesh || !obj.geometry) return
+    // rumah lama yang sudah diganti, dan kulit visual rumah baru: bukan tabrakan
+    if (obj.userData.replaced || obj.userData.noCollide) return
     const grp = groupOf(obj)
     if (!grp) return
     const pos = obj.geometry.getAttribute('position')
@@ -333,12 +336,18 @@ function raiseTrees(root) {
 // & dipakai bareng TownMap3D (yang memodifikasinya), jadi di sini SELALU
 // bekerja di salinan (clone) supaya peta tampilan luar gak ikut berubah.
 // ---------------------------------------------------------------------------
-function prepareWalkScene(scene, waterDrop = 0) {
+function prepareWalkScene(scene, waterDrop = 0, pantaiHouses = false) {
   const root = scene.clone(true)
   root.position.set(0, 0, 0)
   root.scale.set(1, 1, 1)
   root.rotation.set(AXIS_FIX, 0, 0)
   root.updateMatrixWorld(true)
+
+  // Kawasan Pantai: rumah daratan diganti rumah 2 lantai baru (lib/pantaiHouses.js)
+  if (pantaiHouses) {
+    addPantaiHouses(root)
+    root.updateMatrixWorld(true)
+  }
 
   // pohon dinaikkan dulu, supaya batang (tabrakan) & tajuk (efek memudar)
   // yang dibaca di bawah sudah ikut tinggi barunya
@@ -829,7 +838,7 @@ function getWalkCache(scene, modelUrl) {
   let c = WALK_CACHE.get(scene)
   if (!c) {
     const mapDef = MAPS.find((m) => m.modelUrl === modelUrl)
-    const built = prepareWalkScene(scene, mapDef?.walkWaterDrop ?? 0)
+    const built = prepareWalkScene(scene, mapDef?.walkWaterDrop ?? 0, mapDef?.interiorPlan === 'pantai')
     const defs = mapDef?.walkBillboards || []
     const world = buildWalkWorld({
       ...built.data,
