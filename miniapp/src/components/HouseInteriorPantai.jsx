@@ -5,6 +5,7 @@ import {
   buildStaticBoxes, DOORS, doorPlacement, LIGHT_SPOTS, LEVEL_Y, PW, PD,
   roomAt, nearestDoor, inDoorway, distToExit, FRONT_DOOR, EXIT_RANGE,
 } from '../lib/houseInteriorPantai'
+import { boxesToGeometry } from '../lib/pantaiHouses'
 
 // Gambar interior "Rumah Pantai" 2 lantai (denah + fisika: lib/houseInteriorPantai.js).
 //
@@ -13,48 +14,6 @@ import {
 // kamar adalah mesh terpisah yang mengayun. Denah ditulis dalam koordinat denah,
 // jadi semuanya dibungkus grup yang dicerminkan (X = PW - x) -- alasannya ada di
 // komentar atas houseInteriorPantai.js.
-
-function boxesToGeometry(boxes) {
-  const n = boxes.length
-  const pos = new Float32Array(n * 24 * 3)
-  const nor = new Float32Array(n * 24 * 3)
-  const col = new Float32Array(n * 24 * 3)
-  const idx = new Uint32Array(n * 36)
-  const color = new THREE.Color()
-  // 6 sisi: normal + 4 sudut (x,h,y) dalam urutan CCW dilihat dari luar (dunia: x, y=h, z=y denah)
-  const FACES = [
-    [[1, 0, 0], [[1, 0, 0], [1, 0, 1], [1, 1, 1], [1, 1, 0]]],
-    [[-1, 0, 0], [[0, 0, 1], [0, 0, 0], [0, 1, 0], [0, 1, 1]]],
-    [[0, 1, 0], [[0, 1, 0], [1, 1, 0], [1, 1, 1], [0, 1, 1]]],
-    [[0, -1, 0], [[0, 0, 1], [1, 0, 1], [1, 0, 0], [0, 0, 0]]],
-    [[0, 0, 1], [[1, 0, 1], [0, 0, 1], [0, 1, 1], [1, 1, 1]]],
-    [[0, 0, -1], [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]]],
-  ]
-  let v = 0, ii = 0
-  for (const b of boxes) {
-    color.setHex(b.c)
-    for (const [nrm, corners] of FACES) {
-      for (const c of corners) {
-        const o = v * 3
-        pos[o] = c[0] ? b.x1 : b.x0
-        pos[o + 1] = c[1] ? b.h1 : b.h0
-        pos[o + 2] = c[2] ? b.y1 : b.y0
-        nor[o] = nrm[0]; nor[o + 1] = nrm[1]; nor[o + 2] = nrm[2]
-        col[o] = color.r; col[o + 1] = color.g; col[o + 2] = color.b
-        v++
-      }
-      idx[ii++] = v - 4; idx[ii++] = v - 2; idx[ii++] = v - 3
-      idx[ii++] = v - 4; idx[ii++] = v - 1; idx[ii++] = v - 2
-    }
-  }
-  const g = new THREE.BufferGeometry()
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3))
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3))
-  g.setIndex(new THREE.BufferAttribute(idx, 1))
-  g.computeBoundingSphere()
-  return g
-}
 
 // Pintu kamar: daun mengayun di engselnya. Status buka/tutup dibaca dari
 // doorsRef (diatur TownWalk), animasinya lewat useFrame tanpa re-render React.
