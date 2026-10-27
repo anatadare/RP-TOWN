@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { unassignBuilding, createRoomForBuilding } from '../lib/rooms'
 import { MAPS, getMapByKey } from '../lib/maps'
 import { BUILDING_PREFIX } from '../lib/buildings'
+import { addPantaiHouses } from '../lib/pantaiHouses'
 import { hapticSelect } from '../lib/telegram'
 import AdBillboard from './Billboard3D'
 
@@ -432,6 +433,12 @@ function TownModel({
 }) {
   const { scene } = useGLTF(modelUrl)
   const rotatedGroupRef = useRef()
+
+  // Kawasan Pantai: rumah daratan diganti tampak luar rumah 2 lantai yang baru
+  // (sama dengan yang dipakai mode Jelajahi, lihat lib/pantaiHouses.js).
+  useMemo(() => {
+    if (MAPS.find((m) => m.modelUrl === modelUrl)?.interiorPlan === 'pantai') addPantaiHouses(scene)
+  }, [scene, modelUrl])
 
   // Ukur bounding-box seluruh pulau (bukan cuma bangunan) sekali tiap peta
   // kebaca, lalu lapor ke atas — dipakai OceanSurface buat nentuin seberapa
