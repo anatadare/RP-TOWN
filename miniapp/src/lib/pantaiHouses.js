@@ -18,8 +18,10 @@ const HOUSE_RE = /^BeachHouse_(\d+)_/
 const MODEL_W = PW + 0.9
 const MODEL_D = PD + 1.4 + 0.9
 const FRONT_MIN_Z = -1.45 // sisi terdepan (teras)
-const MIN_SCALE = 0.75
+const MIN_SCALE = 0.7
 const MAX_SCALE = 1.0
+const GAP = 1.5 // jarak minimum antar rumah (meter)
+const MAX_SHIFT = 9 // rumah boleh digeser sejauh ini dari titik aslinya (meter)
 const BODY_H = 7.0
 const ROAD_NEAR = 25 // meter
 
@@ -135,6 +137,7 @@ export function addPantaiHouses(scene) {
   }
   center.divideScalar(old.length)
 
+  const infos = []
   for (const obj of old) {
     const num = Number(HOUSE_RE.exec(obj.name)[1])
     if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox()
@@ -160,17 +163,83 @@ export function addPantaiHouses(scene) {
     if (Math.hypot(tx, ty) > 0.5) {
       if (Math.abs(tx) > Math.abs(ty)) { fx = Math.sign(tx); fy = 0 } else { fx = 0; fy = Math.sign(ty) }
     }
-    const alongY = fx === 0 // depan menghadap sumbu y -> lebar rumah sepanjang x
-    const slotW = alongY ? sx : sy // petak sepanjang sisi lebar rumah
-    const slotD = alongY ? sy : sx
-    const k = THREE.MathUtils.clamp(Math.min(slotW / MODEL_W, slotD / MODEL_D), MIN_SCALE, MAX_SCALE)
+    infos.push({ obj, num, cx, cy, x0: cx, y0: cy, sx, sy, fx, fy, minZ: bb.min.z, k: 1 })
+  }
 
+  // Rumah baru jauh lebih luas daripada petak rumah lama. Supaya tidak ada dua
+  // rumah yang bertumpuk: rumah yang bertabrakan digeser menjauh (maks MAX_SHIFT
+  // dari titik asalnya); kalau masih bertabrakan, skalanya diturunkan sedikit.
+  const dims = (h) => {
+    const alongY = h.fx === 0
+    return [(alongY ? MODEL_W : MODEL_D) * h.k, (alongY ? MODEL_D : MODEL_W) * h.k]
+  }
+  const pen = (A, B) => {
+    const [aw, ad] = dims(A), [bw, bd] = dims(B)
+    const ox = (aw + bw) / 2 + GAP - Math.abs(A.cx - B.cx)
+    const oy = (ad + bd) / 2 + GAP - Math.abs(A.cy - B.cy)
+    return ox > 0 && oy > 0 ? [ox, oy] : null
+  }
+  const clampShift = (h) => {
+    const dx = h.cx - h.x0, dy = h.cy - h.y0, d = Math.hypot(dx, dy)
+    if (d > MAX_SHIFT) { h.cx = h.x0 + (dx / d) * MAX_SHIFT; h.cy = h.y0 + (dy / d) * MAX_SHIFT }
+  }
+  for (let round = 0; round < 30; round++) {
+    for (let it = 0; it < 60; it++) {
+      let moved = false
+      for (let i = 0; i < infos.length; i++) for (let j = i + 1; j < infos.length; j++) {
+        const A = infos[i], B = infos[j], o = pen(A, B)
+        if (!o) continue
+        moved = true
+        const sx = A.cx === B.cx ? (i % 2 ? 1 : -1) : Math.sign(A.cx - B.cx)
+        const sy = A.cy === B.cy ? (i % 2 ? 1 : -1) : Math.sign(A.cy - B.cy)
+        if (o[0] < o[1]) { A.cx += (sx * o[0]) / 2; B.cx -= (sx * o[0]) / 2 } else { A.cy += (sy * o[1]) / 2; B.cy -= (sy * o[1]) / 2 }
+        clampShift(A); clampShift(B)
+      }
+      if (!moved) break
+    }
+    let still = false
+    for (let i = 0; i < infos.length; i++) for (let j = i + 1; j < infos.length; j++) {
+      if (!pen(infos[i], infos[j])) continue
+      still = true
+      for (const h of [infos[i], infos[j]]) h.k = Math.max(MIN_SCALE, h.k * 0.96)
+    }
+    if (!still) break
+  }
+
+  // tinggi tanah di titik baru (ray ke bawah ke mesh GreenAreas); cadangan: dasar rumah lama
+  const greens = []
+  scene.traverse((o) => {
+    if (!o.isMesh) return
+    for (let q = o; q; q = q.parent) if ((q.name || '').startsWith('TPX_GreenAreas')) { greens.push(o); return }
+  })
+  const ray = new THREE.Raycaster()
+  const o3 = new THREE.Vector3(), d3 = new THREE.Vector3(0, 0, -1).transformDirection(scene.matrixWorld)
+  const groundAt = (x, y) => {
+    if (!greens.length) return null
+    o3.set(x, y, 600).applyMatrix4(scene.matrixWorld)
+    ray.set(o3, d3)
+    ray.far = 2000
+    const hit = ray.intersectObjects(greens, false)[0]
+    return hit ? hit.point.clone().applyMatrix4(inv).z : null
+  }
+  for (const h of infos) {
+    const [w, d] = dims(h)
+    let z = Infinity
+    for (const [px, py] of [[0, 0], [-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
+      const g = groundAt(h.cx + px * w * 0.8, h.cy + py * d * 0.8)
+      if (g !== null && g < z) z = g
+    }
+    h.z = Number.isFinite(z) && Math.abs(z - h.minZ) < 12 ? z : h.minZ
+  }
+
+  for (const h of infos) {
+    const { obj, num, cx, cy, fx, fy, k } = h
     // model: depan = -z denah. Setelah rotasi X +90 (Y-up -> Z-up) depan jadi +y;
     // rotasi z phi mengarahkannya ke (fx, fy).
     const phi = Math.atan2(-fx, fy)
     const house = new THREE.Group()
     house.name = `TPX_Buildings_${num}` // dikenali TownWalk (nomor rumah + tabrakan)
-    house.position.set(cx, cy, bb.min.z)
+    house.position.set(cx, cy, h.z)
     house.rotation.z = phi
     const tilt = new THREE.Group()
     tilt.rotation.x = Math.PI / 2
@@ -200,4 +269,5 @@ export function addPantaiHouses(scene) {
 
   scene.add(group)
   scene.userData.pantaiHouses = true
+  scene.userData.pantaiScales = Object.fromEntries(infos.map((h) => [h.num, +h.k.toFixed(2)]))
 }
