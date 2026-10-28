@@ -47,7 +47,7 @@ function Door({ def, doorsRef }) {
 
 // Lingkungan di luar jendela: pasir, jalan, laut, beberapa pohon kelapa sederhana.
 function Surroundings() {
-  const palms = useMemo(() => [[-3.5, -3.2, 6.2], [13.4, -3.6, 5.6], [-4.2, 11.5, 6.8], [14.5, 12.5, 6.0], [-9, 3, 7], [20, 4, 6.4]], [])
+  const palms = useMemo(() => [[-3.5, -3.2, 6.2], [PW + 3.4, -3.6, 5.6], [-4.2, PD + 2.5, 6.8], [PW + 4.5, PD + 3.5, 6.0], [-9, 3, 7], [PW + 10, 4, 6.4]], [])
   return (
     <>
       <mesh rotation-x={-Math.PI / 2} position={[PW / 2, -0.42, PD / 2]}>
