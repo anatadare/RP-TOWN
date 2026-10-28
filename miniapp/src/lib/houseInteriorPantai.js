@@ -3,144 +3,174 @@
 // Murni JavaScript (tanpa three.js), sama seperti houseInterior.js, supaya
 // fisikanya bisa dites di Node. Yang menggambar ada di components/HouseInteriorPantai.jsx.
 //
-// Denah ini hasil desain "Rumah Pantai Minimalis, 2 Lantai" (lahan 12 x 12 m):
-// bangunan 10 x 9 m per lantai, 4 kamar tidur (1 di lantai 1, 3 di lantai 2),
+// Denah ini hasil desain "Rumah Pantai Minimalis, 2 Lantai" (versi 2x lebih luas):
+// bangunan 15 x 12 m per lantai (180 m2), 4 kamar tidur (1 di lantai 1, 3 di lantai 2),
 // 1 kamar mandi, tangga U (18 anak tangga) + balkon. Ukuran nyata, 1 satuan = 1 meter.
 //
 // KOORDINAT. Denah ditulis dalam "koordinat denah": x ke kanan (dilihat dari
 // depan / jalan), y dari depan (jalan) ke belakang. Dunia three.js memakai
-// X = 10 - x (dicerminkan supaya kiri-kanan sama dengan gambar denah, karena
+// X = 15 - x (dicerminkan supaya kiri-kanan sama dengan gambar denah, karena
 // three.js tangan-kanan) dan Z = y. Cerminan itu dilakukan di dua tempat saja:
 //   - gambar  : grup pembungkus ber-scale [-1,1,1] di HouseInteriorPantai.jsx
 //   - fisika  : fungsi `mx()` di bawah (semua API dunia memakai koordinat DUNIA)
 // Jadi data di file ini selalu koordinat denah.
 
 const PLAN = {
-  lot: { w: 12, d: 12, x0: -1, y0: -2 },          // lahan 12 x 12 m; bangunan di (0,0)-(10,9)
-  W: 10, D: 9, tExt: 0.2, tInt: 0.1,
+  lot: { w: 17, d: 15, x0: -1, y0: -2 },          // lahan ~17 x 15 m; bangunan di (0,0)-(15,12)
+  W: 15, D: 12, tExt: 0.2, tInt: 0.1,
   floorH: 3.2, ceilH: 3.0, plinth: 0.4,
-  stair: { x0: 6.8, x1: 10, y0: 4, y1: 6, steps: 18, tread: 0.27, width: 0.9, gap: 0.2, treadsPerFlight: 8 },
+  stair: { x0: 11.8, x1: 15, y0: 5, y1: 7, steps: 18, tread: 0.27, width: 0.9, gap: 0.2, treadsPerFlight: 8 },
   floors: [
     { id: 1, name: 'Lantai 1',
       rooms: [
-        { id: 'tamu',   name: 'Ruang Tamu',    type: 'living',  x0: 0,   y0: 0, x1: 6,   y1: 6 },
-        { id: 'kt1',    name: 'Kamar Tidur 1', type: 'bed',     x0: 6,   y0: 0, x1: 10,  y1: 4 },
-        { id: 'hall1',  name: 'Kaki Tangga',   type: 'hall',    x0: 6,   y0: 4, x1: 6.8, y1: 6, nolabel: true },
-        { id: 'tangga', name: 'Tangga',        type: 'stair',   x0: 6.8, y0: 4, x1: 10,  y1: 6 },
-        { id: 'dapur',  name: 'Dapur',         type: 'kitchen', x0: 0,   y0: 6, x1: 3.8, y1: 9 },
-        { id: 'makan',  name: 'Ruang Makan',   type: 'dining',  x0: 3.8, y0: 6, x1: 8,   y1: 9 },
-        { id: 'km',     name: 'Kamar Mandi',   type: 'bath',    x0: 8,   y0: 6, x1: 10,  y1: 9 },
+        { id: 'tamu',   name: 'Ruang Tamu',    type: 'living',  x0: 0,    y0: 0, x1: 9,    y1: 7 },
+        { id: 'kt1',    name: 'Kamar Tidur 1', type: 'bed',     x0: 9,    y0: 0, x1: 15,   y1: 5 },
+        { id: 'hall1',  name: 'Kaki Tangga',   type: 'hall',    x0: 9,    y0: 5, x1: 11.8, y1: 7, nolabel: true },
+        { id: 'tangga', name: 'Tangga',        type: 'stair',   x0: 11.8, y0: 5, x1: 15,   y1: 7 },
+        { id: 'dapur',  name: 'Dapur',         type: 'kitchen', x0: 0,    y0: 7, x1: 5,    y1: 12 },
+        { id: 'makan',  name: 'Ruang Makan',   type: 'dining',  x0: 5,    y0: 7, x1: 12,   y1: 12 },
+        { id: 'km',     name: 'Kamar Mandi',   type: 'bath',    x0: 12,   y0: 7, x1: 15,   y1: 12 },
       ],
-      extras: [ { id: 'teras', name: 'Teras', type: 'porch', x0: 3.6, y0: -1.2, x1: 7.4, y1: 0 } ],
+      extras: [ { id: 'teras', name: 'Teras', type: 'porch', x0: 5, y0: -1.2, x1: 9, y1: 0 } ],
       openings: [
-        { id: 'pintu-utama', kind: 'entry',  o: 'h', at: 0, a: 4.8, b: 5.8, sill: 0, head: 2.4, hinge: 'a', swing: 1 },
-        { id: 'tamu-dpn',    kind: 'window', o: 'h', at: 0, a: 0.5, b: 4.5, sill: 0.1, head: 2.6 },
-        { id: 'tamu-brt',    kind: 'window', o: 'v', at: 0, a: 1.2, b: 4.8, sill: 0.5, head: 2.5 },
-        { id: 'tamu-hall',   kind: 'open',   o: 'v', at: 6, a: 4, b: 6, sill: 0, head: 2.4 },
-        { id: 'tamu-kt1',    kind: 'door',   o: 'v', at: 6, a: 2.9, b: 3.8, sill: 0, head: 2.1, hinge: 'b', swing: 1 },
-        { id: 'tamu-makan',  kind: 'open',   o: 'h', at: 6, a: 3.8, b: 6, sill: 0, head: 2.4 },
-        { id: 'hall-makan',  kind: 'open',   o: 'h', at: 6, a: 6, b: 6.8, sill: 0, head: 2.4 },
-        { id: 'tangga-masuk',kind: 'stairentry', o: 'v', at: 6.8, a: 5.1, b: 6, sill: 0, head: 2.4 },
-        { id: 'makan-dapur', kind: 'open',   o: 'v', at: 3.8, a: 6.3, b: 8.3, sill: 0, head: 2.4 },
-        { id: 'makan-km',    kind: 'door',   o: 'v', at: 8, a: 6.2, b: 7.1, sill: 0, head: 2.1, hinge: 'a', swing: 1 },
-        { id: 'dapur-blk',   kind: 'door',   o: 'h', at: 9, a: 0.7, b: 1.6, sill: 0, head: 2.1, hinge: 'a', swing: 1 },
-        { id: 'dapur-w1',    kind: 'window', o: 'h', at: 9, a: 1.9, b: 2.8, sill: 1.0, head: 2.1 },
-        { id: 'dapur-w2',    kind: 'window', o: 'v', at: 0, a: 6.4, b: 7.6, sill: 1.0, head: 2.1 },
-        { id: 'makan-w',     kind: 'window', o: 'h', at: 9, a: 4.4, b: 7.6, sill: 0.7, head: 2.3 },
-        { id: 'km-w',        kind: 'window', o: 'v', at: 10, a: 7.4, b: 8.4, sill: 1.5, head: 2.2 },
-        { id: 'kt1-dpn',     kind: 'window', o: 'h', at: 0, a: 6.8, b: 9.2, sill: 0.5, head: 2.4 },
-        { id: 'kt1-tmr',     kind: 'window', o: 'v', at: 10, a: 0.6, b: 1.8, sill: 0.5, head: 2.4 },
-        { id: 'tangga-w',    kind: 'window', o: 'v', at: 10, a: 4.3, b: 5.7, sill: 0.5, head: 2.7 },
+        { id: 'pintu-utama', kind: 'entry',  o: 'h', at: 0, a: 6.5, b: 7.5, sill: 0, head: 2.4, hinge: 'a', swing: 1 },
+        { id: 'tamu-dpn',    kind: 'window', o: 'h', at: 0, a: 0.8, b: 5.4, sill: 0.1, head: 2.6 },
+        { id: 'tamu-dpn2',   kind: 'window', o: 'h', at: 0, a: 7.9, b: 8.7, sill: 0.5, head: 2.5 },
+        { id: 'tamu-brt',    kind: 'window', o: 'v', at: 0, a: 1.5, b: 5.5, sill: 0.5, head: 2.5 },
+        { id: 'tamu-hall',   kind: 'open',   o: 'v', at: 9, a: 5, b: 7, sill: 0, head: 2.4 },
+        { id: 'tamu-kt1',    kind: 'door',   o: 'v', at: 9, a: 3.4, b: 4.3, sill: 0, head: 2.1, hinge: 'b', swing: 1 },
+        { id: 'tamu-makan',  kind: 'open',   o: 'h', at: 7, a: 5.4, b: 8.6, sill: 0, head: 2.4 },
+        { id: 'hall-makan',  kind: 'open',   o: 'h', at: 7, a: 9, b: 11.8, sill: 0, head: 2.4 },
+        { id: 'tangga-masuk',kind: 'stairentry', o: 'v', at: 11.8, a: 6.1, b: 7, sill: 0, head: 2.4 },
+        { id: 'makan-dapur', kind: 'open',   o: 'v', at: 5, a: 8, b: 11, sill: 0, head: 2.4 },
+        { id: 'makan-km',    kind: 'door',   o: 'v', at: 12, a: 8, b: 8.9, sill: 0, head: 2.1, hinge: 'a', swing: 1 },
+        { id: 'dapur-blk',   kind: 'door',   o: 'h', at: 12, a: 0.8, b: 1.7, sill: 0, head: 2.1, hinge: 'a', swing: 1 },
+        { id: 'dapur-w1',    kind: 'window', o: 'h', at: 12, a: 2.2, b: 3.4, sill: 1.0, head: 2.1 },
+        { id: 'dapur-w2',    kind: 'window', o: 'v', at: 0, a: 8.5, b: 9.7, sill: 1.0, head: 2.1 },
+        { id: 'makan-w',     kind: 'window', o: 'h', at: 12, a: 6.0, b: 10.0, sill: 0.7, head: 2.3 },
+        { id: 'km-w',        kind: 'window', o: 'v', at: 15, a: 7.4, b: 8.4, sill: 1.5, head: 2.2 },
+        { id: 'kt1-dpn',     kind: 'window', o: 'h', at: 0, a: 10.2, b: 13.8, sill: 0.5, head: 2.4 },
+        { id: 'kt1-tmr',     kind: 'window', o: 'v', at: 15, a: 0.8, b: 2.2, sill: 0.5, head: 2.4 },
+        { id: 'tangga-w',    kind: 'window', o: 'v', at: 15, a: 5.3, b: 6.7, sill: 0.5, head: 2.7 },
       ],
       furniture: [
-        { k: 'tvunit', x0: 0, y0: 1.5, x1: 0.45, y1: 4.5, h: 0.45 },
-        { k: 'tv', x0: 0.1, y0: 2.0, x1: 0.16, y1: 4.0, z: 0.9, h: 0.7 },
-        { k: 'rug', x0: 1.0, y0: 1.6, x1: 3.6, y1: 4.4, h: 0.01 },
-        { k: 'sofa', x0: 2.9, y0: 1.7, x1: 3.85, y1: 4.3, back: 'e' },
-        { k: 'chair', x0: 1.1, y0: 0.5, x1: 2.0, y1: 1.4, back: 'n' },
-        { k: 'chair', x0: 1.1, y0: 4.6, x1: 2.0, y1: 5.5, back: 's' },
-        { k: 'table', x0: 1.6, y0: 2.4, x1: 2.4, y1: 3.6, h: 0.4 },
+        // ruang tamu
+        { k: 'tvunit', x0: 0, y0: 2.0, x1: 0.45, y1: 5.0, h: 0.45 },
+        { k: 'tv', x0: 0.1, y0: 2.5, x1: 0.16, y1: 4.5, z: 0.9, h: 0.7 },
+        { k: 'rug', x0: 1.7, y0: 1.9, x1: 4.5, y1: 5.1, h: 0.01 },
+        { k: 'sofa', x0: 4.0, y0: 2.2, x1: 4.95, y1: 4.8, back: 'e' },
+        { k: 'chair', x0: 1.9, y0: 0.9, x1: 2.8, y1: 1.8, back: 'n' },
+        { k: 'chair', x0: 1.9, y0: 5.2, x1: 2.8, y1: 6.1, back: 's' },
+        { k: 'table', x0: 2.5, y0: 2.9, x1: 3.3, y1: 4.1, h: 0.4 },
         { k: 'plant', x0: 0.1, y0: 0.1, x1: 0.7, y1: 0.7 },
-        { k: 'bed', x0: 7.3, y0: 2.0, x1: 9.1, y1: 4.0, head: 's' },
-        { k: 'stand', x0: 6.9, y0: 3.5, x1: 7.3, y1: 3.9 },
-        { k: 'stand', x0: 9.1, y0: 3.5, x1: 9.5, y1: 3.9 },
-        { k: 'wardrobe', x0: 6.1, y0: 0.3, x1: 6.7, y1: 2.5, h: 2.1 },
-        { k: 'counter', x0: 0, y0: 6.1, x1: 0.6, y1: 8.0, h: 0.9, hob: true },
-        { k: 'counter', x0: 1.8, y0: 8.4, x1: 2.8, y1: 9.0, h: 0.9, sink: true },
-        { k: 'fridge', x0: 2.9, y0: 8.3, x1: 3.7, y1: 9.0, h: 1.8 },
-        { k: 'dtable', x0: 4.9, y0: 7.1, x1: 6.7, y1: 8.0 },
-        { k: 'dchair', x0: 5.1, y0: 6.6, x1: 5.55, y1: 7.05, back: 'n' },
-        { k: 'dchair', x0: 6.0, y0: 6.6, x1: 6.45, y1: 7.05, back: 'n' },
-        { k: 'dchair', x0: 5.1, y0: 8.05, x1: 5.55, y1: 8.5, back: 's' },
-        { k: 'dchair', x0: 6.0, y0: 8.05, x1: 6.45, y1: 8.5, back: 's' },
-        { k: 'dchair', x0: 4.4, y0: 7.3, x1: 4.85, y1: 7.8, back: 'w' },
-        { k: 'dchair', x0: 6.75, y0: 7.3, x1: 7.2, y1: 7.8, back: 'e' },
-        { k: 'vanity', x0: 9.4, y0: 6.2, x1: 10, y1: 7.0, h: 0.85 },
-        { k: 'toilet', x0: 9.2, y0: 7.45, x1: 10, y1: 8.05 },
-        { k: 'shower', x0: 8.1, y0: 7.9, x1: 9.1, y1: 9.0 },
+        { k: 'plant', x0: 0.1, y0: 6.2, x1: 0.7, y1: 6.8 },
+        { k: 'shelf', x0: 8.55, y0: 0.4, x1: 8.95, y1: 2.8, h: 2.0 },
+        // kamar tidur 1
+        { k: 'rug', x0: 10.8, y0: 2.2, x1: 13.8, y1: 4.9, h: 0.01 },
+        { k: 'bed', x0: 11.6, y0: 2.8, x1: 13.4, y1: 4.8, head: 's' },
+        { k: 'stand', x0: 11.2, y0: 4.3, x1: 11.6, y1: 4.7 },
+        { k: 'stand', x0: 13.4, y0: 4.3, x1: 13.8, y1: 4.7 },
+        { k: 'wardrobe', x0: 9.15, y0: 0.4, x1: 9.75, y1: 2.8, h: 2.1, door: 'e' },
+        { k: 'plant', x0: 14.3, y0: 4.3, x1: 14.9, y1: 4.9 },
+        // dapur
+        { k: 'counter', x0: 0, y0: 7.2, x1: 0.6, y1: 9.1, h: 0.9, hob: true },
+        { k: 'counter', x0: 0, y0: 9.9, x1: 0.6, y1: 11.4, h: 0.9 },
+        { k: 'counter', x0: 2.1, y0: 11.4, x1: 3.1, y1: 12.0, h: 0.9, sink: true },
+        { k: 'fridge', x0: 3.4, y0: 11.3, x1: 4.2, y1: 12.0, h: 1.8 },
+        { k: 'counter', x0: 1.8, y0: 9.1, x1: 3.6, y1: 9.8, h: 0.9 },
+        // ruang makan
+        { k: 'dtable', x0: 7.1, y0: 9.05, x1: 8.9, y1: 9.95 },
+        { k: 'dchair', x0: 7.3, y0: 8.55, x1: 7.75, y1: 9.0, back: 'n' },
+        { k: 'dchair', x0: 8.25, y0: 8.55, x1: 8.7, y1: 9.0, back: 'n' },
+        { k: 'dchair', x0: 7.3, y0: 10.0, x1: 7.75, y1: 10.45, back: 's' },
+        { k: 'dchair', x0: 8.25, y0: 10.0, x1: 8.7, y1: 10.45, back: 's' },
+        { k: 'dchair', x0: 6.55, y0: 9.25, x1: 7.0, y1: 9.75, back: 'w' },
+        { k: 'dchair', x0: 9.0, y0: 9.25, x1: 9.45, y1: 9.75, back: 'e' },
+        { k: 'plant', x0: 11.2, y0: 11.3, x1: 11.8, y1: 11.9 },
+        // kamar mandi
+        { k: 'vanity', x0: 14.4, y0: 8.8, x1: 15, y1: 9.6, h: 0.85 },
+        { k: 'toilet', x0: 14.2, y0: 10.2, x1: 15, y1: 10.8 },
+        { k: 'shower', x0: 12.1, y0: 10.9, x1: 13.1, y1: 12.0 },
       ] },
     { id: 2, name: 'Lantai 2',
       rooms: [
-        { id: 'k2',    name: 'Kamar Tidur 2', type: 'bed',      x0: 0,   y0: 0,   x1: 5.2, y1: 4 },
-        { id: 'k3',    name: 'Kamar Tidur 3', type: 'bed',      x0: 5.2, y0: 0,   x1: 10,  y1: 4 },
-        { id: 'korid', name: 'Koridor',       type: 'corridor', x0: 0,   y0: 4,   x1: 5.2, y1: 5.2 },
-        { id: 'hall2', name: 'Hall Tangga',   type: 'hall',     x0: 5.2, y0: 4,   x1: 6.8, y1: 6, nolabel: true },
-        { id: 'void',  name: 'Void Tangga',   type: 'void',     x0: 6.8, y0: 4,   x1: 10,  y1: 6, nolabel: true },
-        { id: 'k4',    name: 'Kamar Tidur 4', type: 'bed',      x0: 0,   y0: 5.2, x1: 5.2, y1: 9 },
-        { id: 'santai',name: 'Ruang Santai',  type: 'lounge',   x0: 5.2, y0: 6,   x1: 10,  y1: 9 },
+        { id: 'k2',    name: 'Kamar Tidur 2', type: 'bed',      x0: 0,    y0: 0, x1: 6.5,  y1: 5 },
+        { id: 'foyer', name: 'Koridor Depan', type: 'corridor', x0: 6.5,  y0: 0, x1: 8.5,  y1: 5 },
+        { id: 'k3',    name: 'Kamar Tidur 3', type: 'bed',      x0: 8.5,  y0: 0, x1: 15,   y1: 5 },
+        { id: 'korid', name: 'Koridor',       type: 'corridor', x0: 0,    y0: 5, x1: 9,    y1: 7 },
+        { id: 'hall2', name: 'Hall Tangga',   type: 'hall',     x0: 9,    y0: 5, x1: 11.8, y1: 7, nolabel: true },
+        { id: 'void',  name: 'Void Tangga',   type: 'void',     x0: 11.8, y0: 5, x1: 15,   y1: 7, nolabel: true },
+        { id: 'k4',    name: 'Kamar Tidur 4', type: 'bed',      x0: 0,    y0: 7, x1: 6.5,  y1: 12 },
+        { id: 'santai',name: 'Ruang Santai',  type: 'lounge',   x0: 6.5,  y0: 7, x1: 15,   y1: 12 },
       ],
-      extras: [ { id: 'balkon', name: 'Balkon', type: 'balcony', x0: 0, y0: -1.4, x1: 10, y1: 0 } ],
+      extras: [ { id: 'balkon', name: 'Balkon', type: 'balcony', x0: 0, y0: -1.4, x1: 15, y1: 0 } ],
       openings: [
-        { id: 'k2-koridor', kind: 'door',  o: 'h', at: 4, a: 3.0, b: 3.9, sill: 0, head: 2.1, hinge: 'a', swing: -1 },
-        { id: 'k3-hall',    kind: 'door',  o: 'h', at: 4, a: 5.4, b: 6.3, sill: 0, head: 2.1, hinge: 'b', swing: -1 },
-        { id: 'k4-koridor', kind: 'door',  o: 'h', at: 5.2, a: 3.8, b: 4.7, sill: 0, head: 2.1, hinge: 'a', swing: 1 },
-        { id: 'koridor-hall', kind: 'open', o: 'v', at: 5.2, a: 4, b: 5.2, sill: 0, head: 2.4 },
-        { id: 'hall-santai',  kind: 'open', o: 'h', at: 6, a: 5.2, b: 6.8, sill: 0, head: 2.4 },
-        { id: 'void-santai',  kind: 'rail', o: 'h', at: 6, a: 6.8, b: 10, sill: 0, head: 1.0 },
-        { id: 'tangga-tiba',  kind: 'open', o: 'v', at: 6.8, a: 4, b: 4.9, sill: 0, head: 2.4 },
-        { id: 'tangga-rail',  kind: 'rail', o: 'v', at: 6.8, a: 4.9, b: 6, sill: 0, head: 1.0 },
-        { id: 'k2-balkon',  kind: 'slide', o: 'h', at: 0, a: 1.2, b: 4.0, sill: 0, head: 2.5 },
-        { id: 'k3-balkon',  kind: 'slide', o: 'h', at: 0, a: 6.2, b: 9.0, sill: 0, head: 2.5 },
-        { id: 'k2-w',       kind: 'window', o: 'v', at: 0, a: 1.3, b: 2.7, sill: 1.1, head: 2.3 },
-        { id: 'k3-w',       kind: 'window', o: 'v', at: 10, a: 1.3, b: 2.7, sill: 1.1, head: 2.3 },
-        { id: 'k4-w1',      kind: 'window', o: 'v', at: 0, a: 6.5, b: 8.0, sill: 0.9, head: 2.3 },
-        { id: 'k4-w2',      kind: 'window', o: 'h', at: 9, a: 1.5, b: 4.0, sill: 0.9, head: 2.3 },
-        { id: 'santai-w1',  kind: 'window', o: 'h', at: 9, a: 6.2, b: 9.0, sill: 0.2, head: 2.5 },
-        { id: 'santai-w2',  kind: 'window', o: 'v', at: 10, a: 7.0, b: 8.5, sill: 0.9, head: 2.3 },
-        { id: 'void-w',     kind: 'window', o: 'v', at: 10, a: 4.3, b: 5.7, sill: 0.5, head: 2.7 },
-        { id: 'korid-w',    kind: 'window', o: 'v', at: 0, a: 4.25, b: 5.0, sill: 1.2, head: 2.4 },
+        { id: 'k2-koridor', kind: 'door',  o: 'h', at: 5, a: 5.2, b: 6.1, sill: 0, head: 2.1, hinge: 'a', swing: -1 },
+        { id: 'k3-hall',    kind: 'door',  o: 'h', at: 5, a: 9.4, b: 10.3, sill: 0, head: 2.1, hinge: 'b', swing: -1 },
+        { id: 'k4-koridor', kind: 'door',  o: 'h', at: 7, a: 5.0, b: 5.9, sill: 0, head: 2.1, hinge: 'a', swing: 1 },
+        { id: 'koridor-foyer', kind: 'open', o: 'h', at: 5, a: 6.5, b: 8.5, sill: 0, head: 2.4 },
+        { id: 'koridor-hall', kind: 'open', o: 'v', at: 9, a: 5, b: 7, sill: 0, head: 2.4 },
+        { id: 'hall-santai',  kind: 'open', o: 'h', at: 7, a: 9, b: 11.8, sill: 0, head: 2.4 },
+        { id: 'void-santai',  kind: 'rail', o: 'h', at: 7, a: 11.8, b: 15, sill: 0, head: 1.0 },
+        { id: 'tangga-tiba',  kind: 'open', o: 'v', at: 11.8, a: 5, b: 5.9, sill: 0, head: 2.4 },
+        { id: 'tangga-rail',  kind: 'rail', o: 'v', at: 11.8, a: 5.9, b: 7, sill: 0, head: 1.0 },
+        { id: 'k2-balkon',  kind: 'slide', o: 'h', at: 0, a: 1.5, b: 4.5, sill: 0, head: 2.5 },
+        { id: 'foyer-balkon', kind: 'slide', o: 'h', at: 0, a: 6.8, b: 8.2, sill: 0, head: 2.5 },
+        { id: 'k3-balkon',  kind: 'slide', o: 'h', at: 0, a: 10.5, b: 13.5, sill: 0, head: 2.5 },
+        { id: 'k2-w',       kind: 'window', o: 'v', at: 0, a: 1.5, b: 3.5, sill: 1.1, head: 2.3 },
+        { id: 'k3-w',       kind: 'window', o: 'v', at: 15, a: 1.5, b: 3.5, sill: 1.1, head: 2.3 },
+        { id: 'k4-w1',      kind: 'window', o: 'v', at: 0, a: 8.0, b: 9.5, sill: 0.9, head: 2.3 },
+        { id: 'k4-w2',      kind: 'window', o: 'h', at: 12, a: 1.5, b: 4.5, sill: 0.9, head: 2.3 },
+        { id: 'santai-w1',  kind: 'window', o: 'h', at: 12, a: 7.5, b: 12.5, sill: 0.2, head: 2.5 },
+        { id: 'santai-w2',  kind: 'window', o: 'v', at: 15, a: 8.5, b: 10.5, sill: 0.9, head: 2.3 },
+        { id: 'void-w',     kind: 'window', o: 'v', at: 15, a: 5.3, b: 6.7, sill: 0.5, head: 2.7 },
+        { id: 'korid-w',    kind: 'window', o: 'v', at: 0, a: 5.4, b: 6.6, sill: 1.2, head: 2.4 },
       ],
       furniture: [
-        { k: 'bed', x0: 0, y0: 1.1, x1: 2.0, y1: 2.9, head: 'w' },
-        { k: 'stand', x0: 0, y0: 0.6, x1: 0.4, y1: 1.0 },
-        { k: 'stand', x0: 0, y0: 3.0, x1: 0.4, y1: 3.4 },
-        { k: 'wardrobe', x0: 4.65, y0: 0.4, x1: 5.15, y1: 3.0, h: 2.2 },
-        { k: 'bed', x0: 8.0, y0: 1.1, x1: 10, y1: 2.9, head: 'e' },
-        { k: 'stand', x0: 9.6, y0: 0.6, x1: 10, y1: 1.0 },
-        { k: 'stand', x0: 9.6, y0: 3.0, x1: 10, y1: 3.4 },
-        { k: 'wardrobe', x0: 5.3, y0: 0.4, x1: 5.8, y1: 3.0, h: 2.2 },
-        { k: 'bed', x0: 3.2, y0: 6.6, x1: 5.2, y1: 8.4, head: 'e' },
-        { k: 'stand', x0: 4.8, y0: 6.1, x1: 5.2, y1: 6.5 },
-        { k: 'stand', x0: 4.8, y0: 8.5, x1: 5.2, y1: 8.9 },
-        { k: 'wardrobe', x0: 0.3, y0: 5.3, x1: 2.9, y1: 5.8, h: 2.2 },
-        { k: 'desk', x0: 0, y0: 6.6, x1: 0.6, y1: 8.0 },
-        { k: 'dchair', x0: 0.7, y0: 7.0, x1: 1.15, y1: 7.45, back: 'e' },
-        { k: 'rug', x0: 6.3, y0: 6.8, x1: 8.8, y1: 8.0, h: 0.01 },
-        { k: 'sofa', x0: 6.3, y0: 8.2, x1: 8.7, y1: 8.95, back: 's' },
-        { k: 'table', x0: 6.9, y0: 7.2, x1: 8.1, y1: 7.8, h: 0.4 },
-        { k: 'shelf', x0: 5.25, y0: 6.2, x1: 5.65, y1: 8.8, h: 2.0 },
-        { k: 'plant', x0: 9.3, y0: 8.3, x1: 9.9, y1: 8.9 },
-        { k: 'chair', x0: 1.6, y0: -1.15, x1: 2.25, y1: -0.5, back: 'n' },
-        { k: 'table', x0: 2.35, y0: -1.0, x1: 2.9, y1: -0.45, h: 0.45 },
-        { k: 'chair', x0: 3.0, y0: -1.15, x1: 3.65, y1: -0.5, back: 'n' },
+        // kamar tidur 2
+        { k: 'rug', x0: 1.8, y0: 1.4, x1: 4.4, y1: 3.6, h: 0.01 },
+        { k: 'bed', x0: 0, y0: 1.6, x1: 2.0, y1: 3.4, head: 'w' },
+        { k: 'stand', x0: 0, y0: 1.1, x1: 0.4, y1: 1.5 },
+        { k: 'stand', x0: 0, y0: 3.5, x1: 0.4, y1: 3.9 },
+        { k: 'wardrobe', x0: 5.95, y0: 0.5, x1: 6.45, y1: 3.1, h: 2.2, door: 'w' },
+        // kamar tidur 3
+        { k: 'rug', x0: 10.6, y0: 1.4, x1: 13.2, y1: 3.6, h: 0.01 },
+        { k: 'bed', x0: 13, y0: 1.6, x1: 15, y1: 3.4, head: 'e' },
+        { k: 'stand', x0: 14.6, y0: 1.1, x1: 15, y1: 1.5 },
+        { k: 'stand', x0: 14.6, y0: 3.5, x1: 15, y1: 3.9 },
+        { k: 'wardrobe', x0: 8.55, y0: 0.5, x1: 9.05, y1: 3.1, h: 2.2, door: 'e' },
+        // koridor depan & koridor
+        { k: 'plant', x0: 7.2, y0: 3.5, x1: 7.8, y1: 4.1 },
+        { k: 'counter', x0: 1.0, y0: 6.5, x1: 3.0, y1: 7.0, h: 0.85 },
+        // kamar tidur 4
+        { k: 'rug', x0: 1.6, y0: 8.8, x1: 4.2, y1: 11.0, h: 0.01 },
+        { k: 'bed', x0: 4.5, y0: 9.1, x1: 6.5, y1: 10.9, head: 'e' },
+        { k: 'stand', x0: 6.1, y0: 8.6, x1: 6.5, y1: 9.0 },
+        { k: 'stand', x0: 6.1, y0: 11.0, x1: 6.5, y1: 11.4 },
+        { k: 'wardrobe', x0: 0.3, y0: 7.1, x1: 2.9, y1: 7.6, h: 2.2, door: 's' },
+        { k: 'desk', x0: 0, y0: 8.2, x1: 0.6, y1: 9.6 },
+        { k: 'dchair', x0: 0.7, y0: 8.6, x1: 1.15, y1: 9.05, back: 'e' },
+        // ruang santai
+        { k: 'shelf', x0: 6.55, y0: 8.0, x1: 6.95, y1: 10.6, h: 2.0 },
+        { k: 'rug', x0: 8.2, y0: 9.3, x1: 11.2, y1: 10.9, h: 0.01 },
+        { k: 'sofa', x0: 8.5, y0: 11.1, x1: 10.9, y1: 11.85, back: 's' },
+        { k: 'table', x0: 9.1, y0: 9.9, x1: 10.3, y1: 10.5, h: 0.4 },
+        { k: 'chair', x0: 12.9, y0: 9.0, x1: 13.6, y1: 9.8, back: 'e' },
+        { k: 'plant', x0: 14.2, y0: 11.2, x1: 14.8, y1: 11.8 },
+        // balkon
+        { k: 'chair', x0: 1.6, y0: -1.32, x1: 2.25, y1: -0.67, back: 'n' },
+        { k: 'table', x0: 2.35, y0: -1.2, x1: 2.9, y1: -0.65, h: 0.45 },
+        { k: 'chair', x0: 3.0, y0: -1.32, x1: 3.65, y1: -0.67, back: 'n' },
+        { k: 'chair', x0: 11.4, y0: -1.32, x1: 12.05, y1: -0.67, back: 'n' },
+        { k: 'table', x0: 12.15, y0: -1.2, x1: 12.7, y1: -0.65, h: 0.45 },
+        { k: 'chair', x0: 12.8, y0: -1.32, x1: 13.45, y1: -0.67, back: 'n' },
       ] },
   ],
 };
 
 
-
-export const PW = PLAN.W // 10 (lebar, sumbu x denah)
-export const PD = PLAN.D // 9 (dalam, sumbu y denah)
+export const PW = PLAN.W // 15 (lebar, sumbu x denah)
+export const PD = PLAN.D // 12 (dalam, sumbu y denah)
 export const FLOOR_H = PLAN.floorH // 3.2 (lantai ke lantai)
 export const CEIL_H = PLAN.ceilH // 3.0 (tinggi plafon)
 export const LEVEL_Y = [0, FLOOR_H] // tinggi permukaan lantai 1 & 2
@@ -234,7 +264,7 @@ export const DOORS = PLAN.floors.flatMap((fl, li) =>
     }))
 )
 export const DOOR_RANGE = 1.5
-export const FRONT_DOOR = { x: 5.3, y: 0, w: 1.0 } // denah (x, y)
+export const FRONT_DOOR = { x: 7.0, y: 0, w: 1.0 } // denah (x, y), tengah pintu-utama
 export const EXIT_RANGE = 2.0
 export const WIN_KINDS = ['window']
 
@@ -292,8 +322,8 @@ export function distToExit(X, Z, feetY = 0) {
 // ---------------------------------------------------------------------------
 const ST = PLAN.stair
 const RISE = PLAN.floorH / ST.steps
-const LAND_X = ST.x0 + ST.treadsPerFlight * ST.tread // 8.96
-const MID_Y = ST.y0 + ST.width + ST.gap / 2 // garis tengah antar lengan (z = 5.0)
+const LAND_X = ST.x0 + ST.treadsPerFlight * ST.tread // 13.96
+const MID_Y = ST.y0 + ST.width + ST.gap / 2 // garis tengah antar lengan (y = 6.0)
 export const STAIR = { ...ST, rise: RISE, landX: LAND_X, midY: MID_Y }
 
 // tinggi anak tangga di titik (x,y) denah, atau null kalau di luar kotak tangga
@@ -543,8 +573,9 @@ export function buildStaticBoxes(opts = {}) {
   brail(0.03, -1.35, PLAN.W - 0.03, -1.35); brail(0.03, -1.35, 0.03, -0.1); brail(PLAN.W - 0.03, -1.35, PLAN.W - 0.03, -0.1)
   // ---- kulit luar: pondasi & teras (hanya tampak luar) ----
   if (ext) {
-    S(-0.12, -0.12, -0.4, PLAN.W + 0.12, PLAN.D + 0.12, 0.0, C.charcoal)
-    S(3.6, -1.2, -0.4, 7.4, 0, 0.06, C.balcony); S(3.4, -1.45, -0.4, 7.6, -1.2, 0.0, C.balcony)
+    S(-0.12, -0.12, -1.2, PLAN.W + 0.12, PLAN.D + 0.12, 0.0, C.charcoal)
+    const pr = PLAN.floors[0].extras[0] // teras
+    S(pr.x0, pr.y0, -0.4, pr.x1, 0, 0.06, C.balcony); S(pr.x0 - 0.2, pr.y0 - 0.25, -0.4, pr.x1 + 0.2, pr.y0, 0.0, C.balcony)
   }
   // ---- tangga ----
   if (!ext) {
@@ -588,8 +619,8 @@ export function buildStaticBoxes(opts = {}) {
         case 'stand': Bx(f.x0, f.y0, 0.1, f.x1, f.y1, 0.48, C.oak); Bx(f.x0 + 0.05, f.y0 + 0.05, 0, f.x1 - 0.05, f.y1 - 0.05, 0.1, C.black); Bx(mxp - 0.05, myp - 0.05, 0.48, mxp + 0.05, myp + 0.05, 0.62, C.white); break
         case 'wardrobe': Bx(f.x0, f.y0, 0, f.x1, f.y1, f.h, C.white); { const alongY = d > w; const n = Math.max(2, Math.round(Math.max(w, d) / 0.6))
           for (let i = 0; i < n; i++) { const t0 = (i + 0.05) / n, t1 = (i + 0.95) / n
-            if (alongY) { const ya = f.y0 + d * t0, yb = f.y0 + d * t1, east = f.x0 < 6.2 && !(li === 1 && f.x0 > 4.6 && f.x0 < 5); Bx(east ? f.x1 : f.x0 - 0.012, ya, 0.05, east ? f.x1 + 0.012 : f.x0, yb, f.h - 0.05, C.oak) }
-            else { const xa = f.x0 + w * t0, xb = f.x0 + w * t1; Bx(xa, f.y1, 0.05, xb, f.y1 + 0.012, f.h - 0.05, C.oak) } } } break
+            if (alongY) { const ya = f.y0 + d * t0, yb = f.y0 + d * t1, east = f.door === 'e'; Bx(east ? f.x1 : f.x0 - 0.012, ya, 0.05, east ? f.x1 + 0.012 : f.x0, yb, f.h - 0.05, C.oak) }
+            else { const xa = f.x0 + w * t0, xb = f.x0 + w * t1; if (f.door === 'n') Bx(xa, f.y0 - 0.012, 0.05, xb, f.y0, f.h - 0.05, C.oak); else Bx(xa, f.y1, 0.05, xb, f.y1 + 0.012, f.h - 0.05, C.oak) } } } break
         case 'shelf': Bx(f.x0, f.y0, 0, f.x1, f.y1, f.h, C.oak); for (let i = 1; i < 5; i++) Bx(f.x0 + 0.04, f.y0 + 0.02, i * 0.4, f.x1, f.y1 - 0.02, i * 0.4 + 0.02, C.white); break
         case 'desk': Bx(f.x0, f.y0, 0.72, f.x1, f.y1, 0.76, C.oak); for (const [a, b] of [[f.x0, f.y0], [f.x0, f.y1 - 0.05], [f.x1 - 0.05, f.y0], [f.x1 - 0.05, f.y1 - 0.05]]) Bx(a, b, 0, a + 0.05, b + 0.05, 0.72, C.steel); Bx(f.x0 + 0.02, myp - 0.2, 0.76, f.x0 + 0.1, myp + 0.2, 1.0, C.black); break
         case 'counter': Bx(f.x0, f.y0, 0, f.x1, f.y1, f.h - 0.04, C.white); Bx(f.x0 - 0.01, f.y0 - 0.01, f.h - 0.04, f.x1 + 0.01, f.y1 + 0.01, f.h, C.charcoal)
@@ -610,7 +641,7 @@ export function buildStaticBoxes(opts = {}) {
 
 // Titik lampu (koordinat denah) per ruangan.
 export const LIGHT_SPOTS = [
-  [3, 3, 0], [8, 2, 0], [6, 7.5, 0], [2, 7.5, 0], [8.4, 5, 0], [9, 7.5, 0],
-  [2.6, 2, 1], [7.6, 2, 1], [2.6, 7, 1], [7.6, 7.5, 1], [3, 4.6, 1],
+  [3.5, 3.5, 0], [7.5, 5.5, 0], [12, 2.5, 0], [2.5, 9.5, 0], [8.5, 9.5, 0], [13.5, 9.5, 0],
+  [3.2, 2.5, 1], [11.7, 2.5, 1], [3.2, 9.5, 1], [10.5, 9.5, 1],
 ]
 export const PANTAI_STAIR_RISE = RISE
