@@ -13,8 +13,8 @@ import * as THREE from 'three'
 import { buildStaticBoxes, PW, PD } from './houseInteriorPantai'
 
 const HOUSE_RE = /^BeachHouse_(\d+)_/
-// Dimensi model (denah): lebar 10 + atap menjorok 0.45 kiri-kanan; kedalaman 9
-// + balkon 1.4 di depan + teras.
+// Dimensi model (denah): lebar PW (15) + atap menjorok 0.45 kiri-kanan;
+// kedalaman PD (12) + balkon 1.4 di depan + teras.
 const MODEL_W = PW + 0.9
 const MODEL_D = PD + 1.4 + 0.9
 const FRONT_MIN_Z = -1.45 // sisi terdepan (teras)
@@ -24,6 +24,19 @@ const GAP = 1.5 // jarak minimum antar rumah (meter)
 const MAX_SHIFT = 9 // rumah boleh digeser sejauh ini dari titik aslinya (meter)
 const BODY_H = 7.0
 const ROAD_NEAR = 25 // meter
+
+// Tinggi lantai & pondasi. Tapak rumah (14-16 m) jauh lebih lebar dari petak
+// rumah lama, dan tanah Kawasan Pantai miring, jadi lantai TIDAK boleh
+// ditaruh di titik tanah terendah (sisi tanah yang lebih tinggi menelan badan
+// rumah). Lantai ditaruh di tanah tertinggi di bawah tapak; sisi yang lebih
+// rendah ditutup pondasi.
+const FLOOR_LIFT = 0.05 // lantai sedikit di atas tanah tertinggi (anti z-fighting)
+const GROUND_GRID = 11 // titik sampel tanah per sisi tapak (GROUND_GRID^2 sinar); dicek: 0 rumah terkubur > 2 cm
+const FOUND_D = 1.2 // tebal pondasi bawaan model (sebelum diskala)
+const FOUND_C = 0x3d4248 // warna pondasi bawaan model
+const FOUND_STEP = 0.25 // pondasi tambahan dibulatkan ke atas per langkah ini (model)
+const FOUND_MARGIN = 0.15 // pondasi tambahan menembus sedikit ke tanah (meter)
+const COLLIDE_MIN_DROP = 0.3 // tabrakan pondasi dipasang kalau lantai setinggi ini di atas tanah terendah
 
 // Kotak (koordinat denah + tinggi) -> geometri ber-vertex-color.
 // Sumbu: (x denah, tinggi, y denah) -> (x, y, z) three.
@@ -82,9 +95,41 @@ function shared() {
         vertexColors: true, transparent: true, opacity: 0.55, roughness: 0.08, metalness: 0.1, depthWrite: false, side: THREE.DoubleSide,
       }),
       colliderMat: new THREE.MeshBasicMaterial({ visible: false }),
+      // pondasi tambahan (sama warnanya dengan pondasi bawaan model)
+      foundMat: new THREE.MeshStandardMaterial({ color: FOUND_C, roughness: 0.88, metalness: 0 }),
+      foundGeo: new Map(), // tinggi tambahan (model) -> geometri
+      baseColliderGeo: new Map(), // tinggi tabrakan (model, dibulatkan) -> geometri
     }
   }
   return SHARED
+}
+
+// Blok pondasi tambahan di bawah pondasi bawaan model (y = -FOUND_D), seluas
+// pondasi bawaan (x -0.12..PW+0.12, z -0.12..PD+0.12). Frame model: (x, tinggi, z).
+function foundationGeo(sh, extra) {
+  const key = extra.toFixed(2)
+  let g = sh.foundGeo.get(key)
+  if (!g) {
+    const ov = 0.05 // menumpang sedikit ke pondasi bawaan supaya tidak ada celah
+    g = new THREE.BoxGeometry(PW + 0.24, extra + ov, PD + 0.24)
+      .translate(PW / 2, -FOUND_D - extra + (extra + ov) / 2, PD / 2)
+    sh.foundGeo.set(key, g)
+  }
+  return g
+}
+
+// Kotak tabrakan pondasi: dari `depth` (model) di bawah lantai sampai lantai.
+// Terpisah dari kotak tabrakan badan rumah supaya "dasar bangunan" yang dipakai
+// fitur Masuki rumah (houseVisit.baseY) tetap setinggi lantai.
+function baseColliderGeo(sh, depth) {
+  const d = Math.ceil(depth / FOUND_STEP) * FOUND_STEP
+  const key = d.toFixed(2)
+  let g = sh.baseColliderGeo.get(key)
+  if (!g) {
+    g = new THREE.BoxGeometry(PW + 0.3, d, PD + 0.3).translate(PW / 2, -d / 2, PD / 2)
+    sh.baseColliderGeo.set(key, g)
+  }
+  return g
 }
 
 // Titik-titik jalan (frame lokal scene), diambil jarang supaya ringan.
@@ -222,14 +267,29 @@ export function addPantaiHouses(scene) {
     const hit = ray.intersectObjects(greens, false)[0]
     return hit ? hit.point.clone().applyMatrix4(inv).z : null
   }
+  // Seluruh tapak disampel (grid GROUND_GRID x GROUND_GRID, termasuk tepinya).
+  // Lantai = tanah tertinggi, jadi tidak ada dinding yang terkubur; `drop` =
+  // selisih lantai ke tanah terendah, yang harus ditutup pondasi. Titik tanpa
+  // mesh tanah (null) dilewati; kalau tidak ada satu pun titik kena tanah,
+  // pakai dasar rumah lama seperti sebelumnya (tanpa pondasi tambahan).
   for (const h of infos) {
     const [w, d] = dims(h)
-    let z = Infinity
-    for (const [px, py] of [[0, 0], [-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
-      const g = groundAt(h.cx + px * w * 0.8, h.cy + py * d * 0.8)
-      if (g !== null && g < z) z = g
+    let top = -Infinity, bottom = Infinity
+    for (let i = 0; i < GROUND_GRID; i++) {
+      for (let j = 0; j < GROUND_GRID; j++) {
+        const g = groundAt(h.cx + (i / (GROUND_GRID - 1) - 0.5) * w, h.cy + (j / (GROUND_GRID - 1) - 0.5) * d)
+        if (g === null) continue
+        if (g > top) top = g
+        if (g < bottom) bottom = g
+      }
     }
-    h.z = Number.isFinite(z) && Math.abs(z - h.minZ) < 12 ? z : h.minZ
+    if (Number.isFinite(top) && Math.abs(top - h.minZ) < 12) {
+      h.z = top + FLOOR_LIFT
+      h.drop = h.z - bottom
+    } else {
+      h.z = h.minZ
+      h.drop = 0
+    }
   }
 
   for (const h of infos) {
@@ -237,17 +297,26 @@ export function addPantaiHouses(scene) {
     // model: depan = -z denah. Setelah rotasi X +90 (Y-up -> Z-up) depan jadi +y;
     // rotasi z phi mengarahkannya ke (fx, fy).
     const phi = Math.atan2(-fx, fy)
-    const house = new THREE.Group()
-    house.name = `TPX_Buildings_${num}` // dikenali TownWalk (nomor rumah + tabrakan)
-    house.position.set(cx, cy, h.z)
-    house.rotation.z = phi
-    const tilt = new THREE.Group()
-    tilt.rotation.x = Math.PI / 2
-    tilt.scale.setScalar(k)
-    const mirror = new THREE.Group()
-    mirror.scale.set(-1, 1, 1)
-    // pusat jejak rumah (termasuk balkon & teras) -> titik tengah petak
-    mirror.position.set(PW / 2, 0, -(FRONT_MIN_Z + PD) / 2)
+    // Kerangka rumah (posisi + rotasi + skala + cermin), dipakai dua kali: untuk
+    // rumahnya sendiri dan untuk tabrakan pondasi (grup terpisah, lihat bawah).
+    const frame = (name) => {
+      const root = new THREE.Group()
+      root.name = name
+      root.position.set(cx, cy, h.z)
+      root.rotation.z = phi
+      const tilt = new THREE.Group()
+      tilt.rotation.x = Math.PI / 2
+      tilt.scale.setScalar(k)
+      const m = new THREE.Group()
+      m.scale.set(-1, 1, 1)
+      // pusat jejak rumah (termasuk balkon & teras) -> titik tengah petak
+      m.position.set(PW / 2, 0, -(FRONT_MIN_Z + PD) / 2)
+      tilt.add(m)
+      root.add(tilt)
+      return { root, mirror: m }
+    }
+    // nama dikenali TownWalk (nomor rumah + tabrakan)
+    const { root: house, mirror } = frame(`TPX_Buildings_${num}`)
     const solid = new THREE.Mesh(sh.solid, sh.solidMat)
     const glass = new THREE.Mesh(sh.glass, sh.glassMat)
     glass.renderOrder = 2
@@ -259,9 +328,33 @@ export function addPantaiHouses(scene) {
     col.name = `PantaiTabrak_${num}`
     col.visible = false
     mirror.add(solid, glass, col)
-    tilt.add(mirror)
-    house.add(tilt)
+
+    // Pondasi bawaan model cuma setebal FOUND_D * k. Kalau tanah di sisi bawah
+    // lebih dalam dari itu, rumah kelihatan melayang: tambah blok pondasi
+    // (visual saja) sampai menyentuh tanah terendah.
+    const extra = h.drop - FOUND_D * k + FOUND_MARGIN
+    if (extra > 0.05) {
+      const fm = new THREE.Mesh(foundationGeo(sh, Math.ceil(extra / k / FOUND_STEP) * FOUND_STEP), sh.foundMat)
+      fm.name = `PantaiPondasi_${num}`
+      fm.userData.noCollide = true
+      mirror.add(fm)
+    }
     group.add(house)
+
+    // Tabrakan pondasi: tanpa ini pemain di sisi tanah yang lebih rendah bisa
+    // berjalan menembus pondasi (kotak tabrakan badan mulai dari lantai). Dibuat
+    // di grup bernama "TPX_BuildingsBase_N": TownWalk tetap menganggapnya
+    // bangunan (awalan TPX_Buildings) sebagai dinding, tapi tidak dihitung
+    // sebagai node rumah bernomor, jadi dasar bangunan (baseY) untuk fitur
+    // Masuki rumah tetap setinggi lantai.
+    if (h.drop > COLLIDE_MIN_DROP) {
+      const { root: baseRoot, mirror: baseMirror } = frame(`TPX_BuildingsBase_${num}`)
+      const bc = new THREE.Mesh(baseColliderGeo(sh, (h.drop + FOUND_MARGIN + 0.05) / k), sh.colliderMat)
+      bc.name = `PantaiPondasiTabrak_${num}`
+      bc.visible = false
+      baseMirror.add(bc)
+      group.add(baseRoot)
+    }
 
     obj.visible = false
     obj.userData.replaced = true
