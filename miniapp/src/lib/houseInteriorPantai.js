@@ -15,6 +15,12 @@
 //   - fisika  : fungsi `mx()` di bawah (semua API dunia memakai koordinat DUNIA)
 // Jadi data di file ini selalu koordinat denah.
 
+// Kedalaman balkon lantai 2 (m, keluar dari fasad depan). Dulu 1.4; sekarang 1.5x.
+// Dipakai denah, pagar (tabrakan), model 3D, dan ukuran tapak rumah di tampak luar
+// (lib/pantaiHouses.js), jadi cukup ubah angka ini.
+export const BALKON_D = 2.1
+const BX = BALKON_D - 1.4 // tambahan kedalaman dari ukuran lama (dipakai menggeser furnitur balkon)
+
 const PLAN = {
   lot: { w: 17, d: 15, x0: -1, y0: -2 },          // lahan ~17 x 15 m; bangunan di (0,0)-(15,12)
   W: 15, D: 12, tExt: 0.2, tInt: 0.1,
@@ -103,7 +109,7 @@ const PLAN = {
         { id: 'k4',    name: 'Kamar Tidur 4', type: 'bed',      x0: 0,    y0: 7, x1: 6.5,  y1: 12 },
         { id: 'santai',name: 'Ruang Santai',  type: 'lounge',   x0: 6.5,  y0: 7, x1: 15,   y1: 12 },
       ],
-      extras: [ { id: 'balkon', name: 'Balkon', type: 'balcony', x0: 0, y0: -1.4, x1: 15, y1: 0 } ],
+      extras: [ { id: 'balkon', name: 'Balkon', type: 'balcony', x0: 0, y0: -BALKON_D, x1: 15, y1: 0 } ],
       openings: [
         { id: 'k2-koridor', kind: 'door',  o: 'h', at: 5, a: 5.2, b: 6.1, sill: 0, head: 2.1, hinge: 'a', swing: -1 },
         { id: 'k3-hall',    kind: 'door',  o: 'h', at: 5, a: 9.4, b: 10.3, sill: 0, head: 2.1, hinge: 'b', swing: -1 },
@@ -157,13 +163,14 @@ const PLAN = {
         { k: 'table', x0: 9.1, y0: 9.9, x1: 10.3, y1: 10.5, h: 0.4 },
         { k: 'chair', x0: 12.9, y0: 9.0, x1: 13.6, y1: 9.8, back: 'e' },
         { k: 'plant', x0: 14.2, y0: 11.2, x1: 14.8, y1: 11.8 },
-        // balkon
-        { k: 'chair', x0: 1.6, y0: -1.32, x1: 2.25, y1: -0.67, back: 'n' },
-        { k: 'table', x0: 2.35, y0: -1.2, x1: 2.9, y1: -0.65, h: 0.45 },
-        { k: 'chair', x0: 3.0, y0: -1.32, x1: 3.65, y1: -0.67, back: 'n' },
-        { k: 'chair', x0: 11.4, y0: -1.32, x1: 12.05, y1: -0.67, back: 'n' },
-        { k: 'table', x0: 12.15, y0: -1.2, x1: 12.7, y1: -0.65, h: 0.45 },
-        { k: 'chair', x0: 12.8, y0: -1.32, x1: 13.45, y1: -0.67, back: 'n' },
+        // balkon (tetap menempel ke pagar: digeser sejauh tambahan kedalaman balkon,
+        // jadi di depan pintu geser ada ruang lewat yang lebih lega)
+        { k: 'chair', x0: 1.6, y0: -1.32 - BX, x1: 2.25, y1: -0.67 - BX, back: 'n' },
+        { k: 'table', x0: 2.35, y0: -1.2 - BX, x1: 2.9, y1: -0.65 - BX, h: 0.45 },
+        { k: 'chair', x0: 3.0, y0: -1.32 - BX, x1: 3.65, y1: -0.67 - BX, back: 'n' },
+        { k: 'chair', x0: 11.4, y0: -1.32 - BX, x1: 12.05, y1: -0.67 - BX, back: 'n' },
+        { k: 'table', x0: 12.15, y0: -1.2 - BX, x1: 12.7, y1: -0.65 - BX, h: 0.45 },
+        { k: 'chair', x0: 12.8, y0: -1.32 - BX, x1: 13.45, y1: -0.67 - BX, back: 'n' },
       ] },
   ],
 };
@@ -371,9 +378,9 @@ function collisionWalls() {
   walls.push({ x1: ST.x0, z1: ST.y0 + ST.width + 0.05, x2: LAND_X, z2: ST.y0 + ST.width + 0.05, lv: 1, y0: 1.7, y1: FLOOR_H + 1.1 })
   // pagar balkon (lantai 2)
   const by = FLOOR_H
-  walls.push({ x1: 0, z1: -1.4, x2: PW, z2: -1.4, lv: 1, y0: by, y1: by + 1.1 })
-  walls.push({ x1: 0, z1: -1.4, x2: 0, z2: 0, lv: 1, y0: by, y1: by + 1.1 })
-  walls.push({ x1: PW, z1: -1.4, x2: PW, z2: 0, lv: 1, y0: by, y1: by + 1.1 })
+  walls.push({ x1: 0, z1: -BALKON_D, x2: PW, z2: -BALKON_D, lv: 1, y0: by, y1: by + 1.1 })
+  walls.push({ x1: 0, z1: -BALKON_D, x2: 0, z2: 0, lv: 1, y0: by, y1: by + 1.1 })
+  walls.push({ x1: PW, z1: -BALKON_D, x2: PW, z2: 0, lv: 1, y0: by, y1: by + 1.1 })
   return walls
 }
 
@@ -444,7 +451,7 @@ export function buildPantaiInteriorWorld({ isDoorOpen = () => false } = {}) {
   }
 
   return {
-    bounds: { minX: -0.5, maxX: W + 0.5, minZ: -1.6, maxZ: D + 0.5 },
+    bounds: { minX: -0.5, maxX: W + 0.5, minZ: -(BALKON_D + 0.2), maxZ: D + 0.5 },
     waterLevel: -100,
     walls,
     state,
@@ -567,10 +574,11 @@ export function buildStaticBoxes(opts = {}) {
   })
   // ---- balkon ----
   const zb = LEVEL_Y[1]
-  S(-0.1, -1.4, zb - 0.2, PLAN.W + 0.1, -0.1, zb, C.ceil); S(0, -1.4, zb, PLAN.W, -0.1, zb + 0.005, C.balcony)
-  S(-0.1, -1.4, zb - 0.2, PLAN.W + 0.1, -1.34, zb, C.charcoal)
+  S(-0.1, -BALKON_D, zb - 0.2, PLAN.W + 0.1, -0.1, zb, C.ceil); S(0, -BALKON_D, zb, PLAN.W, -0.1, zb + 0.005, C.balcony)
+  S(-0.1, -BALKON_D, zb - 0.2, PLAN.W + 0.1, -(BALKON_D - 0.06), zb, C.charcoal)
   const brail = (x0, y0, x1, y1) => { S(x0 - 0.03, y0 - 0.03, zb, x1 + 0.03, y1 + 0.03, zb + 0.08, C.steel); G(x0 - 0.01, y0 - 0.01, zb + 0.08, x1 + 0.01, y1 + 0.01, zb + 1.0); S(x0 - 0.035, y0 - 0.035, zb + 1.0, x1 + 0.035, y1 + 0.035, zb + 1.06, C.steel) }
-  brail(0.03, -1.35, PLAN.W - 0.03, -1.35); brail(0.03, -1.35, 0.03, -0.1); brail(PLAN.W - 0.03, -1.35, PLAN.W - 0.03, -0.1)
+  const rz = -(BALKON_D - 0.05) // pagar depan, sedikit di dalam tepi pelat
+  brail(0.03, rz, PLAN.W - 0.03, rz); brail(0.03, rz, 0.03, -0.1); brail(PLAN.W - 0.03, rz, PLAN.W - 0.03, -0.1)
   // ---- kulit luar: pondasi & teras (hanya tampak luar) ----
   if (ext) {
     S(-0.12, -0.12, -1.2, PLAN.W + 0.12, PLAN.D + 0.12, 0.0, C.charcoal)

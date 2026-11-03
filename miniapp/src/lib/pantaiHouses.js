@@ -10,14 +10,14 @@
 // ditaruh di titik tengah yang sama, menghadap ke jalan terdekat, dan diskalakan
 // kalau petak aslinya sempit.
 import * as THREE from 'three'
-import { buildStaticBoxes, PW, PD } from './houseInteriorPantai'
+import { buildStaticBoxes, PW, PD, BALKON_D } from './houseInteriorPantai'
 
 const HOUSE_RE = /^BeachHouse_(\d+)_/
 // Dimensi model (denah): lebar PW (15) + atap menjorok 0.45 kiri-kanan;
-// kedalaman PD (12) + balkon 1.4 di depan + teras.
+// kedalaman PD (12) + balkon BALKON_D di depan + teras.
 const MODEL_W = PW + 0.9
-const MODEL_D = PD + 1.4 + 0.9
-const FRONT_MIN_Z = -1.45 // sisi terdepan (teras)
+const MODEL_D = PD + BALKON_D + 0.9
+const FRONT_MIN_Z = -(BALKON_D + 0.05) // sisi terdepan (pelat balkon lantai 2)
 const MIN_SCALE = 0.7
 const MAX_SCALE = 1.0
 const GAP = 1.5 // jarak minimum antar rumah (meter)
