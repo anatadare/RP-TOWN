@@ -1,8 +1,9 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import {
-  buildStaticBoxes, DOORS, doorPlacement, LIGHT_SPOTS, LEVEL_Y, PW, PD,
+  buildStaticBoxes, DOORS, doorPlacement, LIGHT_SPOTS, LEVEL_Y, PW, PD, mx,
   roomAt, nearestDoor, inDoorway, distToExit, FRONT_DOOR, EXIT_RANGE,
 } from '../lib/houseInteriorPantai'
 import { boxesToGeometry } from '../lib/pantaiHouses'
@@ -45,46 +46,124 @@ function Door({ def, doorsRef }) {
   )
 }
 
+// Pemandangan di luar jendela tidak ikut lampu (MeshBasicMaterial). Pasir & laut
+// memenuhi layar lewat jendela, dan dulu tiap pikselnya menghitung SEMUA lampu
+// ruangan (PBR) -- penyebab utama framedrop di dalam rumah. Warnanya digelapkan
+// (UNLIT_K) kira-kira setara hasil pencahayaan lama; ubah UNLIT_K kalau terlalu
+// terang/gelap.
+const UNLIT_K = 0.8
+const unlit = (hex) => new THREE.Color(hex).multiplyScalar(UNLIT_K)
+const C_SAND = unlit('#dccfaa')
+const C_ROAD = unlit('#45474b')
+const C_WALK = unlit('#c4c1b9')
+const C_SEA = unlit('#2d8fa6')
+const C_TRUNK = unlit('#6b543a')
+const C_LEAF = unlit('#2f6b30')
+
+const PALMS = [[-3.5, -3.2, 6.2], [PW + 3.4, -3.6, 5.6], [-4.2, PD + 2.5, 6.8], [PW + 4.5, PD + 3.5, 6.0], [-9, 3, 7], [PW + 10, 4, 6.4]]
+
+// Semua pohon kelapa digabung jadi SATU geometri ber-vertex-color (1 draw call,
+// sebelumnya 6 pohon x 8 mesh = 48 draw call + 8 material).
+function buildPalmGeometry() {
+  const parts = []
+  const paint = (g, c) => {
+    const n = g.getAttribute('position').count
+    const col = new Float32Array(n * 3)
+    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    return g
+  }
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1)
+  for (const [x, z, h] of PALMS) {
+    parts.push(paint(new THREE.CylinderGeometry(0.1, 0.17, h, 6).translate(x, -0.4 + h / 2, z), C_TRUNK))
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 7) * Math.PI * 2
+      e.set(0, -a, -0.45)
+      q.setFromEuler(e)
+      p.set(x + Math.cos(a) * 1.0, -0.4 + h - 0.1, z + Math.sin(a) * 1.0)
+      m.compose(p, q, s)
+      parts.push(paint(new THREE.BoxGeometry(2.4, 0.03, 0.4).applyMatrix4(m), C_LEAF))
+    }
+  }
+  const merged = mergeGeometries(parts)
+  parts.forEach((g) => g.dispose())
+  return merged
+}
+
 // Lingkungan di luar jendela: pasir, jalan, laut, beberapa pohon kelapa sederhana.
 function Surroundings() {
-  const palms = useMemo(() => [[-3.5, -3.2, 6.2], [PW + 3.4, -3.6, 5.6], [-4.2, PD + 2.5, 6.8], [PW + 4.5, PD + 3.5, 6.0], [-9, 3, 7], [PW + 10, 4, 6.4]], [])
+  const palmGeo = useMemo(buildPalmGeometry, [])
   return (
     <>
       <mesh rotation-x={-Math.PI / 2} position={[PW / 2, -0.42, PD / 2]}>
         <planeGeometry args={[600, 600]} />
-        <meshStandardMaterial color="#dccfaa" roughness={1} />
+        <meshBasicMaterial color={C_SAND} />
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position={[PW / 2, -0.41, -8]}>
         <planeGeometry args={[600, 5.5]} />
-        <meshStandardMaterial color="#45474b" roughness={1} />
+        <meshBasicMaterial color={C_ROAD} />
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position={[PW / 2, -0.4, -4]}>
         <planeGeometry args={[600, 3]} />
-        <meshStandardMaterial color="#c4c1b9" roughness={1} />
+        <meshBasicMaterial color={C_WALK} />
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position={[PW / 2, -0.4, 330]}>
         <planeGeometry args={[800, 600]} />
-        <meshStandardMaterial color="#2d8fa6" roughness={0.2} metalness={0.1} />
+        <meshBasicMaterial color={C_SEA} />
       </mesh>
-      {palms.map(([x, z, h], i) => (
-        <group key={i} position={[x, -0.4, z]}>
-          <mesh position={[0, h / 2, 0]}>
-            <cylinderGeometry args={[0.1, 0.17, h, 6]} />
-            <meshStandardMaterial color="#6b543a" roughness={1} />
-          </mesh>
-          {[0, 1, 2, 3, 4, 5, 6].map((k) => (
-            <mesh key={k} position={[Math.cos((k / 7) * Math.PI * 2) * 1.0, h - 0.1, Math.sin((k / 7) * Math.PI * 2) * 1.0]} rotation={[0, -(k / 7) * Math.PI * 2, -0.45]}>
-              <boxGeometry args={[2.4, 0.03, 0.4]} />
-              <meshStandardMaterial color="#2f6b30" roughness={0.9} />
-            </mesh>
-          ))}
-        </group>
-      ))}
+      <mesh geometry={palmGeo}>
+        <meshBasicMaterial vertexColors />
+      </mesh>
     </>
   )
 }
 
-export default function HouseInteriorPantai({ doorsRef }) {
+// Lampu ruangan: dulu 10 pointLight tetap (tiap piksel menghitung semuanya).
+// Sekarang LIGHT_POOL lampu saja yang berpindah (meluncur halus) ke titik lampu
+// terdekat dari pemain. Titik lampu lebih jauh dari `distance` (9 m) memang
+// tidak menyumbang cahaya, jadi tampilannya hampir sama. Jumlah lampu TETAP,
+// jadi shader tidak dikompilasi ulang. Naikkan LIGHT_POOL kalau terasa gelap.
+const LIGHT_POOL = 4
+const LIGHT_UP = 2.5 // tinggi lampu dari lantai (m)
+function LightPool({ selfRef }) {
+  const refs = useRef([])
+  const started = useRef(false)
+  // titik lampu dalam koordinat DUNIA (denah dicerminkan: X = PW - x)
+  const spots = useMemo(() => LIGHT_SPOTS.map(([lx, ly, lv]) => new THREE.Vector3(mx(lx), LEVEL_Y[lv] + LIGHT_UP, ly)), [])
+  useFrame((_, delta) => {
+    const me = selfRef.current
+    if (!me || !me.ready) return
+    const px = me.x, py = me.y + 1.2, pz = me.z
+    const order = spots
+      .map((s, i) => [(s.x - px) ** 2 + (s.y - py) ** 2 + (s.z - pz) ** 2, i])
+      .sort((a, b) => a[0] - b[0])
+    const k = 1 - Math.exp(-10 * delta)
+    for (let n = 0; n < LIGHT_POOL; n++) {
+      const l = refs.current[n]
+      if (!l) continue
+      const target = spots[order[n][1]]
+      if (started.current) l.position.lerp(target, k)
+      else l.position.copy(target)
+    }
+    started.current = true
+  })
+  return Array.from({ length: LIGHT_POOL }, (_, n) => (
+    <pointLight
+      key={n}
+      ref={(el) => { refs.current[n] = el }}
+      position={spots[n].toArray()}
+      intensity={4}
+      distance={9}
+      decay={1.6}
+      color="#fff1d6"
+    />
+  ))
+}
+
+// Catatan lampu umum (ambient/hemisphere/directional): TIDAK dipasang di sini.
+// Semuanya diatur di <Canvas> TownWalk (dulu hemisphere + directional terpasang
+// ganda: sekali di Canvas, sekali di sini).
+export default function HouseInteriorPantai({ doorsRef, selfRef }) {
   const { solidGeo, glassGeo } = useMemo(() => {
     const { solid, glass } = buildStaticBoxes()
     return { solidGeo: boxesToGeometry(solid), glassGeo: boxesToGeometry(glass.map((g) => ({ ...g, c: 0xa9cfdf }))) }
@@ -92,8 +171,7 @@ export default function HouseInteriorPantai({ doorsRef }) {
   return (
     <>
       <Surroundings />
-      <hemisphereLight args={['#dbeeff', '#d9cba7', 0.75]} />
-      <directionalLight position={[40, 70, -30]} intensity={1.1} />
+      <LightPool selfRef={selfRef} />
       {/* denah dalam koordinat denah, dicerminkan supaya kiri-kanan sama dengan gambar */}
       <group position={[PW, 0, 0]} scale={[-1, 1, 1]}>
         <mesh geometry={solidGeo}>
@@ -104,9 +182,6 @@ export default function HouseInteriorPantai({ doorsRef }) {
         </mesh>
         {DOORS.map((d) => (
           <Door key={d.id} def={d} doorsRef={doorsRef} />
-        ))}
-        {LIGHT_SPOTS.map(([lx, ly, lv]) => (
-          <pointLight key={`l-${lx}-${ly}-${lv}`} position={[lx, LEVEL_Y[lv] + 2.5, ly]} intensity={4} distance={9} decay={1.6} color="#fff1d6" />
         ))}
       </group>
     </>

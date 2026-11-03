@@ -912,7 +912,7 @@ function InteriorScenePantai({ character, inputRef, selfRef, net, onReady, equip
   const cam = useMemo(() => makeInteriorCam(world), [world])
   return (
     <>
-      <HouseInteriorPantai doorsRef={doorsRef} />
+      <HouseInteriorPantai doorsRef={doorsRef} selfRef={selfRef} />
       <WalkPlayer
         world={world}
         spawn={spawn}
@@ -1491,15 +1491,26 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
     <div className={`walk-root${rpCam ? ' is-rpcam' : ''}`}>
       <Canvas
         key={mapKey}
-        dpr={[1, 1.5]}
+        dpr={interiorOpen ? [1, 1.25] : [1, 1.5]}
         camera={{ fov: 55, near: 0.3, far: 4000 }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <color attach="background" args={[interior && !interiorOpen ? '#14161f' : sky.color]} />
-        {/* di dalam rumah lampu luar diredupkan; lampu ruangan ada di HouseInterior */}
+        {/* di dalam rumah lampu luar diredupkan; lampu ruangan ada di HouseInterior.
+            Interior pantai (interiorOpen): hemisphere + directional di sini menggantikan
+            dua lampu ganda yang dulu dipasang lagi di HouseInteriorPantai (intensitas
+            dijumlahkan: hemisphere 0.2 + 0.75, directional 0.35 + 1.1). Pakai props
+            (bukan args) supaya lampu diperbarui di tempat, tidak dibuat ulang. */}
         <ambientLight intensity={interior && !interiorOpen ? 0.25 : interiorOpen ? 0.3 : sky.ambient} />
-        <hemisphereLight args={[sky.hemi[0], sky.hemi[1], interior && !interiorOpen ? 0.2 : interiorOpen ? 0.2 : 0.55]} />
-        <directionalLight position={[80, 140, 60]} intensity={interior ? (interiorOpen ? 0.35 : 0.2) : sky.sun} />
+        <hemisphereLight
+          color={interiorOpen ? '#dbeeff' : sky.hemi[0]}
+          groundColor={interiorOpen ? '#d9cba7' : sky.hemi[1]}
+          intensity={interiorOpen ? 0.95 : interior ? 0.2 : 0.55}
+        />
+        <directionalLight
+          position={interiorOpen ? [40, 70, -30] : [80, 140, 60]}
+          intensity={interiorOpen ? 1.45 : interior ? 0.2 : sky.sun}
+        />
         <Suspense fallback={null}>
           {interior && interiorPlan === 'pantai' ? (
             <InteriorScenePantai
