@@ -19,7 +19,6 @@
 // Dipakai denah, pagar (tabrakan), model 3D, dan ukuran tapak rumah di tampak luar
 // (lib/pantaiHouses.js), jadi cukup ubah angka ini.
 export const BALKON_D = 2.1
-const BX = BALKON_D - 1.4 // tambahan kedalaman dari ukuran lama (dipakai menggeser furnitur balkon)
 
 const PLAN = {
   lot: { w: 17, d: 15, x0: -1, y0: -2 },          // lahan ~17 x 15 m; bangunan di (0,0)-(15,12)
@@ -59,45 +58,8 @@ const PLAN = {
         { id: 'kt1-tmr',     kind: 'window', o: 'v', at: 15, a: 0.8, b: 2.2, sill: 0.5, head: 2.4 },
         { id: 'tangga-w',    kind: 'window', o: 'v', at: 15, a: 5.3, b: 6.7, sill: 0.5, head: 2.7 },
       ],
-      furniture: [
-        // ruang tamu
-        { k: 'tvunit', x0: 0, y0: 2.0, x1: 0.45, y1: 5.0, h: 0.45 },
-        { k: 'tv', x0: 0.1, y0: 2.5, x1: 0.16, y1: 4.5, z: 0.9, h: 0.7 },
-        { k: 'rug', x0: 1.7, y0: 1.9, x1: 4.5, y1: 5.1, h: 0.01 },
-        { k: 'sofa', x0: 4.0, y0: 2.2, x1: 4.95, y1: 4.8, back: 'e' },
-        { k: 'chair', x0: 1.9, y0: 0.9, x1: 2.8, y1: 1.8, back: 'n' },
-        { k: 'chair', x0: 1.9, y0: 5.2, x1: 2.8, y1: 6.1, back: 's' },
-        { k: 'table', x0: 2.5, y0: 2.9, x1: 3.3, y1: 4.1, h: 0.4 },
-        { k: 'plant', x0: 0.1, y0: 0.1, x1: 0.7, y1: 0.7 },
-        { k: 'plant', x0: 0.1, y0: 6.2, x1: 0.7, y1: 6.8 },
-        { k: 'shelf', x0: 8.55, y0: 0.4, x1: 8.95, y1: 2.8, h: 2.0 },
-        // kamar tidur 1
-        { k: 'rug', x0: 10.8, y0: 2.2, x1: 13.8, y1: 4.9, h: 0.01 },
-        { k: 'bed', x0: 11.6, y0: 2.8, x1: 13.4, y1: 4.8, head: 's' },
-        { k: 'stand', x0: 11.2, y0: 4.3, x1: 11.6, y1: 4.7 },
-        { k: 'stand', x0: 13.4, y0: 4.3, x1: 13.8, y1: 4.7 },
-        { k: 'wardrobe', x0: 9.15, y0: 0.4, x1: 9.75, y1: 2.8, h: 2.1, door: 'e' },
-        { k: 'plant', x0: 14.3, y0: 4.3, x1: 14.9, y1: 4.9 },
-        // dapur
-        { k: 'counter', x0: 0, y0: 7.2, x1: 0.6, y1: 9.1, h: 0.9, hob: true },
-        { k: 'counter', x0: 0, y0: 9.9, x1: 0.6, y1: 11.4, h: 0.9 },
-        { k: 'counter', x0: 2.1, y0: 11.4, x1: 3.1, y1: 12.0, h: 0.9, sink: true },
-        { k: 'fridge', x0: 3.4, y0: 11.3, x1: 4.2, y1: 12.0, h: 1.8 },
-        { k: 'counter', x0: 1.8, y0: 9.1, x1: 3.6, y1: 9.8, h: 0.9 },
-        // ruang makan
-        { k: 'dtable', x0: 7.1, y0: 9.05, x1: 8.9, y1: 9.95 },
-        { k: 'dchair', x0: 7.3, y0: 8.55, x1: 7.75, y1: 9.0, back: 'n' },
-        { k: 'dchair', x0: 8.25, y0: 8.55, x1: 8.7, y1: 9.0, back: 'n' },
-        { k: 'dchair', x0: 7.3, y0: 10.0, x1: 7.75, y1: 10.45, back: 's' },
-        { k: 'dchair', x0: 8.25, y0: 10.0, x1: 8.7, y1: 10.45, back: 's' },
-        { k: 'dchair', x0: 6.55, y0: 9.25, x1: 7.0, y1: 9.75, back: 'w' },
-        { k: 'dchair', x0: 9.0, y0: 9.25, x1: 9.45, y1: 9.75, back: 'e' },
-        { k: 'plant', x0: 11.2, y0: 11.3, x1: 11.8, y1: 11.9 },
-        // kamar mandi
-        { k: 'vanity', x0: 14.4, y0: 8.8, x1: 15, y1: 9.6, h: 0.85 },
-        { k: 'toilet', x0: 14.2, y0: 10.2, x1: 15, y1: 10.8 },
-        { k: 'shower', x0: 12.1, y0: 10.9, x1: 13.1, y1: 12.0 },
-      ] },
+      // furnitur dikosongkan (isi rumah nanti dari gacha); tata letak lama ada di riwayat git
+      furniture: [] },
     { id: 2, name: 'Lantai 2',
       rooms: [
         { id: 'k2',    name: 'Kamar Tidur 2', type: 'bed',      x0: 0,    y0: 0, x1: 6.5,  y1: 5 },
@@ -132,46 +94,8 @@ const PLAN = {
         { id: 'void-w',     kind: 'window', o: 'v', at: 15, a: 5.3, b: 6.7, sill: 0.5, head: 2.7 },
         { id: 'korid-w',    kind: 'window', o: 'v', at: 0, a: 5.4, b: 6.6, sill: 1.2, head: 2.4 },
       ],
-      furniture: [
-        // kamar tidur 2
-        { k: 'rug', x0: 1.8, y0: 1.4, x1: 4.4, y1: 3.6, h: 0.01 },
-        { k: 'bed', x0: 0, y0: 1.6, x1: 2.0, y1: 3.4, head: 'w' },
-        { k: 'stand', x0: 0, y0: 1.1, x1: 0.4, y1: 1.5 },
-        { k: 'stand', x0: 0, y0: 3.5, x1: 0.4, y1: 3.9 },
-        { k: 'wardrobe', x0: 5.95, y0: 0.5, x1: 6.45, y1: 3.1, h: 2.2, door: 'w' },
-        // kamar tidur 3
-        { k: 'rug', x0: 10.6, y0: 1.4, x1: 13.2, y1: 3.6, h: 0.01 },
-        { k: 'bed', x0: 13, y0: 1.6, x1: 15, y1: 3.4, head: 'e' },
-        { k: 'stand', x0: 14.6, y0: 1.1, x1: 15, y1: 1.5 },
-        { k: 'stand', x0: 14.6, y0: 3.5, x1: 15, y1: 3.9 },
-        { k: 'wardrobe', x0: 8.55, y0: 0.5, x1: 9.05, y1: 3.1, h: 2.2, door: 'e' },
-        // koridor depan & koridor
-        { k: 'plant', x0: 7.2, y0: 3.5, x1: 7.8, y1: 4.1 },
-        { k: 'counter', x0: 1.0, y0: 6.5, x1: 3.0, y1: 7.0, h: 0.85 },
-        // kamar tidur 4
-        { k: 'rug', x0: 1.6, y0: 8.8, x1: 4.2, y1: 11.0, h: 0.01 },
-        { k: 'bed', x0: 4.5, y0: 9.1, x1: 6.5, y1: 10.9, head: 'e' },
-        { k: 'stand', x0: 6.1, y0: 8.6, x1: 6.5, y1: 9.0 },
-        { k: 'stand', x0: 6.1, y0: 11.0, x1: 6.5, y1: 11.4 },
-        { k: 'wardrobe', x0: 0.3, y0: 7.1, x1: 2.9, y1: 7.6, h: 2.2, door: 's' },
-        { k: 'desk', x0: 0, y0: 8.2, x1: 0.6, y1: 9.6 },
-        { k: 'dchair', x0: 0.7, y0: 8.6, x1: 1.15, y1: 9.05, back: 'e' },
-        // ruang santai
-        { k: 'shelf', x0: 6.55, y0: 8.0, x1: 6.95, y1: 10.6, h: 2.0 },
-        { k: 'rug', x0: 8.2, y0: 9.3, x1: 11.2, y1: 10.9, h: 0.01 },
-        { k: 'sofa', x0: 8.5, y0: 11.1, x1: 10.9, y1: 11.85, back: 's' },
-        { k: 'table', x0: 9.1, y0: 9.9, x1: 10.3, y1: 10.5, h: 0.4 },
-        { k: 'chair', x0: 12.9, y0: 9.0, x1: 13.6, y1: 9.8, back: 'e' },
-        { k: 'plant', x0: 14.2, y0: 11.2, x1: 14.8, y1: 11.8 },
-        // balkon (tetap menempel ke pagar: digeser sejauh tambahan kedalaman balkon,
-        // jadi di depan pintu geser ada ruang lewat yang lebih lega)
-        { k: 'chair', x0: 1.6, y0: -1.32 - BX, x1: 2.25, y1: -0.67 - BX, back: 'n' },
-        { k: 'table', x0: 2.35, y0: -1.2 - BX, x1: 2.9, y1: -0.65 - BX, h: 0.45 },
-        { k: 'chair', x0: 3.0, y0: -1.32 - BX, x1: 3.65, y1: -0.67 - BX, back: 'n' },
-        { k: 'chair', x0: 11.4, y0: -1.32 - BX, x1: 12.05, y1: -0.67 - BX, back: 'n' },
-        { k: 'table', x0: 12.15, y0: -1.2 - BX, x1: 12.7, y1: -0.65 - BX, h: 0.45 },
-        { k: 'chair', x0: 12.8, y0: -1.32 - BX, x1: 13.45, y1: -0.67 - BX, back: 'n' },
-      ] },
+      // furnitur dikosongkan (isi rumah nanti dari gacha); tata letak lama ada di riwayat git
+      furniture: [] },
   ],
 };
 
