@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import {
-  buildStaticBoxes, DOORS, doorPlacement, LIGHT_SPOTS, LEVEL_Y, PW, PD, mx,
+  buildStaticBoxes, DOORS, doorPlacement, PW, PD,
   roomAt, nearestDoor, inDoorway, distToExit, FRONT_DOOR, EXIT_RANGE,
 } from '../lib/houseInteriorPantai'
 import { boxesToGeometry } from '../lib/pantaiHouses'
@@ -118,52 +118,10 @@ function Surroundings() {
   )
 }
 
-// Lampu ruangan: dulu 10 pointLight tetap (tiap piksel menghitung semuanya).
-// Sekarang LIGHT_POOL lampu saja yang berpindah (meluncur halus) ke titik lampu
-// terdekat dari pemain. Titik lampu lebih jauh dari `distance` (9 m) memang
-// tidak menyumbang cahaya, jadi tampilannya hampir sama. Jumlah lampu TETAP,
-// jadi shader tidak dikompilasi ulang. Naikkan LIGHT_POOL kalau terasa gelap.
-const LIGHT_POOL = 4
-const LIGHT_UP = 2.5 // tinggi lampu dari lantai (m)
-function LightPool({ selfRef }) {
-  const refs = useRef([])
-  const started = useRef(false)
-  // titik lampu dalam koordinat DUNIA (denah dicerminkan: X = PW - x)
-  const spots = useMemo(() => LIGHT_SPOTS.map(([lx, ly, lv]) => new THREE.Vector3(mx(lx), LEVEL_Y[lv] + LIGHT_UP, ly)), [])
-  useFrame((_, delta) => {
-    const me = selfRef.current
-    if (!me || !me.ready) return
-    const px = me.x, py = me.y + 1.2, pz = me.z
-    const order = spots
-      .map((s, i) => [(s.x - px) ** 2 + (s.y - py) ** 2 + (s.z - pz) ** 2, i])
-      .sort((a, b) => a[0] - b[0])
-    const k = 1 - Math.exp(-10 * delta)
-    for (let n = 0; n < LIGHT_POOL; n++) {
-      const l = refs.current[n]
-      if (!l) continue
-      const target = spots[order[n][1]]
-      if (started.current) l.position.lerp(target, k)
-      else l.position.copy(target)
-    }
-    started.current = true
-  })
-  return Array.from({ length: LIGHT_POOL }, (_, n) => (
-    <pointLight
-      key={n}
-      ref={(el) => { refs.current[n] = el }}
-      position={spots[n].toArray()}
-      intensity={4}
-      distance={9}
-      decay={1.6}
-      color="#fff1d6"
-    />
-  ))
-}
-
-// Catatan lampu umum (ambient/hemisphere/directional): TIDAK dipasang di sini.
-// Semuanya diatur di <Canvas> TownWalk (dulu hemisphere + directional terpasang
-// ganda: sekali di Canvas, sekali di sini).
-export default function HouseInteriorPantai({ doorsRef, selfRef }) {
+// Pencahayaan interior TIDAK dipasang di sini dan tanpa lampu/titik lampu: cahaya
+// merata (ambient + hemisphere + directional) diatur di <Canvas> TownWalk lewat
+// PANTAI_INTERIOR_LIGHT. Tidak ada pointLight, jadi ringan dan tidak ada logika lampu.
+export default function HouseInteriorPantai({ doorsRef }) {
   const { solidGeo, glassGeo } = useMemo(() => {
     const { solid, glass } = buildStaticBoxes()
     return { solidGeo: boxesToGeometry(solid), glassGeo: boxesToGeometry(glass.map((g) => ({ ...g, c: 0xa9cfdf }))) }
@@ -171,7 +129,6 @@ export default function HouseInteriorPantai({ doorsRef, selfRef }) {
   return (
     <>
       <Surroundings />
-      <LightPool selfRef={selfRef} />
       {/* denah dalam koordinat denah, dicerminkan supaya kiri-kanan sama dengan gambar */}
       <group position={[PW, 0, 0]} scale={[-1, 1, 1]}>
         <mesh geometry={solidGeo}>

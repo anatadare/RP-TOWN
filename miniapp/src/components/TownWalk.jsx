@@ -157,6 +157,11 @@ const INTERIOR_CAM = { pitch: 0.2, dist: 3.2, minPitch: 0.03, maxPitch: 0.5, max
 
 const JOY_RADIUS = 54 // px, jarak geser maksimum knob joystick
 
+// Cahaya di dalam Rumah Pantai: merata, tanpa lampu (pointLight). Ambient berwarna
+// hangat menggantikan kehangatan lampu; hemisphere memberi gradasi atas-bawah supaya
+// bidang tidak datar. Naikkan `ambient`/`hemi` kalau terasa gelap, turunkan kalau terlalu terang.
+const PANTAI_INTERIOR_LIGHT = { ambient: 0.5, ambientColor: '#fff1d6', hemi: 1.35, sun: 1.45 }
+
 // Nama node bangunan bernomor ("TPX_Buildings_12") dari mesh itu atau induknya.
 function buildingKeyOf(obj) {
   for (let o = obj; o; o = o.parent) {
@@ -912,7 +917,7 @@ function InteriorScenePantai({ character, inputRef, selfRef, net, onReady, equip
   const cam = useMemo(() => makeInteriorCam(world), [world])
   return (
     <>
-      <HouseInteriorPantai doorsRef={doorsRef} selfRef={selfRef} />
+      <HouseInteriorPantai doorsRef={doorsRef} />
       <WalkPlayer
         world={world}
         spawn={spawn}
@@ -1497,19 +1502,21 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
       >
         <color attach="background" args={[interior && !interiorOpen ? '#14161f' : sky.color]} />
         {/* di dalam rumah lampu luar diredupkan; lampu ruangan ada di HouseInterior.
-            Interior pantai (interiorOpen): hemisphere + directional di sini menggantikan
-            dua lampu ganda yang dulu dipasang lagi di HouseInteriorPantai (intensitas
-            dijumlahkan: hemisphere 0.2 + 0.75, directional 0.35 + 1.1). Pakai props
-            (bukan args) supaya lampu diperbarui di tempat, tidak dibuat ulang. */}
-        <ambientLight intensity={interior && !interiorOpen ? 0.25 : interiorOpen ? 0.3 : sky.ambient} />
+            Interior pantai (interiorOpen): cahaya merata tanpa pointLight, lihat
+            PANTAI_INTERIOR_LIGHT. Pakai props (bukan args) supaya lampu diperbarui
+            di tempat, tidak dibuat ulang. */}
+        <ambientLight
+          color={interiorOpen ? PANTAI_INTERIOR_LIGHT.ambientColor : '#ffffff'}
+          intensity={interior && !interiorOpen ? 0.25 : interiorOpen ? PANTAI_INTERIOR_LIGHT.ambient : sky.ambient}
+        />
         <hemisphereLight
           color={interiorOpen ? '#dbeeff' : sky.hemi[0]}
           groundColor={interiorOpen ? '#d9cba7' : sky.hemi[1]}
-          intensity={interiorOpen ? 0.95 : interior ? 0.2 : 0.55}
+          intensity={interiorOpen ? PANTAI_INTERIOR_LIGHT.hemi : interior ? 0.2 : 0.55}
         />
         <directionalLight
           position={interiorOpen ? [40, 70, -30] : [80, 140, 60]}
-          intensity={interiorOpen ? 1.45 : interior ? 0.2 : sky.sun}
+          intensity={interiorOpen ? PANTAI_INTERIOR_LIGHT.sun : interior ? 0.2 : sky.sun}
         />
         <Suspense fallback={null}>
           {interior && interiorPlan === 'pantai' ? (

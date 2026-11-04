@@ -522,9 +522,4 @@ export function buildStaticBoxes(opts = {}) {
   return { solid, glass }
 }
 
-// Titik lampu (koordinat denah) per ruangan.
-export const LIGHT_SPOTS = [
-  [3.5, 3.5, 0], [7.5, 5.5, 0], [12, 2.5, 0], [2.5, 9.5, 0], [8.5, 9.5, 0], [13.5, 9.5, 0],
-  [3.2, 2.5, 1], [11.7, 2.5, 1], [3.2, 9.5, 1], [10.5, 9.5, 1],
-]
 export const PANTAI_STAIR_RISE = RISE
