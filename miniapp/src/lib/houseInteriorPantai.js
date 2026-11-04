@@ -58,8 +58,7 @@ const PLAN = {
         { id: 'kt1-tmr',     kind: 'window', o: 'v', at: 15, a: 0.8, b: 2.2, sill: 0.5, head: 2.4 },
         { id: 'tangga-w',    kind: 'window', o: 'v', at: 15, a: 5.3, b: 6.7, sill: 0.5, head: 2.7 },
       ],
-      // furnitur dikosongkan (isi rumah nanti dari gacha); tata letak lama ada di riwayat git
-      furniture: [] },
+    },
     { id: 2, name: 'Lantai 2',
       rooms: [
         { id: 'k2',    name: 'Kamar Tidur 2', type: 'bed',      x0: 0,    y0: 0, x1: 6.5,  y1: 5 },
@@ -94,8 +93,7 @@ const PLAN = {
         { id: 'void-w',     kind: 'window', o: 'v', at: 15, a: 5.3, b: 6.7, sill: 0.5, head: 2.7 },
         { id: 'korid-w',    kind: 'window', o: 'v', at: 0, a: 5.4, b: 6.6, sill: 1.2, head: 2.4 },
       ],
-      // furnitur dikosongkan (isi rumah nanti dari gacha); tata letak lama ada di riwayat git
-      furniture: [] },
+    },
   ],
 };
 
@@ -434,7 +432,7 @@ const FLOOR_COLOR = { living: C.tile, dining: C.tile, kitchen: C.tile, hall: C.t
 
 export function buildStaticBoxes(opts = {}) {
   // opts.exterior: cuma kulit luar rumah (dinding, jendela, pelat, balkon) buat
-  // dipasang di peta; tanpa furnitur, tangga, dan lantai tiap ruangan.
+  // dipasang di peta; tanpa tangga dan lantai tiap ruangan.
   const ext = !!opts.exterior
   const solid = [], glass = []
   const B = (list, x0, y0, h0, x1, y1, h1, c) => {
@@ -521,53 +519,6 @@ export function buildStaticBoxes(opts = {}) {
     for (let i = 1; i <= n; i += 2) S(sx.x0 + i * T - 0.02, sy0 - 0.02, i * RISE, sx.x0 + i * T + 0.02, sy0 + 0.02, i * RISE + 0.92, C.steel)
     for (let j = n + 2; j <= 2 * n + 1; j++) { const k = j - (n + 1); S(land - k * T, ny1 - 0.03, j * RISE + 0.9, land - (k - 1) * T, ny1 + 0.03, j * RISE + 0.96, C.oak) }
   }
-  // ---- furnitur ----
-  if (!ext) PLAN.floors.forEach((fl, li) => {
-    const z = LEVEL_Y[li]
-    for (const f of fl.furniture) {
-      const w = f.x1 - f.x0, d = f.y1 - f.y0, mxp = (f.x0 + f.x1) / 2, myp = (f.y0 + f.y1) / 2
-      const Bx = (x0, y0, h0, x1, y1, h1, c) => S(x0, y0, z + h0, x1, y1, z + h1, c)
-      // 'n' = sisi y kecil, 's' = sisi y besar, 'w' = x kecil, 'e' = x besar
-      const back = (side, th, h0, h1, c) => { if (side === 'e') Bx(f.x1 - th, f.y0, h0, f.x1, f.y1, h1, c); else if (side === 'w') Bx(f.x0, f.y0, h0, f.x0 + th, f.y1, h1, c); else if (side === 's') Bx(f.x0, f.y1 - th, h0, f.x1, f.y1, h1, c); else Bx(f.x0, f.y0, h0, f.x1, f.y0 + th, h1, c) }
-      switch (f.k) {
-        case 'rug': Bx(f.x0, f.y0, 0.005, f.x1, f.y1, 0.02, C.rug); break
-        case 'tvunit': Bx(f.x0, f.y0, 0.08, f.x1, f.y1, f.h, C.oak); Bx(f.x0 + 0.05, f.y0 + 0.05, 0, f.x1 - 0.05, f.y1 - 0.05, 0.08, C.black); break
-        case 'tv': Bx(f.x0, f.y0, f.z, f.x1, f.y1, f.z + f.h, C.black); break
-        case 'sofa': { Bx(f.x0, f.y0, 0.08, f.x1, f.y1, 0.42, C.fabric); back(f.back, 0.24, 0.08, 0.82, C.fabric)
-          if (f.back === 'e' || f.back === 'w') { Bx(f.x0, f.y0, 0.08, f.x1, f.y0 + 0.16, 0.62, C.fabric); Bx(f.x0, f.y1 - 0.16, 0.08, f.x1, f.y1, 0.62, C.fabric) }
-          else { Bx(f.x0, f.y0, 0.08, f.x0 + 0.16, f.y1, 0.62, C.fabric); Bx(f.x1 - 0.16, f.y0, 0.08, f.x1, f.y1, 0.62, C.fabric) }
-          break }
-        case 'chair': Bx(f.x0, f.y0, 0.08, f.x1, f.y1, 0.42, C.beige); back(f.back, 0.18, 0.08, 0.8, C.beige); break
-        case 'table': Bx(f.x0, f.y0, f.h - 0.05, f.x1, f.y1, f.h, C.oak); for (const [a, b] of [[f.x0 + 0.04, f.y0 + 0.04], [f.x1 - 0.08, f.y0 + 0.04], [f.x0 + 0.04, f.y1 - 0.08], [f.x1 - 0.08, f.y1 - 0.08]]) Bx(a, b, 0, a + 0.04, b + 0.04, f.h - 0.05, C.steel); break
-        case 'dtable': Bx(f.x0, f.y0, 0.7, f.x1, f.y1, 0.75, C.oak); for (const [a, b] of [[f.x0 + 0.1, f.y0 + 0.1], [f.x1 - 0.16, f.y0 + 0.1], [f.x0 + 0.1, f.y1 - 0.16], [f.x1 - 0.16, f.y1 - 0.16]]) Bx(a, b, 0, a + 0.06, b + 0.06, 0.7, C.steel); break
-        case 'dchair': Bx(f.x0, f.y0, 0.43, f.x1, f.y1, 0.47, C.oak); back(f.back, 0.04, 0.47, 0.9, C.oak); for (const [a, b] of [[f.x0, f.y0], [f.x1 - 0.04, f.y0], [f.x0, f.y1 - 0.04], [f.x1 - 0.04, f.y1 - 0.04]]) Bx(a, b, 0, a + 0.04, b + 0.04, 0.43, C.steel); break
-        case 'bed': { const horiz = f.head === 'w' || f.head === 'e'
-          Bx(f.x0, f.y0, 0, f.x1, f.y1, 0.28, C.oak); Bx(f.x0 + 0.03, f.y0 + 0.03, 0.28, f.x1 - 0.03, f.y1 - 0.03, 0.52, C.linen)
-          if (f.head === 'w') Bx(f.x0, f.y0 - 0.05, 0, f.x0 + 0.07, f.y1 + 0.05, 1.0, C.teak); else if (f.head === 'e') Bx(f.x1 - 0.07, f.y0 - 0.05, 0, f.x1, f.y1 + 0.05, 1.0, C.teak)
-          else if (f.head === 's') Bx(f.x0 - 0.05, f.y1 - 0.07, 0, f.x1 + 0.05, f.y1, 1.0, C.teak); else Bx(f.x0 - 0.05, f.y0, 0, f.x1 + 0.05, f.y0 + 0.07, 1.0, C.teak)
-          if (horiz) { const px = f.head === 'w' ? f.x0 + 0.12 : f.x1 - 0.52; Bx(px, f.y0 + 0.12, 0.52, px + 0.4, myp - 0.05, 0.64, C.white); Bx(px, myp + 0.05, 0.52, px + 0.4, f.y1 - 0.12, 0.64, C.white); const b0 = f.head === 'w' ? f.x0 + 0.8 : f.x0 - 0.02, b1 = f.head === 'w' ? f.x1 + 0.02 : f.x1 - 0.8; Bx(b0, f.y0 - 0.02, 0.5, b1, f.y1 + 0.02, 0.58, C.blanket) }
-          else { const py = f.head === 's' ? f.y1 - 0.52 : f.y0 + 0.12; Bx(f.x0 + 0.12, py, 0.52, mxp - 0.05, py + 0.4, 0.64, C.white); Bx(mxp + 0.05, py, 0.52, f.x1 - 0.12, py + 0.4, 0.64, C.white); const b0 = f.head === 's' ? f.y0 - 0.02 : f.y0 + 0.8, b1 = f.head === 's' ? f.y1 - 0.8 : f.y1 + 0.02; Bx(f.x0 - 0.02, b0, 0.5, f.x1 + 0.02, b1, 0.58, C.blanket) }
-          break }
-        case 'stand': Bx(f.x0, f.y0, 0.1, f.x1, f.y1, 0.48, C.oak); Bx(f.x0 + 0.05, f.y0 + 0.05, 0, f.x1 - 0.05, f.y1 - 0.05, 0.1, C.black); Bx(mxp - 0.05, myp - 0.05, 0.48, mxp + 0.05, myp + 0.05, 0.62, C.white); break
-        case 'wardrobe': Bx(f.x0, f.y0, 0, f.x1, f.y1, f.h, C.white); { const alongY = d > w; const n = Math.max(2, Math.round(Math.max(w, d) / 0.6))
-          for (let i = 0; i < n; i++) { const t0 = (i + 0.05) / n, t1 = (i + 0.95) / n
-            if (alongY) { const ya = f.y0 + d * t0, yb = f.y0 + d * t1, east = f.door === 'e'; Bx(east ? f.x1 : f.x0 - 0.012, ya, 0.05, east ? f.x1 + 0.012 : f.x0, yb, f.h - 0.05, C.oak) }
-            else { const xa = f.x0 + w * t0, xb = f.x0 + w * t1; if (f.door === 'n') Bx(xa, f.y0 - 0.012, 0.05, xb, f.y0, f.h - 0.05, C.oak); else Bx(xa, f.y1, 0.05, xb, f.y1 + 0.012, f.h - 0.05, C.oak) } } } break
-        case 'shelf': Bx(f.x0, f.y0, 0, f.x1, f.y1, f.h, C.oak); for (let i = 1; i < 5; i++) Bx(f.x0 + 0.04, f.y0 + 0.02, i * 0.4, f.x1, f.y1 - 0.02, i * 0.4 + 0.02, C.white); break
-        case 'desk': Bx(f.x0, f.y0, 0.72, f.x1, f.y1, 0.76, C.oak); for (const [a, b] of [[f.x0, f.y0], [f.x0, f.y1 - 0.05], [f.x1 - 0.05, f.y0], [f.x1 - 0.05, f.y1 - 0.05]]) Bx(a, b, 0, a + 0.05, b + 0.05, 0.72, C.steel); Bx(f.x0 + 0.02, myp - 0.2, 0.76, f.x0 + 0.1, myp + 0.2, 1.0, C.black); break
-        case 'counter': Bx(f.x0, f.y0, 0, f.x1, f.y1, f.h - 0.04, C.white); Bx(f.x0 - 0.01, f.y0 - 0.01, f.h - 0.04, f.x1 + 0.01, f.y1 + 0.01, f.h, C.charcoal)
-          if (f.hob) { for (const dy of [-0.35, 0.35]) Bx(mxp - 0.12, myp + dy - 0.12, f.h, mxp + 0.12, myp + dy + 0.12, f.h + 0.012, C.black); Bx(f.x0, f.y0, 1.75, f.x0 + 0.35, f.y1, 2.35, C.oak) }
-          if (f.sink) { Bx(f.x0 + 0.15, f.y0 + 0.12, f.h, f.x1 - 0.15, f.y1 - 0.12, f.h + 0.005, C.steelLight); Bx(mxp - 0.012, f.y1 - 0.09, f.h, mxp + 0.012, f.y1 - 0.06, f.h + 0.3, C.steelLight) }
-          break
-        case 'fridge': Bx(f.x0, f.y0, 0, f.x1, f.y1, f.h, C.fridge); Bx(f.x0 + 0.06, f.y0 - 0.02, 0.5, f.x0 + 0.1, f.y0, 1.5, C.steelLight); break
-        case 'vanity': Bx(f.x0, f.y0, 0, f.x1, f.y1, f.h - 0.04, C.oak); Bx(f.x0, f.y0, f.h - 0.04, f.x1, f.y1, f.h, C.porcelain); Bx(mxp - 0.18, myp - 0.22, f.h, mxp + 0.18, myp + 0.22, f.h + 0.02, C.white); Bx(f.x1 - 0.03, f.y0 + 0.05, 1.1, f.x1, f.y1 - 0.05, 1.9, C.steelLight); break
-        case 'toilet': Bx(f.x1 - 0.2, myp - 0.18, 0, f.x1, myp + 0.18, 0.8, C.porcelain); Bx(f.x1 - 0.7, myp - 0.2, 0, f.x1 - 0.2, myp + 0.2, 0.4, C.porcelain); break
-        case 'shower': Bx(f.x0, f.y0, 0, f.x1, f.y1, 0.03, C.tileDark); G(f.x0, f.y0, 0, f.x0 + 0.02, f.y1, 2.0); G(f.x0, f.y0, 0, f.x1, f.y0 + 0.02, 2.0); Bx(f.x1 - 0.3, f.y1 - 0.25, 2.0, f.x1 - 0.1, f.y1 - 0.05, 2.1, C.steelLight); break
-        case 'plant': Bx(mxp - 0.2, myp - 0.2, 0, mxp + 0.2, myp + 0.2, 0.4, C.pot); Bx(mxp - 0.3, myp - 0.3, 0.4, mxp + 0.3, myp + 0.3, 1.2, C.leaf); Bx(mxp - 0.18, myp - 0.18, 1.2, mxp + 0.18, myp + 0.18, 1.5, C.leaf); break
-      }
-    }
-  })
-  // glass shower/plant helper uses level z in 3D; shift glass boxes for level 2 handled below
   return { solid, glass }
 }
 

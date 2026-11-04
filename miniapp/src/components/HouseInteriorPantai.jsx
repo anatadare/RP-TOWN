@@ -10,7 +10,7 @@ import { boxesToGeometry } from '../lib/pantaiHouses'
 
 // Gambar interior "Rumah Pantai" 2 lantai (denah + fisika: lib/houseInteriorPantai.js).
 //
-// Semua kotak statis (lantai, dinding, tangga, furnitur) digabung jadi SATU mesh
+// Semua kotak statis (lantai, dinding, tangga) digabung jadi SATU mesh
 // ber-vertex-color supaya ringan di HP; kaca satu mesh transparan; daun pintu
 // kamar adalah mesh terpisah yang mengayun. Denah ditulis dalam koordinat denah,
 // jadi semuanya dibungkus grup yang dicerminkan (X = PW - x) -- alasannya ada di
