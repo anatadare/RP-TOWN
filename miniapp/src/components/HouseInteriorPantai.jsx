@@ -1,12 +1,12 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import {
-  buildStaticBoxes, DOORS, doorPlacement, PW, PD,
+  buildStaticBoxes, DOORS, doorPlacement, PW,
   roomAt, nearestDoor, inDoorway, distToExit, FRONT_DOOR, EXIT_RANGE,
 } from '../lib/houseInteriorPantai'
 import { boxesToGeometry } from '../lib/pantaiHouses'
+import { makeShading, bakeShading, averageShade } from '../lib/pantaiShading'
 
 // Gambar interior "Rumah Pantai" 2 lantai (denah + fisika: lib/houseInteriorPantai.js).
 //
@@ -15,6 +15,42 @@ import { boxesToGeometry } from '../lib/pantaiHouses'
 // kamar adalah mesh terpisah yang mengayun. Denah ditulis dalam koordinat denah,
 // jadi semuanya dibungkus grup yang dicerminkan (X = PW - x) -- alasannya ada di
 // komentar atas houseInteriorPantai.js.
+//
+// PENCAHAYAAN. Interior TIDAK memakai lampu scene. Peta asli ikut digambar di balik
+// jendela (PantaiMapBackdrop di TownWalk.jsx) dan lampu three.js berlaku untuk seluruh
+// scene, jadi kalau interior memakai lampu sendiri, petanya ikut terang/gelap salah.
+// Kecerahan interior dihitung sekali (lib/pantaiShading.js) ke warna vertex dan
+// digambar dengan MeshBasicMaterial -- hasilnya sama dengan lampu merata sebelumnya.
+// Ubah angka di INTERIOR_LIGHT kalau interior terasa terlalu terang/gelap.
+const INTERIOR_LIGHT = {
+  ambient: 0.5, ambientColor: '#fff1d6', // hangat
+  hemi: 1.35, hemiSky: '#dbeeff', hemiGround: '#d9cba7',
+  sun: 1.45, sunPos: [40, 70, -30],
+}
+const rgb = (hex) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b] }
+const SHADING = makeShading({
+  ambient: INTERIOR_LIGHT.ambient, ambientRGB: rgb(INTERIOR_LIGHT.ambientColor),
+  hemi: INTERIOR_LIGHT.hemi, skyRGB: rgb(INTERIOR_LIGHT.hemiSky), groundRGB: rgb(INTERIOR_LIGHT.hemiGround),
+  sun: INTERIOR_LIGHT.sun, sunPos: INTERIOR_LIGHT.sunPos,
+})
+// daun pintu & kenop: bukan bagian geometri gabungan, jadi pakai rata-rata sisi tegak
+const DOOR_SHADE = averageShade([[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]], SHADING)
+const shaded = (hex) => {
+  const c = new THREE.Color(hex)
+  c.r *= DOOR_SHADE[0]; c.g *= DOOR_SHADE[1]; c.b *= DOOR_SHADE[2]
+  return c
+}
+const C_DOOR = shaded('#b98e5c')
+const C_KNOB = shaded('#d9b44a')
+
+// geometri kotak -> warna vertex dikalikan kecerahan sesuai arah permukaannya
+function bakedGeometry(boxes) {
+  const g = boxesToGeometry(boxes)
+  const col = g.getAttribute('color')
+  bakeShading(col.array, g.getAttribute('normal').array, SHADING, true) // grup dicerminkan di x
+  col.needsUpdate = true
+  return g
+}
 
 // Pintu kamar: daun mengayun di engselnya. Status buka/tutup dibaca dari
 // doorsRef (diatur TownWalk), animasinya lewat useFrame tanpa re-render React.
@@ -33,12 +69,12 @@ function Door({ def, doorsRef }) {
       <group ref={pivot} rotation-y={place.closedRot}>
         <mesh position={[def.w / 2, 1.04, 0]} scale={[def.w - 0.06, 2.06, 0.05]}>
           <boxGeometry args={[1, 1, 1]} />
-          <meshStandardMaterial color="#b98e5c" roughness={0.65} />
+          <meshBasicMaterial color={C_DOOR} />
         </mesh>
         {[-1, 1].map((side) => (
           <mesh key={side} position={[def.w - 0.14, 1.0, side * 0.05]}>
             <sphereGeometry args={[0.04, 10, 10]} />
-            <meshStandardMaterial color="#d9b44a" metalness={0.6} roughness={0.35} />
+            <meshBasicMaterial color={C_KNOB} />
           </mesh>
         ))}
       </group>
@@ -46,96 +82,21 @@ function Door({ def, doorsRef }) {
   )
 }
 
-// Pemandangan di luar jendela tidak ikut lampu (MeshBasicMaterial). Pasir & laut
-// memenuhi layar lewat jendela, dan dulu tiap pikselnya menghitung SEMUA lampu
-// ruangan (PBR) -- penyebab utama framedrop di dalam rumah. Warnanya digelapkan
-// (UNLIT_K) kira-kira setara hasil pencahayaan lama; ubah UNLIT_K kalau terlalu
-// terang/gelap.
-const UNLIT_K = 0.8
-const unlit = (hex) => new THREE.Color(hex).multiplyScalar(UNLIT_K)
-const C_SAND = unlit('#dccfaa')
-const C_ROAD = unlit('#45474b')
-const C_WALK = unlit('#c4c1b9')
-const C_SEA = unlit('#2d8fa6')
-const C_TRUNK = unlit('#6b543a')
-const C_LEAF = unlit('#2f6b30')
-
-const PALMS = [[-3.5, -3.2, 6.2], [PW + 3.4, -3.6, 5.6], [-4.2, PD + 2.5, 6.8], [PW + 4.5, PD + 3.5, 6.0], [-9, 3, 7], [PW + 10, 4, 6.4]]
-
-// Semua pohon kelapa digabung jadi SATU geometri ber-vertex-color (1 draw call,
-// sebelumnya 6 pohon x 8 mesh = 48 draw call + 8 material).
-function buildPalmGeometry() {
-  const parts = []
-  const paint = (g, c) => {
-    const n = g.getAttribute('position').count
-    const col = new Float32Array(n * 3)
-    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3))
-    return g
-  }
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3(1, 1, 1)
-  for (const [x, z, h] of PALMS) {
-    parts.push(paint(new THREE.CylinderGeometry(0.1, 0.17, h, 6).translate(x, -0.4 + h / 2, z), C_TRUNK))
-    for (let k = 0; k < 7; k++) {
-      const a = (k / 7) * Math.PI * 2
-      e.set(0, -a, -0.45)
-      q.setFromEuler(e)
-      p.set(x + Math.cos(a) * 1.0, -0.4 + h - 0.1, z + Math.sin(a) * 1.0)
-      m.compose(p, q, s)
-      parts.push(paint(new THREE.BoxGeometry(2.4, 0.03, 0.4).applyMatrix4(m), C_LEAF))
-    }
-  }
-  const merged = mergeGeometries(parts)
-  parts.forEach((g) => g.dispose())
-  return merged
-}
-
-// Lingkungan di luar jendela: pasir, jalan, laut, beberapa pohon kelapa sederhana.
-function Surroundings() {
-  const palmGeo = useMemo(buildPalmGeometry, [])
-  return (
-    <>
-      <mesh rotation-x={-Math.PI / 2} position={[PW / 2, -0.42, PD / 2]}>
-        <planeGeometry args={[600, 600]} />
-        <meshBasicMaterial color={C_SAND} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position={[PW / 2, -0.41, -8]}>
-        <planeGeometry args={[600, 5.5]} />
-        <meshBasicMaterial color={C_ROAD} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position={[PW / 2, -0.4, -4]}>
-        <planeGeometry args={[600, 3]} />
-        <meshBasicMaterial color={C_WALK} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position={[PW / 2, -0.4, 330]}>
-        <planeGeometry args={[800, 600]} />
-        <meshBasicMaterial color={C_SEA} />
-      </mesh>
-      <mesh geometry={palmGeo}>
-        <meshBasicMaterial vertexColors />
-      </mesh>
-    </>
-  )
-}
-
-// Pencahayaan interior TIDAK dipasang di sini dan tanpa lampu/titik lampu: cahaya
-// merata (ambient + hemisphere + directional) diatur di <Canvas> TownWalk lewat
-// PANTAI_INTERIOR_LIGHT. Tidak ada pointLight, jadi ringan dan tidak ada logika lampu.
+// Hanya interiornya. Pemandangan di luar jendela adalah peta asli (PantaiMapBackdrop).
 export default function HouseInteriorPantai({ doorsRef }) {
   const { solidGeo, glassGeo } = useMemo(() => {
     const { solid, glass } = buildStaticBoxes()
-    return { solidGeo: boxesToGeometry(solid), glassGeo: boxesToGeometry(glass.map((g) => ({ ...g, c: 0xa9cfdf }))) }
+    return { solidGeo: bakedGeometry(solid), glassGeo: bakedGeometry(glass.map((g) => ({ ...g, c: 0xa9cfdf }))) }
   }, [])
   return (
     <>
-      <Surroundings />
       {/* denah dalam koordinat denah, dicerminkan supaya kiri-kanan sama dengan gambar */}
       <group position={[PW, 0, 0]} scale={[-1, 1, 1]}>
         <mesh geometry={solidGeo}>
-          <meshStandardMaterial vertexColors roughness={0.9} />
+          <meshBasicMaterial vertexColors />
         </mesh>
         <mesh geometry={glassGeo} renderOrder={2}>
-          <meshStandardMaterial vertexColors transparent opacity={0.28} roughness={0.05} depthWrite={false} side={THREE.DoubleSide} />
+          <meshBasicMaterial vertexColors transparent opacity={0.28} depthWrite={false} side={THREE.DoubleSide} />
         </mesh>
         {DOORS.map((d) => (
           <Door key={d.id} def={d} doorsRef={doorsRef} />

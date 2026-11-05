@@ -10,7 +10,7 @@ import { buildInteriorWorld, HOUSE } from '../lib/houseInterior'
 import { makeVisitBuilding, nearestVisitBuilding } from '../lib/houseVisit'
 import HouseInterior, { InteriorWatcher } from './HouseInterior'
 import HouseInteriorPantai, { PantaiInteriorWatcher } from './HouseInteriorPantai'
-import { buildPantaiInteriorWorld, makeInteriorCam } from '../lib/houseInteriorPantai'
+import { buildPantaiInteriorWorld, makeInteriorCam, PW, PD, BALKON_D } from '../lib/houseInteriorPantai'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
 import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, PHONE_GRIP_SHIFT, PHONE_BACK_SHIFT, applyPhonePose, alignPhoneUpright } from './PhonePose'
 import FoldablePhone from './FoldablePhone'
@@ -26,7 +26,7 @@ import GatchaReveal from './GatchaReveal'
 import PhoneOverlay from './phone/PhoneOverlay'
 import RpCameraHud, { RpCaptureBridge } from './RpCameraHud'
 import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/items'
-import { addPantaiHouses } from '../lib/pantaiHouses'
+import { addPantaiHouses, pantaiBackdropTransform } from '../lib/pantaiHouses'
 import {
   lockTelegramSwipe,
   unlockTelegramSwipe,
@@ -157,10 +157,11 @@ const INTERIOR_CAM = { pitch: 0.2, dist: 3.2, minPitch: 0.03, maxPitch: 0.5, max
 
 const JOY_RADIUS = 54 // px, jarak geser maksimum knob joystick
 
-// Cahaya di dalam Rumah Pantai: merata, tanpa lampu (pointLight). Ambient berwarna
-// hangat menggantikan kehangatan lampu; hemisphere memberi gradasi atas-bawah supaya
-// bidang tidak datar. Naikkan `ambient`/`hemi` kalau terasa gelap, turunkan kalau terlalu terang.
-const PANTAI_INTERIOR_LIGHT = { ambient: 0.5, ambientColor: '#fff1d6', hemi: 1.35, sun: 1.45 }
+// Di dalam Rumah Pantai, cahaya scene sama dengan mode luar (peta asli terlihat di
+// balik jendela, jadi harus ikut jam dunia). Interior sendiri tidak memakai lampu
+// scene (kecerahannya dipanggang, lihat HouseInteriorPantai.jsx). Ambient ditambah
+// sedikit supaya karakter tidak terlalu gelap di dalam rumah, terutama malam hari.
+const PANTAI_CHAR_BOOST = 0.25
 
 // Nama node bangunan bernomor ("TPX_Buildings_12") dari mesh itu atau induknya.
 function buildingKeyOf(obj) {
@@ -911,12 +912,13 @@ function InteriorScene({ character, inputRef, selfRef, net, onReady, equippedPho
 
 // Interior "Rumah Pantai" 2 lantai (peta Kawasan Pantai). Fisika & denahnya di
 // lib/houseInteriorPantai.js, gambarnya di HouseInteriorPantai.jsx.
-function InteriorScenePantai({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo, doorsRef }) {
+function InteriorScenePantai({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo, doorsRef, modelUrl, houseNumber, sky }) {
   const world = useMemo(() => buildPantaiInteriorWorld({ isDoorOpen: (id) => !!doorsRef.current[id] }), [doorsRef])
   const spawn = useMemo(() => world.findSpawn(), [world])
   const cam = useMemo(() => makeInteriorCam(world), [world])
   return (
     <>
+      <PantaiMapBackdrop modelUrl={modelUrl} houseNumber={houseNumber} sky={sky} />
       <HouseInteriorPantai doorsRef={doorsRef} />
       <WalkPlayer
         world={world}
@@ -937,25 +939,22 @@ function InteriorScenePantai({ character, inputRef, selfRef, net, onReady, equip
   )
 }
 
-function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT, enterable, enterableNumbers, onNearHouse, spawnOverride }) {
-  const { scene } = useGLTF(modelUrl)
-  const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
+// Tampilan peta tanpa kabut & pemain: salinan scene, tanah buatan, laut, billboard.
+// Dipakai WalkScene (mode luar) dan PantaiMapBackdrop (di balik jendela interior).
+function mapSpan(world) {
+  return Math.max(world.bounds.maxX - world.bounds.minX, world.bounds.maxZ - world.bounds.minZ)
+}
+
+function MapVisuals({ cached, clip }) {
   const { built, world } = cached
-  // Bangunan yang boleh dimasuki (kalau peta membatasi nomornya, lihat maps.js)
-  const visitBuildings = useMemo(
-    () => (enterableNumbers ? built.data.visit.filter((b) => enterableNumbers.includes(b.number)) : built.data.visit),
-    [built, enterableNumbers]
-  )
   // Billboard kecil peta ini (posisi x/z diatur di lib/maps.js).
-  const billboardDefs = cached.defs
-  const spawn = useMemo(() => spawnOverride || world.findSpawn(), [world, spawnOverride])
   // Tinggi tanah di kaki tiap billboard (kalau di luar daratan -> dilewati).
   const billboards = useMemo(
     () =>
-      billboardDefs
+      cached.defs
         .map((b) => ({ ...b, y: world.groundY(b.x, b.z, Infinity) }))
         .filter((b) => b.y !== null),
-    [billboardDefs, world]
+    [cached, world]
   )
 
   const groundGeo = useMemo(() => {
@@ -967,13 +966,15 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, 
     return g
   }, [world])
 
-  const span = Math.max(world.bounds.maxX - world.bounds.minX, world.bounds.maxZ - world.bounds.minZ)
+  const span = mapSpan(world)
   const cx = (world.bounds.minX + world.bounds.maxX) / 2
   const cz = (world.bounds.minZ + world.bounds.maxZ) / 2
+  // (hanya diisi di latar interior) potong tanah & laut di kolom tapak rumah. Jangan kirim
+  // clippingPlanes={undefined}: three.js mengharapkan null/array.
+  const clipProps = clip ? { clippingPlanes: clip, clipIntersection: true } : {}
 
   return (
     <>
-      <fog attach="fog" args={[sky.color, 110, Math.max(520, span * 1.3)]} />
       <primitive object={built.root} />
       <mesh geometry={groundGeo}>
         <meshStandardMaterial
@@ -984,16 +985,37 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, 
           polygonOffset
           polygonOffsetFactor={2}
           polygonOffsetUnits={2}
+          {...clipProps}
         />
       </mesh>
       {/* laut sampai cakrawala, sedikit di bawah mesh Waterways */}
       <mesh rotation-x={-Math.PI / 2} position={[cx, world.waterLevel - 0.12, cz]}>
         <planeGeometry args={[span * 10, span * 10]} />
-        <meshBasicMaterial color="#2b86c9" />
+        <meshBasicMaterial color="#2b86c9" {...clipProps} />
       </mesh>
       {billboards.map((b) => (
         <WalkBillboard key={`${b.x},${b.z}`} x={b.x} y={b.y} z={b.z} imageUrl={b.imageUrl ?? null} />
       ))}
+    </>
+  )
+}
+
+function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT, enterable, enterableNumbers, onNearHouse, spawnOverride }) {
+  const { scene } = useGLTF(modelUrl)
+  const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
+  const { built, world } = cached
+  // Bangunan yang boleh dimasuki (kalau peta membatasi nomornya, lihat maps.js)
+  const visitBuildings = useMemo(
+    () => (enterableNumbers ? built.data.visit.filter((b) => enterableNumbers.includes(b.number)) : built.data.visit),
+    [built, enterableNumbers]
+  )
+  const spawn = useMemo(() => spawnOverride || world.findSpawn(), [world, spawnOverride])
+  const span = mapSpan(world)
+
+  return (
+    <>
+      <fog attach="fog" args={[sky.color, 110, Math.max(520, span * 1.3)]} />
+      <MapVisuals cached={cached} />
       <WalkPlayer
         world={world}
         spawn={spawn}
@@ -1008,6 +1030,99 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, 
       />
       <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
       {enterable && <NearHouseWatcher buildings={visitBuildings} selfRef={selfRef} onNear={onNearHouse} />}
+    </>
+  )
+}
+
+// Latar interior Rumah Pantai: PETA ASLI di balik jendela (bukan pemandangan buatan).
+// Peta dari cache yang sama dengan mode luar (tidak dibangun ulang), lalu digeser/diputar
+// supaya rumah yang dimasuki pas menumpuk di interior (lihat pantaiBackdropTransform).
+// Interior & fisikanya tidak berubah. Cangkang rumah luar disembunyikan selama kita di
+// dalamnya karena interior menggantikannya; rumah tetangga tetap terlihat.
+const BACKDROP_SUN = [80, 140, 60] // arah matahari di dunia peta (sama dengan mode luar)
+
+// Kolom tapak badan rumah di koordinat interior (x 0..PW, z 0..PD). Di dalam kolom ini
+// tanah buatan, air, dan laut dipotong, karena interior menggantikannya: di rumah yang
+// tidak punya data tanah (45-47) bidang air/tanah bisa lebih tinggi dari lantai interior
+// dan menutupinya. Bidang sisi NEGATIF = bagian dalam kotak; dengan clipIntersection
+// hanya fragmen yang ada di dalam keempatnya yang dibuang.
+const FOOT = { x0: -0.25, x1: PW + 0.25, z0: -0.25, z1: PD + 0.25 }
+function makeFootprintPlanes() {
+  return [
+    new THREE.Plane(new THREE.Vector3(1, 0, 0), -FOOT.x1),
+    new THREE.Plane(new THREE.Vector3(-1, 0, 0), FOOT.x0),
+    new THREE.Plane(new THREE.Vector3(0, 0, 1), -FOOT.z1),
+    new THREE.Plane(new THREE.Vector3(0, 0, -1), FOOT.z0),
+  ]
+}
+// Pohon yang tajuk/batangnya menimpa rumah (tapak + balkon + 0.5 m) disembunyikan selama
+// kita di dalamnya; rumah baru jauh lebih besar dari petak rumah lama, jadi di 18 dari 21
+// rumah ada pohon yang tumbuh di dalam ruangan.
+const TREE_ZONE = new THREE.Box3(
+  new THREE.Vector3(-0.5, -1e4, -BALKON_D - 0.5),
+  new THREE.Vector3(PW + 0.5, 1e4, PD + 0.5),
+)
+
+function PantaiMapBackdrop({ modelUrl, houseNumber, sky }) {
+  const { scene } = useGLTF(modelUrl)
+  const gl = useThree((state) => state.gl)
+  const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
+  const { built, world } = cached
+  const place = useMemo(() => pantaiBackdropTransform(built.root, houseNumber), [built, houseNumber])
+  const planes = useMemo(makeFootprintPlanes, [])
+
+  // Semua perubahan pada peta bersama (scene cache dipakai juga mode luar) dicatat dan
+  // dikembalikan saat keluar rumah.
+  useEffect(() => {
+    if (!place) return undefined
+    const root = built.root
+    root.updateWorldMatrix(true, true) // sekarang di bawah grup latar -> koordinat interior
+    const hidden = []
+    const hide = (o) => { if (o.visible) { o.visible = false; hidden.push(o) } }
+
+    // cangkang rumah luar diganti interior; rumah tetangga tetap terlihat
+    for (const n of [`PantaiRumah_${houseNumber}`, `PantaiKaca_${houseNumber}`]) {
+      const o = root.getObjectByName(n)
+      if (o) hide(o)
+    }
+
+    // pohon yang menimpa rumah (1 pohon = 1 grup berisi batang + tajuk)
+    const box = new THREE.Box3()
+    root.traverse((o) => {
+      if (!o.isMesh || !o.geometry || groupOf(o) !== 'TPX_Trees') return
+      box.setFromObject(o)
+      if (box.intersectsBox(TREE_ZONE)) hide(/^TPX_Trees_tree/.test(o.parent?.name || '') ? o.parent : o)
+    })
+
+    // air (satu material bersama) dipotong di kolom tapak
+    const waterMats = new Set()
+    root.traverse((o) => { if (o.isMesh && groupOf(o) === 'TPX_Waterways') waterMats.add(o.material) })
+    waterMats.forEach((m) => { m.clippingPlanes = planes; m.clipIntersection = true; m.needsUpdate = true })
+    const prevLocal = gl.localClippingEnabled
+    gl.localClippingEnabled = true
+
+    return () => {
+      hidden.forEach((o) => { o.visible = true })
+      waterMats.forEach((m) => { m.clippingPlanes = null; m.clipIntersection = false; m.needsUpdate = true })
+      gl.localClippingEnabled = prevLocal
+    }
+  }, [built, houseNumber, place, planes, gl])
+
+  // matahari ikut diputar seperti petanya, jadi sisi bangunan yang terang sama dengan di luar
+  const sun = useMemo(
+    () => (place ? new THREE.Vector3(...BACKDROP_SUN).applyQuaternion(new THREE.Quaternion(...place.quaternion)).toArray() : BACKDROP_SUN),
+    [place]
+  )
+
+  return (
+    <>
+      <fog attach="fog" args={[sky.color, 110, Math.max(520, mapSpan(world) * 1.3)]} />
+      <directionalLight position={sun} intensity={sky.sun} />
+      {place && (
+        <group position={place.position} quaternion={place.quaternion} scale={place.scale}>
+          <MapVisuals cached={cached} clip={planes} />
+        </group>
+      )}
     </>
   )
 }
@@ -1501,27 +1616,21 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <color attach="background" args={[interior && !interiorOpen ? '#14161f' : sky.color]} />
-        {/* di dalam rumah lampu luar diredupkan; lampu ruangan ada di HouseInterior.
-            Interior pantai (interiorOpen): cahaya merata tanpa pointLight, lihat
-            PANTAI_INTERIOR_LIGHT. Pakai props (bukan args) supaya lampu diperbarui
-            di tempat, tidak dibuat ulang. */}
-        <ambientLight
-          color={interiorOpen ? PANTAI_INTERIOR_LIGHT.ambientColor : '#ffffff'}
-          intensity={interior && !interiorOpen ? 0.25 : interiorOpen ? PANTAI_INTERIOR_LIGHT.ambient : sky.ambient}
-        />
-        <hemisphereLight
-          color={interiorOpen ? '#dbeeff' : sky.hemi[0]}
-          groundColor={interiorOpen ? '#d9cba7' : sky.hemi[1]}
-          intensity={interiorOpen ? PANTAI_INTERIOR_LIGHT.hemi : interior ? 0.2 : 0.55}
-        />
-        <directionalLight
-          position={interiorOpen ? [40, 70, -30] : [80, 140, 60]}
-          intensity={interiorOpen ? PANTAI_INTERIOR_LIGHT.sun : interior ? 0.2 : sky.sun}
-        />
+        {/* di dalam rumah (bukan Rumah Pantai) lampu luar diredupkan; lampu ruangan ada di
+            HouseInterior. Rumah Pantai (interiorOpen): peta asli terlihat di balik jendela,
+            jadi cahaya scene = cahaya mode luar (+ sedikit ambient buat karakter); matahari
+            dipasang oleh PantaiMapBackdrop supaya ikut arah petanya. Interior sendiri tidak
+            memakai lampu scene. */}
+        <ambientLight intensity={interior && !interiorOpen ? 0.25 : sky.ambient + (interiorOpen ? PANTAI_CHAR_BOOST : 0)} />
+        <hemisphereLight args={[sky.hemi[0], sky.hemi[1], interior && !interiorOpen ? 0.2 : 0.55]} />
+        {!interiorOpen && <directionalLight position={[80, 140, 60]} intensity={interior ? 0.2 : sky.sun} />}
         <Suspense fallback={null}>
           {interior && interiorPlan === 'pantai' ? (
             <InteriorScenePantai
               key={`in-${interior.key}`}
+              modelUrl={modelUrl}
+              houseNumber={interior.number}
+              sky={sky}
               character={character}
               inputRef={inputRef}
               selfRef={selfRef}

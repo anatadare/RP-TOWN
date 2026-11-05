@@ -364,3 +364,41 @@ export function addPantaiHouses(scene) {
   scene.userData.pantaiHouses = true
   scene.userData.pantaiScales = Object.fromEntries(infos.map((h) => [h.num, +h.k.toFixed(2)]))
 }
+
+// Penyejajaran peta asli ke interior (dipakai PantaiMapBackdrop di TownWalk.jsx).
+//
+// Interior digambar & difisikakan di koordinat sendiri (titik asal di pojok denah),
+// bukan di lokasi rumah di peta. Daripada memindah interior (fisikanya harus ikut
+// berubah), PETAnya yang digeser/diputar/diskalakan supaya rumah yang dimasuki pas
+// menumpuk di interior. Hasilnya: jendela interior melihat peta yang sebenarnya,
+// lengkap dengan rumah-rumah tetangga.
+//
+// Dua koordinat yang dipakai (keduanya Y-atas):
+//   model    : (x denah, tinggi, y denah)          -- tempat kotak rumah dibangun
+//   interior : (PW - x denah, tinggi, y denah)     -- interior dicerminkan di sumbu x
+// Cangkang rumah di peta (PantaiRumah_N) ada di grup `mirror`; matriks lokal
+// rantai induknya (mirror -> tilt -> house -> PantaiHouses -> root) membawa
+// koordinat model ke koordinat dunia peta. Jadi:
+//   interior -> model -> dunia peta   =   (rantai) * F          (F = cermin x: PW - x)
+//   dunia peta -> interior (yang kita mau)  =  kebalikannya.
+//
+// Rantai dihitung dari matriks LOKAL (bukan matrixWorld) karena scene ini dipakai
+// bergantian oleh mode luar dan mode dalam, jadi matrixWorld-nya bisa basi.
+//
+// Hasil: { position, quaternion, scale } buat <group> yang membungkus peta, atau
+// null kalau rumah N tidak punya cangkang (bukan salah satu rumah pantai baru).
+export function pantaiBackdropTransform(root, number) {
+  const shell = root.getObjectByName(`PantaiRumah_${number}`)
+  if (!shell || !shell.parent) return null
+  const chain = new THREE.Matrix4()
+  for (let o = shell.parent; o; o = o.parent) {
+    o.updateMatrix()
+    chain.premultiply(o.matrix)
+    if (o === root) break
+  }
+  const F = new THREE.Matrix4().makeTranslation(PW, 0, 0).multiply(new THREE.Matrix4().makeScale(-1, 1, 1))
+  const G = chain.multiply(F).invert()
+  const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3()
+  G.decompose(p, q, s)
+  return { position: p.toArray(), quaternion: q.toArray(), scale: s.toArray() }
+}
