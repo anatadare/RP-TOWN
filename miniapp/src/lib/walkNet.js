@@ -33,7 +33,10 @@ function toWsUrl(httpUrl) {
 // status: 'connecting' | 'online' | 'offline' (lagi coba nyambung ulang)
 //         | 'unavailable' (gak ada worker/Telegram, atau gagal terus)
 //         | 'replaced' (akun yang sama dibuka di perangkat lain) | 'full'
-export function useWalkNet({ mapKey, characterId, selfRef }) {
+// doorRt (opsional): ref `{ current: { open: Map<nomorRumah, boolean> } }` milik pemanggil.
+// Status pintu rumah yang dibuka-tutup pemain lain (relay server) ditulis ke `doorRt.current.open`;
+// `sendDoor(nomor, terbuka)` mengabari pemain lain saat kita membuka/menutup pintu.
+export function useWalkNet({ mapKey, characterId, selfRef, doorRt }) {
   const peersRef = useRef(new Map())
   const [peerIds, setPeerIds] = useState([])
   const [status, setStatus] = useState('connecting')
@@ -109,6 +112,12 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
             selfIdRef.current = String(msg.you)
             setSelfId(String(msg.you))
           }
+          // pintu yang sedang terbuka di room ini (snapshot penuh: yang gak ada = tertutup)
+          if (doorRt?.current && Array.isArray(msg.doors)) {
+            const open = doorRt.current.open
+            open.clear()
+            for (const n of msg.doors) if (Number.isInteger(n)) open.set(n, true)
+          }
           setStatus('online')
           publishIds()
         } else if (msg.t === 'join') {
@@ -125,6 +134,8 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
           peer.seen = now
         } else if (msg.t === 'leave') {
           if (peers.delete(msg.i)) publishIds()
+        } else if (msg.t === 'd') {
+          if (doorRt?.current && Number.isInteger(msg.n)) doorRt.current.open.set(msg.n, !!msg.o)
         } else if (msg.t === 'm') {
           if (typeof msg.x !== 'string' || !msg.k) return
           bubblesRef.current.set(String(msg.i), { x: msg.x, ts: performance.now(), k: msg.k })
@@ -236,7 +247,7 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
       }
       peers.clear()
     }
-  }, [mapKey, characterId, selfRef])
+  }, [mapKey, characterId, selfRef, doorRt])
 
   // Kirim chat. reply = { i, n, x } (pesan yang di-reply), mentions = [id].
   // Return true kalau terkirim (socket lagi nyambung).
@@ -251,5 +262,14 @@ export function useWalkNet({ mapKey, characterId, selfRef }) {
     return true
   }, [])
 
-  return { peersRef, peerIds, status, messages, selfId, selfIdRef, bubblesRef, sendChat }
+  // Kabari pemain lain: pintu rumah `num` sekarang terbuka (true) / tertutup (false).
+  // Return true kalau terkirim. Gagal kirim gak masalah: pintu tetap berfungsi di layar sendiri.
+  const sendDoor = useCallback((num, open) => {
+    const sock = wsRef.current
+    if (!Number.isInteger(num) || !sock || sock.readyState !== 1) return false
+    sock.send(JSON.stringify({ t: 'd', n: num, o: open ? 1 : 0 }))
+    return true
+  }, [])
+
+  return { peersRef, peerIds, status, messages, selfId, selfIdRef, bubblesRef, sendChat, sendDoor }
 }

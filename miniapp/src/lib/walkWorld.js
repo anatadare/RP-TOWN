@@ -133,13 +133,16 @@ function smoothstep(t) {
 //            Sama seperti batang pohon (jadi penghalang tabrakan), tapi TIDAK
 //            dipakai sebagai jangkar ketinggian tanah.
 //   cell   : ukuran sel grid tanah pengisi (meter)
+//   doors  : (opsional) pintu yang bisa dibuka-tutup: [{ x1, z1, x2, z2, y1, y2 }] = ruas
+//     daun pintu saat TERTUTUP (koordinat dunia). Jadi tembok biasa, tapi bisa dimatikan
+//     lewat world.setDoorOpen(index, true) (pintu terbuka = bisa dilewati).
 //   landExpand: (opsional, meter, default 0) perluas daratan sejauh ini ke
 //     arah laut di luar garis pantai lama (morfologi dilasi: cincin daratan
 //     baru mengikuti garis pantai). Dipakai LPM (lihat maps.js) supaya pulau
 //     lebih besar. Daratan baru: tanah visual + bisa dipijak, tepi melandai
 //     ke air seperti pantai (lihat BEACH_WIDTH di bawah).
 // ---------------------------------------------------------------------------
-export function buildWalkWorld({ water, green, roads, buildings, trunks = [], props = [], floors = new Float32Array(0), cell = 2, landExpand = 0 }) {
+export function buildWalkWorld({ water, green, roads, buildings, trunks = [], props = [], floors = new Float32Array(0), cell = 2, landExpand = 0, doors = [] }) {
   // ---- jalan diangkat sedikit --------------------------------------------
   const roadTris = new Float32Array(roads)
   for (let i = 1; i < roadTris.length; i += 3) roadTris[i] += ROAD_LIFT
@@ -271,7 +274,17 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], pr
   // bangunan dan membentuk bukit/piramida seperti pada screenshot.
   // Ketinggian tanah cukup diambil dari mesh hijau + jalan + batang pohon.
   // Bangunan tetap dipakai di bawah sebagai collision wall.
-  const walls = extractWalls(buildings)
+  const baseWalls = extractWalls(buildings)
+  const walls = appendDoorWalls(baseWalls, doors)
+  const doorY = doors.map((d) => [d.y1, d.y2])
+  // pintu terbuka: rentang tingginya dibuang jauh di bawah kaki, jadi dilewati
+  // resolveWalls / castWalls2D; tertutup: rentang aslinya dipulihkan.
+  function setDoorOpen(i, open) {
+    const id = baseWalls.count + i
+    if (i < 0 || i >= doors.length) return
+    walls.y1[id] = open ? -1e9 : doorY[i][0]
+    walls.y2[id] = open ? -1e9 : doorY[i][1]
+  }
   for (const t of trunks) addAnchor(t.x, t.z, t.y0 + TREE_SINK)
 
   const aHash = new Map()
@@ -665,8 +678,36 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], pr
     clearanceAt,
     insideBuilding,
     findSpawn,
+    setDoorOpen,
     isWaterXZ: (x, z) => hasWater && waterHash.containsXZ(x, z) && !landNodeAt(x, z),
   }
+}
+
+// Tambahkan ruas daun pintu (tertutup) ke akhir daftar tembok. Indeks pintu ke-i
+// = baseWalls.count + i (dipakai setDoorOpen).
+function appendDoorWalls(base, doors) {
+  if (!doors.length) return base
+  const count = base.count + doors.length
+  const out = {
+    count,
+    x1: new Float32Array(count),
+    z1: new Float32Array(count),
+    x2: new Float32Array(count),
+    z2: new Float32Array(count),
+    y1: new Float32Array(count),
+    y2: new Float32Array(count),
+  }
+  for (const k of ['x1', 'z1', 'x2', 'z2', 'y1', 'y2']) out[k].set(base[k])
+  doors.forEach((d, i) => {
+    const s = base.count + i
+    out.x1[s] = d.x1
+    out.z1[s] = d.z1
+    out.x2[s] = d.x2
+    out.z2[s] = d.z2
+    out.y1[s] = d.y1
+    out.y2[s] = d.y2
+  })
+  return out
 }
 
 // ---------------------------------------------------------------------------

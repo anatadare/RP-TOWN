@@ -27,6 +27,15 @@
 //                      { t:'s', i, x, y, z, r, a }
 //                      { t:'leave', i }
 //
+// Pintu rumah (rumah panggung laut Kawasan Pantai, dst.): status buka/tutup disinkronkan
+// lewat room yang sama.
+//   client -> server : { t:'d', n, o }               n = nomor rumah, o = 1 terbuka / 0 tertutup
+//   server -> client : { t:'d', n, o, i }            (ke semua KECUALI pengirim; i = id pengirim)
+//                      snapshot juga memuat `doors:[nomor, ...]` = pintu yang lagi terbuka
+// Status pintu cuma di memori (hilang kalau room kosong). KUNCI pintu TIDAK lewat sini: itu
+// disimpan di database & diubah lewat POST /api/house-door (lihat houseDoor.js) -- klien
+// yang melihat pintu terkunci mengabaikan status "terbuka" dari sini.
+//
 // Chat global room (1 per peta, sama kayak room jalan-jalan):
 //   client -> server : { t:'m', x:'teks', r:{i,n,x}?, mt:[id,...]? }
 //                      x = isi (maks 200 huruf), r = pesan yang di-reply
@@ -53,6 +62,8 @@ const MAX_CHAT_PACKET = 1200 // paket chat (JSON mentah) lebih besar dari paket 
 const MAX_CHAT_CHARS = 200
 const MAX_REPLY_CHARS = 80
 const MAX_MENTIONS = 5
+const MIN_DOOR_INTERVAL_MS = 250 // anti-spam buka-tutup pintu
+const MAX_DOOR_NUMBER = 9999
 const MIN_CHAT_INTERVAL_MS = 800 // anti-spam
 const MIN_STATE_INTERVAL_MS = 60 // update lebih rapat dari ini dibuang
 const STALE_AFTER_MS = 90 * 1000 // gak ada kabar segini lama = dianggap hilang
@@ -121,6 +132,7 @@ export class WalkRoom extends DurableObject {
     this.players = new Map() // id -> { i, n, c, x, y, z, r, a, hasPos, seen, lastMsg, lastSave }
     this.sockets = new Map() // id -> WebSocket
     this.lastPrune = 0
+    this.doors = new Set() // nomor rumah yang pintunya lagi terbuka
 
     // Bangun ulang dari WebSocket yang masih nyambung setelah DO bangun dari hibernasi.
     for (const ws of ctx.getWebSockets()) {
@@ -173,7 +185,7 @@ export class WalkRoom extends DurableObject {
     for (const p of this.players.values()) {
       if (p.i !== id && p.hasPos) peers.push(this.publicState(p))
     }
-    server.send(JSON.stringify({ t: 'snap', you: id, peers }))
+    server.send(JSON.stringify({ t: 'snap', you: id, peers, doors: [...this.doors] }))
 
     return new Response(null, { status: 101, webSocket: client })
   }
@@ -206,6 +218,7 @@ export class WalkRoom extends DurableObject {
     }
     if (!msg) return
     if (msg.t === 'm') return this.handleChat(ws, msg)
+    if (msg.t === 'd') return this.handleDoor(ws, msg, message.length)
     if (msg.t !== 's' || message.length > MAX_MESSAGE_BYTES) return
 
     const at = ws.deserializeAttachment()
@@ -289,6 +302,26 @@ export class WalkRoom extends DurableObject {
     this.pruneStale(now)
   }
 
+  // Buka/tutup pintu rumah: dicatat & disebar ke pemain lain. Nomor harus bilangan bulat
+  // wajar, dan satu pemain dibatasi MIN_DOOR_INTERVAL_MS antar-aksi.
+  handleDoor(ws, msg, size) {
+    if (size > MAX_MESSAGE_BYTES) return
+    const at = ws.deserializeAttachment()
+    const p = at && this.players.get(at.i)
+    if (!p || this.sockets.get(p.i) !== ws) return
+    const n = msg.n
+    if (!Number.isInteger(n) || n < 1 || n > MAX_DOOR_NUMBER) return
+    const now = Date.now()
+    if (now - (p.lastDoor || 0) < MIN_DOOR_INTERVAL_MS) return
+    p.lastDoor = now
+    p.seen = now
+    const open = msg.o === 1 || msg.o === true
+    if (open) this.doors.add(n)
+    else this.doors.delete(n)
+    this.broadcast({ t: 'd', n, o: open ? 1 : 0, i: p.i }, ws)
+    this.pruneStale(now)
+  }
+
   // Buang pemain yang sudah lama gak ngasih kabar (HP mati/sinyal putus tanpa
   // sempat nutup koneksi). Dicek "malas" tiap ada pesan masuk -- bukan lewat
   // timer/alarm, supaya DO tetap bisa hibernasi.
@@ -319,6 +352,7 @@ export class WalkRoom extends DurableObject {
     this.players.delete(id)
     this.sockets.delete(id)
     if (hadPos) this.broadcast({ t: 'leave', i: id }, ws)
+    if (this.players.size === 0) this.doors.clear() // room kosong -> semua pintu tertutup lagi
   }
 
   async webSocketClose(ws, code, reason) {

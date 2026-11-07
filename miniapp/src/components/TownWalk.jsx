@@ -30,6 +30,7 @@ import RpCameraHud, { RpCaptureBridge } from './RpCameraHud'
 import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/items'
 import { addPantaiHouses, pantaiBackdropTransform } from '../lib/pantaiHouses'
 import { addPantaiSeaHouses } from '../lib/pantaiLaut'
+import { fetchHouseDoorStates, setHouseDoorLocked, doorErrorText } from '../lib/houseDoors'
 import { addLpmHouses, lpmBackdropTransform } from '../lib/lpmHouses'
 import {
   lockTelegramSwipe,
@@ -196,7 +197,7 @@ function getSky() {
 // Baca segitiga dari scene (koordinat dunia) buat dunia tabrakan.
 // ---------------------------------------------------------------------------
 function extractWorldData(root) {
-  const out = { water: [], green: [], roads: [], floors: [], buildings: [], buildingBases: [], trunks: [] }
+  const out = { water: [], green: [], roads: [], floors: [], buildings: [], buildingBases: [], trunks: [], doors: [] }
   const perBuilding = new Map() // 'TPX_Buildings_12' -> [x,y,z,...] (segitiga bangunan itu)
   const targets = {
     TPX_Waterways: out.water,
@@ -208,6 +209,23 @@ function extractWorldData(root) {
 
   root.traverse((obj) => {
     if (!obj.isMesh || !obj.geometry) return
+    // Daun pintu depan rumah panggung laut (lib/pantaiLaut.js): tabrakannya DINAMIS -- ruas
+    // garis di bukaan pintu saat tertutup, dimatikan saat terbuka (DoorSystem + world.setDoorOpen).
+    // Dibaca sekarang, selagi daun masih di posisi tertutup.
+    const pd = obj.userData.pantaiDoor
+    if (pd) {
+      obj.updateWorldMatrix(true, false)
+      const P = (x, y, z) => tmp.set(x, y, z).applyMatrix4(obj.matrixWorld).clone()
+      const h0 = P(0, 0, 0), h1 = P(pd.w, 0, 0), top = P(0, 0, pd.h)
+      out.doors.push({
+        num: pd.num,
+        x1: h0.x, z1: h0.z, x2: h1.x, z2: h1.z, // ruas daun tertutup (engsel -> ujung bebas)
+        y1: Math.min(h0.y, top.y), y2: Math.max(h0.y, top.y),
+        cx: (h0.x + h1.x) / 2, cz: (h0.z + h1.z) / 2, cy: h0.y, // titik tengah daun (buat jarak "dekat pintu")
+        open: pd.open, // sudut ayun terbuka (rad)
+      })
+      return
+    }
     // rumah lama yang sudah diganti, dan kulit visual rumah baru: bukan tabrakan
     if (obj.userData.replaced || obj.userData.noCollide) return
     // lantai rumah panggung laut (lib/pantaiLaut.js): pijakan tambahan, bukan jalan/tembok
@@ -303,6 +321,7 @@ function extractWorldData(root) {
     buildings: Float32Array.from(out.buildings),
     buildingBases: Float32Array.from(out.buildingBases),
     trunks: out.trunks,
+    doors: out.doors,
     visit,
   }
 }
@@ -906,6 +925,97 @@ function NearHouseWatcher({ buildings, selfRef, onNear }) {
   return null
 }
 
+// ---------------------------------------------------------------------------
+// Pintu depan rumah panggung laut: animasi daun pintu, tabrakan (pintu tertutup = tembok,
+// terbuka = bisa dilewati), dan deteksi "dekat pintu" buat tombol di layar.
+//   doorRt.current.open : Map<nomorRumah, bool>  keinginan buka/tutup (aksi sendiri + relay pemain lain)
+//   doorRt.current.lock : Map<nomorRumah, { locked, mine, owned, supported }>  dari database
+//   doorRt.current.lockLoaded : false sampai status kunci pertama kali terbaca.
+// Selama status kunci belum terbaca, pintu dianggap TERKUNCI (aman dulu, bukan sebaliknya).
+// Pintu terkunci selalu menutup dan mengabaikan status "terbuka" dari siapa pun.
+// ---------------------------------------------------------------------------
+const DOOR_NEAR = 2.6 // jarak (m) ke tengah daun pintu supaya tombol muncul
+const DOOR_NEAR_Y = 3.0 // selisih tinggi maksimum (m)
+const DOOR_SPEED = 3.2 // kecepatan ayun (1/detik) -> ~0,3 dtk penuh
+
+function doorEffectiveLocked(rt, num) {
+  if (!rt.lockLoaded) return true
+  return !!rt.lock.get(num)?.locked
+}
+
+function DoorSystem({ doors, root, world, selfRef, doorRt, onNear }) {
+  const anim = useMemo(
+    () =>
+      doors.map((d, i) => {
+        const leaf = root.getObjectByName(`PantaiDaunPintuLaut_${d.num}`)
+        // scene dipakai bareng antar-mount: lanjutkan dari sudut daun yang sekarang
+        const t = leaf && d.open ? Math.max(0, Math.min(1, leaf.rotation.z / d.open)) : 0
+        const pass = t > 0.5
+        world.setDoorOpen(i, pass)
+        return { d, i, leaf, t, pass }
+      }),
+    [doors, root, world]
+  )
+  const acc = useRef(0)
+  const last = useRef('')
+  useEffect(() => () => onNear(null), [onNear])
+
+  useFrame((_, dt) => {
+    const rt = doorRt.current
+    for (const a of anim) {
+      const num = a.d.num
+      const locked = doorEffectiveLocked(rt, num)
+      if (locked && rt.open.get(num)) rt.open.set(num, false) // dikunci -> menutup & lupakan status buka
+      const target = rt.open.get(num) && !locked ? 1 : 0
+      if (a.t !== target) {
+        const step = dt * DOOR_SPEED
+        a.t = a.t < target ? Math.min(target, a.t + step) : Math.max(target, a.t - step)
+        if (a.leaf) a.leaf.rotation.z = a.d.open * (a.t * a.t * (3 - 2 * a.t))
+      }
+      const pass = a.t > 0.5
+      if (pass !== a.pass) {
+        a.pass = pass
+        world.setDoorOpen(a.i, pass)
+      }
+    }
+
+    acc.current += dt
+    if (acc.current < 0.15) return
+    acc.current = 0
+    const me = selfRef.current
+    let best = null
+    if (me.ready) {
+      let bd = DOOR_NEAR
+      for (const a of anim) {
+        if (Math.abs(me.y - a.d.cy) > DOOR_NEAR_Y) continue
+        const dist = Math.hypot(me.x - a.d.cx, me.z - a.d.cz)
+        if (dist < bd) {
+          bd = dist
+          best = a.d.num
+        }
+      }
+    }
+    let info = null
+    if (best !== null) {
+      const meta = rt.lock.get(best)
+      info = {
+        num: best,
+        open: !!rt.open.get(best) && !doorEffectiveLocked(rt, best),
+        locked: doorEffectiveLocked(rt, best),
+        loading: !rt.lockLoaded,
+        mine: !!meta?.mine,
+        owned: !!meta?.owned,
+        supported: meta ? meta.supported !== false : true,
+      }
+    }
+    const k = info ? `${info.num}|${info.open}|${info.locked}|${info.loading}|${info.mine}|${info.owned}` : ''
+    if (k === last.current) return
+    last.current = k
+    onNear(info)
+  })
+  return null
+}
+
 const NO_CANOPIES = []
 
 // Isi scene saat karakter ada DI DALAM rumah.
@@ -1053,7 +1163,7 @@ function MapVisuals({ cached, clip }) {
   )
 }
 
-function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT, enterable, enterableNumbers, onNearHouse, spawnOverride }) {
+function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT, enterable, enterableNumbers, onNearHouse, spawnOverride, doorRt, onNearDoor }) {
   const { scene } = useGLTF(modelUrl)
   const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
   const { built, world } = cached
@@ -1083,6 +1193,9 @@ function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, 
       />
       <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
       {enterable && <NearHouseWatcher buildings={visitBuildings} selfRef={selfRef} onNear={onNearHouse} />}
+      {built.data.doors.length > 0 && (
+        <DoorSystem doors={built.data.doors} root={built.root} world={world} selfRef={selfRef} doorRt={doorRt} onNear={onNearDoor} />
+      )}
     </>
   )
 }
@@ -1450,8 +1563,15 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   const [interiorInfo, setInteriorInfo] = useState({ room: null, emoji: null, atDoor: false, door: null })
   // status pintu kamar yang lagi dibuka (id pintu -> true); direset tiap masuk rumah
   const doorsRef = useRef({})
+  // Pintu depan rumah di luar (rumah panggung laut): status buka (sinkron antar pemain) & kunci
+  // (dari database). Dibaca per-frame oleh DoorSystem, jadi disimpan di ref. Lihat lib/houseDoors.js.
+  const doorRt = useRef({ open: new Map(), lock: new Map(), lockLoaded: false })
+  const [nearDoor, setNearDoor] = useState(null) // info pintu terdekat (dari DoorSystem) | null
+  const [doorBusy, setDoorBusy] = useState(false)
+  const [doorMsg, setDoorMsg] = useState('')
+  const hasOuterDoors = interiorPlan === 'pantai' // rumah panggung laut cuma ada di Kawasan Pantai
   const netKey = interior ? `${mapKey}-h${interior.number}` : mapKey
-  const net = useWalkNet({ mapKey: netKey, characterId: character?.id, selfRef })
+  const net = useWalkNet({ mapKey: netKey, characterId: character?.id, selfRef, doorRt })
   const sky = useMemo(getSky, [])
   const isLandscape = useLandscapeLock()
   const [ready, setReady] = useState(false)
@@ -1626,8 +1746,75 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   }
   const handleReady = useCallback(() => setReady(true), [])
 
+  // Status kunci pintu (pemilik & terkunci/tidak) diambil dari database tiap 8 detik selama
+  // di luar rumah. Gagal baca -> pakai data sebelumnya (kalau belum pernah berhasil: pintu tetap terkunci).
+  useEffect(() => {
+    if (!hasOuterDoors || interior) return undefined
+    let stop = false
+    async function pull() {
+      const res = await fetchHouseDoorStates(mapKey)
+      if (stop || !res) return
+      const lock = new Map()
+      for (const [plot, row] of res.rows) {
+        lock.set(plot, {
+          locked: row.locked,
+          owned: !!row.owner,
+          mine: !!citizenId && row.owner === citizenId,
+          supported: res.supported,
+        })
+      }
+      doorRt.current.lock = lock
+      doorRt.current.lockLoaded = true
+    }
+    pull()
+    const timer = setInterval(pull, 8000)
+    return () => {
+      stop = true
+      clearInterval(timer)
+    }
+  }, [hasOuterDoors, interior, mapKey, citizenId])
+
+  // pesan singkat di pop up pintu (mis. gagal mengunci), hilang sendiri
+  useEffect(() => {
+    if (!doorMsg) return undefined
+    const t = setTimeout(() => setDoorMsg(''), 3500)
+    return () => clearTimeout(t)
+  }, [doorMsg])
+
+  // Buka / tutup pintu depan (kalau tidak terkunci). Status disebar ke pemain lain.
+  function toggleOuterDoor() {
+    const d = nearDoor
+    if (!d || d.locked) return
+    const next = !doorRt.current.open.get(d.num)
+    doorRt.current.open.set(d.num, next)
+    net.sendDoor(d.num, next)
+    hapticSelect()
+    setNearDoor((cur) => (cur && cur.num === d.num ? { ...cur, open: next } : cur))
+  }
+
+  // Pemilik mengunci / membuka kunci. Mengunci juga menutup pintu.
+  async function lockOuterDoor(locked) {
+    const d = nearDoor
+    if (!d || !d.mine || doorBusy) return
+    setDoorBusy(true)
+    const res = await setHouseDoorLocked({ mapKey, plot: d.num, locked })
+    setDoorBusy(false)
+    if (!res.ok) {
+      setDoorMsg(doorErrorText(res.reason))
+      return
+    }
+    hapticSelect()
+    const rt = doorRt.current
+    rt.lock.set(d.num, { ...(rt.lock.get(d.num) || { owned: true, mine: true, supported: true }), locked })
+    if (locked) {
+      rt.open.set(d.num, false)
+      net.sendDoor(d.num, false)
+    }
+  }
+
   function enterHouse(house) {
     if (!house || interior) return
+    setNearDoor(null)
     const me = selfRef.current
     hapticSelect()
     setReturnSpot({ x: me.x, y: me.y, z: me.z, yaw: me.yaw })
@@ -1663,9 +1850,13 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
       : interiorInfo.door
         ? toggleDoor
         : null
-    : nearHouse
-      ? () => enterHouse(nearHouse)
-      : null
+    : nearDoor
+      ? nearDoor.locked
+        ? null
+        : toggleOuterDoor
+      : nearHouse
+        ? () => enterHouse(nearHouse)
+        : null
   useEffect(() => {
     function onKey(e) {
       if (e.code !== 'KeyE' || e.repeat) return
@@ -1822,6 +2013,8 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
               enterableNumbers={mapDef?.enterableNumbers}
               onNearHouse={setNearHouse}
               spawnOverride={returnSpot}
+              doorRt={doorRt}
+              onNearDoor={setNearDoor}
             />
           )}
         </Suspense>
@@ -1838,13 +2031,49 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
       <div key={interior ? `in-${interior.key}` : 'out'} className="walk-fade" />
 
       {/* Pop up masuk rumah: muncul pas karakter berdiri dekat dinding rumah */}
-      {!interior && nearHouse && ready && (
+      {!interior && nearHouse && !nearDoor && ready && (
         <div className="walk-enter-popup" role="dialog" aria-label={`Rumah nomor ${nearHouse.number}`}>
           <div className="walk-enter-title">🏠 Rumah No. {nearHouse.number}</div>
           <div className="walk-enter-sub">{interiorPlan === 'lpm' ? '3 kamar tidur · 3 kamar mandi · dapur · ruang tamu' : '3 kamar tidur · 1 kamar mandi · dapur · ruang tamu'}</div>
           <button type="button" className="walk-enter-btn" onClick={() => enterHouse(nearHouse)}>
             Masuki rumah
           </button>
+        </div>
+      )}
+
+      {/* Pop up pintu depan rumah panggung laut: buka / tutup, dan kunci khusus pemilik */}
+      {!interior && nearDoor && ready && (
+        <div className="walk-enter-popup" role="dialog" aria-label={`Pintu rumah nomor ${nearDoor.num}`}>
+          <div className="walk-enter-title">🚪 Rumah No. {nearDoor.num}</div>
+          <div className="walk-enter-sub">
+            {doorMsg ||
+              (nearDoor.loading
+                ? 'Memeriksa kunci…'
+                : nearDoor.locked
+                  ? nearDoor.mine
+                    ? '🔒 Terkunci · cuma kamu yang bisa membuka'
+                    : '🔒 Pintu terkunci oleh pemilik'
+                  : nearDoor.owned
+                    ? nearDoor.mine
+                      ? '🔓 Tidak terkunci · kuncilah saat pergi'
+                      : 'Pintu tidak terkunci'
+                    : 'Rumah belum berpenghuni')}
+          </div>
+          {!nearDoor.locked && (
+            <button type="button" className="walk-enter-btn" onClick={toggleOuterDoor}>
+              {nearDoor.open ? 'Tutup pintu' : 'Buka pintu'}
+            </button>
+          )}
+          {nearDoor.mine && !nearDoor.loading && (
+            <button
+              type="button"
+              className={nearDoor.locked ? 'walk-enter-btn' : 'walk-enter-btn walk-enter-btn-alt'}
+              onClick={() => lockOuterDoor(!nearDoor.locked)}
+              disabled={doorBusy}
+            >
+              {doorBusy ? 'Sebentar…' : nearDoor.locked ? '🔓 Buka kunci' : '🔒 Kunci pintu'}
+            </button>
+          )}
         </div>
       )}
 

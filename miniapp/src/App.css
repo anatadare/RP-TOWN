@@ -2975,3 +2975,9 @@ body {
   opacity: 0.55;
   cursor: default;
 }
+
+/* tombol kedua di pop up pintu (kunci pintu): lebih kalem dari tombol utama */
+.walk-enter-btn-alt {
+  background: rgba(234, 246, 255, 0.14);
+  border-color: rgba(234, 246, 255, 0.35);
+}

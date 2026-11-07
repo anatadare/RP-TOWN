@@ -51,6 +51,19 @@ export const PLAN = {
 }
 const D = PLAN.y1 // kedalaman panggung dari titik depan (y = 0)
 
+// Pintu depan yang bisa dibuka-tutup (mekanisme di TownWalk.jsx). Daun pintu = mesh
+// terpisah yang berputar di engsel kiri (x = -0.6), sebidang dengan dinding depan saat tertutup
+// dan berayun 90 derajat ke DALAM rumah saat terbuka. Ukurannya pas dengan bukaan pintu
+// di houseParts() (x -0.6..0.6, tinggi 2.1 m).
+export const DOOR = {
+  hingeX: -0.6, // engsel (koordinat lokal rumah)
+  hingeY: PLAN.block.y0 + 0.075, // tengah tebal dinding depan (0.15)
+  w: 1.2, // lebar daun
+  h: 2.08, // tinggi daun (kusen atas di 2.1)
+  t: 0.06, // tebal daun
+  openAngle: Math.PI / 2 - 0.06, // putaran daun terbuka (rad, ke dalam rumah)
+}
+
 const COL = {
   wall: 0xf3efe6, trim: 0x7a5636, deck: 0xb58a5c, fascia: 0x5f4630, pile: 0x6b4a2f,
   oak: 0xd7b88c, tile: 0xc8d4d8, tileKitchen: 0xdcd6c8, rail: 0x7a5636, post: 0x6b4a2f,
@@ -178,10 +191,6 @@ export function houseParts() {
   add(bx(-0.68, -0.6, fy0 - 0.03, fy1 + 0.03, 0, 2.1, COL.trim), 'b') // kusen pintu
   add(bx(0.6, 0.68, fy0 - 0.03, fy1 + 0.03, 0, 2.1, COL.trim), 'b')
   add(bx(-0.68, 0.68, fy0 - 0.03, fy1 + 0.03, 2.1, 2.16, COL.trim), 'b') // palang atas kusen
-  // daun pintu depan: terbuka 90 derajat ke dalam rumah (engsel di sisi kiri), supaya
-  // pintu kelihatan tapi bukaan 1,2 m tetap bisa dilewati
-  add(bx(-0.6, -0.52, fy1 + 0.02, fy1 + 1.22, 0, 2.05, COL.door), 'b')
-  add(bx(-0.62, -0.5, fy1 + 1.05, fy1 + 1.15, 0.98, 1.06, COL.lamp), 'b') // gagang
   // belakang: pintu geser terbuka ke teras (x -1..1) + kaca mati di kiri-kanannya
   wall(K.x0, -3.0, by0, by1); wall(3.0, K.x1, by0, by1)
   wall(-3.0, -1.0, by0, by1, 0, 0.3); wall(1.0, 3.0, by0, by1, 0, 0.3)
@@ -241,6 +250,17 @@ export function houseParts() {
   // lantai yang bisa dipijak: seluruh panggung (z = 0)
   const floor = [[-W, FY], [W, FY], [W, BY], [-W, BY]]
   return { solid, glass, lamps, floor }
+}
+
+// Geometri daun pintu dalam bingkai engsel: engsel di titik asal, daun membentang ke +x,
+// gagang di kedua sisi. Dipakai bersama semua rumah.
+function doorLeafGeometry() {
+  const m = new Mesher()
+  const T = { ox: 0, oy: 0, oz: 0, c: 1, s: 0 }
+  const ht = DOOR.t / 2
+  m.box(bx(0, DOOR.w, -ht, ht, 0, DOOR.h, COL.door), T, 'b')
+  m.box(bx(DOOR.w - 0.22, DOOR.w - 0.1, -ht - 0.05, ht + 0.05, 0.95, 1.03, COL.lamp), T, '')
+  return m.geometry()
 }
 
 // bangun geometri dari kotak-kotak lokal, ditaruh dengan transform T (bingkai rumah)
@@ -565,6 +585,7 @@ export function addPantaiSeaHouses(scene) {
   // ---- rumah -----------------------------------------------------------------
   const parts = houseParts()
   let totalTris = 0
+  const doorLeaf = doorLeafGeometry()
   for (const h of placed) {
     const T = { ox: h.o[0], oy: h.o[1], oz: base, c: h.c, s: h.s }
     const relInv = h.rel.clone().invert()
@@ -591,6 +612,24 @@ export function addPantaiSeaHouses(scene) {
     lantai.visible = false
     lantai.userData.walkFloor = true
     obj.add(kaca, lantai)
+
+    // pintu depan: grup engsel (posisi/arah rumah) + daun yang berputar di dalamnya
+    const hm = new THREE.Matrix4().makeRotationZ(h.phi)
+    hm.setPosition(
+      h.o[0] + DOOR.hingeX * h.c - DOOR.hingeY * h.s,
+      h.o[1] + DOOR.hingeX * h.s + DOOR.hingeY * h.c,
+      base
+    )
+    hm.premultiply(relInv)
+    const holder = new THREE.Group()
+    holder.name = `PantaiPintuLaut_${h.num}`
+    hm.decompose(holder.position, holder.quaternion, holder.scale)
+    const leaf = new THREE.Mesh(doorLeaf, sh.house)
+    leaf.name = `PantaiDaunPintuLaut_${h.num}`
+    leaf.userData.noCollide = true // tabrakannya diurus TownWalk (dinamis: hanya saat tertutup)
+    leaf.userData.pantaiDoor = { num: h.num, w: DOOR.w, h: DOOR.h, open: DOOR.openAngle }
+    holder.add(leaf)
+    obj.add(holder)
     totalTris += solid.index.count / 3
   }
 
@@ -610,7 +649,10 @@ export function addPantaiSeaHouses(scene) {
 // ---------------------------------------------------------------------------
 // Pagar jembatan dari tepi segitiga jembatan.
 // ---------------------------------------------------------------------------
-const POST_STEP = 1.8 // jarak tiang maksimum (m); makin pendek, potongan pagar makin presisi di tikungan
+const POST_STEP = 1.8 // jarak tiang maksimum (m)
+const FINE_STEP = 0.1 // resolusi uji tepi (m): ujung pagar presisi sampai ~10 cm
+const EDGE_PROBE = 0.14 // titik uji di sebelah luar tepi (m)
+const MIN_RUN = 0.12 // pagar lebih pendek dari ini dibuang (serpihan)
 const RAIL_TOP = 1.0
 const PILE_BELOW = 0.8 // tiang menembus sedalam ini di bawah permukaan air
 const LIP = 0.05 // lis tepi menonjol di atas dek
@@ -657,17 +699,30 @@ function buildBridgeRails(tris, unionHash, nearHouse, frame, lamps, W, plateau) 
       const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy)
       if (L < 0.05) continue
       const on = [dy / L, -dx / L] // arah keluar (permukaan di kiri sisi berarah)
-      const n = Math.max(1, Math.ceil(L / POST_STEP))
+      // Uji tiap FINE_STEP meter: tepi yang di sebelah luarnya ada permukaan lain (persimpangan /
+      // sambungan darat) bukan tepi, dan sekitar rumah dikosongkan. Langkah yang lolos
+      // digabung jadi "lari" menerus, jadi ujung pagar jatuh tepat di batas persimpangan
+      // (bukan terpotong kelipatan 1,8 m yang meleset atau menyeberangi jalan).
+      const n = Math.max(1, Math.ceil(L / FINE_STEP))
+      const keep = new Array(n)
       for (let k = 0; k < n; k++) {
-        const t0 = k / n, t1 = (k + 1) / n
-        const pa = [a[0] + dx * t0, a[1] + dy * t0, a[2] + (b[2] - a[2]) * t0]
-        const pb = [a[0] + dx * t1, a[1] + dy * t1, a[2] + (b[2] - a[2]) * t1]
-        const mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2
-        // tepi yang sebenarnya ada permukaan lain di sebelah luarnya (persimpangan / sambungan darat) bukan tepi
-        if (unionHash.contains(mx + on[0] * 0.14, my + on[1] * 0.14)) continue
-        // jangan ada pagar/tiang jembatan di sekitar rumah (cek kedua ujung & tengah)
-        if (nearHouse(mx, my) || nearHouse(pa[0], pa[1]) || nearHouse(pb[0], pb[1])) continue
-        pieces.push({ a: pa, b: pb, out: on })
+        const t = (k + 0.5) / n
+        const x = a[0] + dx * t, y = a[1] + dy * t
+        keep[k] = !unionHash.contains(x + on[0] * EDGE_PROBE, y + on[1] * EDGE_PROBE) && !nearHouse(x, y)
+      }
+      const at = (t) => [a[0] + dx * t, a[1] + dy * t, a[2] + (b[2] - a[2]) * t]
+      for (let k = 0; k < n;) {
+        if (!keep[k]) { k++; continue }
+        let j = k
+        while (j < n && keep[j]) j++
+        const s0 = k / n, s1 = j / n, run = (s1 - s0) * L
+        if (run >= MIN_RUN) {
+          const m = Math.max(1, Math.ceil(run / POST_STEP)) // tiang tiap <= POST_STEP
+          for (let u = 0; u < m; u++) {
+            pieces.push({ a: at(s0 + ((s1 - s0) * u) / m), b: at(s0 + ((s1 - s0) * (u + 1)) / m), out: on })
+          }
+        }
+        k = j
       }
     }
   }

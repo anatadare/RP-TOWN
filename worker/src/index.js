@@ -14,6 +14,7 @@
 //   POST /webhooks/house-rented     -> webhook dari Supabase Database Webhooks
 //   POST /webhooks/bayargg          -> callback pembayaran dari bayar.gg (setor teller bank)
 //   POST /api/kua-invite            -> Mini App minta link masuk KUA sekali pakai
+//   POST /api/house-door            -> pemilik rumah mengunci / membuka kunci pintu depan (houseDoor.js)
 //   GET  /ws/walk/:mapKey           -> WebSocket mode Jelajahi multiplayer (1 room per peta,
 //                                       lihat src/walkRoom.js -- Durable Object WalkRoom)
 //   GET  /                          -> health check
@@ -36,6 +37,7 @@ import {
 import { handleHouseRentedWebhook } from './houseWebhook.js'
 import { registerMainBotHandlers } from './mainBot.js'
 import { handleKuaInvite } from './kuaInvite.js'
+import { handleHouseDoor } from './houseDoor.js'
 import { handleBayarGgWebhook } from './bayarWebhook.js'
 import { handleTellerMessage } from './teller.js'
 import { handleHouseMarketMessage } from './houseMarket.js'
@@ -66,6 +68,10 @@ export default {
 
     if (url.pathname === '/api/kua-invite' && (request.method === 'POST' || request.method === 'OPTIONS')) {
       return handleKuaInvite(request, env)
+    }
+
+    if (url.pathname === '/api/house-door' && (request.method === 'POST' || request.method === 'OPTIONS')) {
+      return handleHouseDoor(request, env)
     }
 
     const walkMatch = url.pathname.match(/^\/ws\/walk\/([a-z0-9-]+)$/)
