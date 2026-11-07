@@ -55,6 +55,7 @@ const COL = {
   wall: 0xf3efe6, trim: 0x7a5636, deck: 0xb58a5c, fascia: 0x5f4630, pile: 0x6b4a2f,
   oak: 0xd7b88c, tile: 0xc8d4d8, tileKitchen: 0xdcd6c8, rail: 0x7a5636, post: 0x6b4a2f,
   glass: 0xa9cfdf, lamp: 0xffd98a, pergola: 0x8a6240,
+  roof: 0x8d8579, roofTrim: 0x5f4630, door: 0x5a3d26,
 }
 
 // ---------------------------------------------------------------------------
@@ -176,11 +177,18 @@ export function houseParts() {
   gl(-2.9, -1.7, fy0 + 0.055, fy0 + 0.095, 1.4, 2.1); gl(1.2, 3.0, fy0 + 0.055, fy0 + 0.095, 0.9, 2.1)
   add(bx(-0.68, -0.6, fy0 - 0.03, fy1 + 0.03, 0, 2.1, COL.trim), 'b') // kusen pintu
   add(bx(0.6, 0.68, fy0 - 0.03, fy1 + 0.03, 0, 2.1, COL.trim), 'b')
+  add(bx(-0.68, 0.68, fy0 - 0.03, fy1 + 0.03, 2.1, 2.16, COL.trim), 'b') // palang atas kusen
+  // daun pintu depan: terbuka 90 derajat ke dalam rumah (engsel di sisi kiri), supaya
+  // pintu kelihatan tapi bukaan 1,2 m tetap bisa dilewati
+  add(bx(-0.6, -0.52, fy1 + 0.02, fy1 + 1.22, 0, 2.05, COL.door), 'b')
+  add(bx(-0.62, -0.5, fy1 + 1.05, fy1 + 1.15, 0.98, 1.06, COL.lamp), 'b') // gagang
   // belakang: pintu geser terbuka ke teras (x -1..1) + kaca mati di kiri-kanannya
   wall(K.x0, -3.0, by0, by1); wall(3.0, K.x1, by0, by1)
   wall(-3.0, -1.0, by0, by1, 0, 0.3); wall(1.0, 3.0, by0, by1, 0, 0.3)
   wall(-3.0, 3.0, by0, by1, 2.1, H)
   gl(-3.0, -1.0, by0 + 0.055, by0 + 0.095, 0.3, 2.1); gl(1.0, 3.0, by0 + 0.055, by0 + 0.095, 0.3, 2.1)
+  add(bx(-1.07, -1.0, by0 - 0.03, by1 + 0.03, 0, 2.1, COL.trim), 'b') // kusen pintu geser belakang
+  add(bx(1.0, 1.07, by0 - 0.03, by1 + 0.03, 0, 2.1, COL.trim), 'b')
   // samping (di antara dinding depan & belakang)
   const sy0 = fy1, sy1 = by0
   wall(K.x0, K.x0 + t, sy0, 3.2); wall(K.x0, K.x0 + t, 3.2, 4.8, 0, 0.9); wall(K.x0, K.x0 + t, 3.2, 4.8, 2.1, H); wall(K.x0, K.x0 + t, 4.8, sy1)
@@ -190,6 +198,16 @@ export function houseParts() {
   wall(K.x0, -2.6, 3.34, 3.46); wall(-1.7, -0.6, 3.34, 3.46); wall(-2.6, -1.7, 3.34, 3.46, 2.1, H)
   wall(-1.46, -1.34, sy0, 3.34) // sisi timur kamar mandi
   wall(-0.66, -0.54, 3.46, 4.4); wall(-0.66, -0.54, 5.3, sy1); wall(-0.66, -0.54, 4.4, 5.3, 2.1, H) // pintu kamar tidur
+
+  // ---- atap: pelat penuh di atas seluruh badan rumah (tanpa lubang), menjorok 0,45 m.
+  // Sisi bawahnya ikut digambar jadi plafon dari dalam.
+  const ov = 0.45
+  add(bx(K.x0 - ov, K.x1 + ov, K.y0 - ov, K.y1 + ov, H, H + 0.22, COL.roof), '')
+  // lis tepi atap
+  add(bx(K.x0 - ov - 0.05, K.x1 + ov + 0.05, K.y0 - ov - 0.05, K.y0 - ov, H - 0.06, H + 0.3, COL.roofTrim), '')
+  add(bx(K.x0 - ov - 0.05, K.x1 + ov + 0.05, K.y1 + ov, K.y1 + ov + 0.05, H - 0.06, H + 0.3, COL.roofTrim), '')
+  add(bx(K.x0 - ov - 0.05, K.x0 - ov, K.y0 - ov, K.y1 + ov, H - 0.06, H + 0.3, COL.roofTrim), '')
+  add(bx(K.x1 + ov, K.x1 + ov + 0.05, K.y0 - ov, K.y1 + ov, H - 0.06, H + 0.3, COL.roofTrim), '')
 
   // ---- pergola teras belakang ---------------------------------------------
   const pg = (x0, x1, y0, y1, z0, z1) => add(bx(x0, x1, y0, y1, z0, z1, COL.pergola), 'b')
@@ -461,9 +479,12 @@ export function addPantaiSeaHouses(scene) {
 
   // koordinat lokal-rumah dari koordinat scene
   const toLocal = (h, X, Y) => [(X - h.o[0]) * h.c + (Y - h.o[1]) * h.s, -(X - h.o[0]) * h.s + (Y - h.o[1]) * h.c]
-  const inPlatform = (X, Y, m = 0) => placed.some((h) => {
+
+  // zona bebas pagar jembatan di sekitar rumah: 1 m di kiri/kanan/belakang panggung,
+  // di depan cuma 0,2 m supaya pagar jembatan tetap rapat sampai ke pintu masuk
+  const nearHouse = (X, Y) => placed.some((h) => {
     const [lx, ly] = toLocal(h, X, Y)
-    return lx > -PLAN.halfW - m && lx < PLAN.halfW + m && ly > PLAN.y0 - m && ly < PLAN.y1 + m
+    return lx > -PLAN.halfW - 1.0 && lx < PLAN.halfW + 1.0 && ly > PLAN.y0 - 0.2 && ly < PLAN.y1 + 1.0
   })
 
   // ---- jalan -> jembatan ---------------------------------------------------
@@ -539,7 +560,7 @@ export function addPantaiSeaHouses(scene) {
   // ---- rangka jembatan: lis tepi, tiang (sekaligus pancang), pagar, lampu ------
   const frame = new Mesher()
   const lamps = new Mesher()
-  buildBridgeRails(bridgeTris, unionHash, inPlatform, frame, lamps, W, plateau)
+  buildBridgeRails(bridgeTris, unionHash, nearHouse, frame, lamps, W, plateau)
 
   // ---- rumah -----------------------------------------------------------------
   const parts = houseParts()
@@ -589,12 +610,12 @@ export function addPantaiSeaHouses(scene) {
 // ---------------------------------------------------------------------------
 // Pagar jembatan dari tepi segitiga jembatan.
 // ---------------------------------------------------------------------------
-const POST_STEP = 2.4 // jarak tiang maksimum (m)
+const POST_STEP = 1.8 // jarak tiang maksimum (m); makin pendek, potongan pagar makin presisi di tikungan
 const RAIL_TOP = 1.0
 const PILE_BELOW = 0.8 // tiang menembus sedalam ini di bawah permukaan air
 const LIP = 0.05 // lis tepi menonjol di atas dek
 
-function buildBridgeRails(tris, unionHash, inPlatform, frame, lamps, W, plateau) {
+function buildBridgeRails(tris, unionHash, nearHouse, frame, lamps, W, plateau) {
   const q = (v) => Math.round(v * 100)
   const vk = (p) => q(p[0]) + ',' + q(p[1])
   // sisi berarah yang tidak punya pasangan = tepi permukaan
@@ -644,7 +665,8 @@ function buildBridgeRails(tris, unionHash, inPlatform, frame, lamps, W, plateau)
         const mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2
         // tepi yang sebenarnya ada permukaan lain di sebelah luarnya (persimpangan / sambungan darat) bukan tepi
         if (unionHash.contains(mx + on[0] * 0.14, my + on[1] * 0.14)) continue
-        if (inPlatform(mx, my, 0.4)) continue
+        // jangan ada pagar/tiang jembatan di sekitar rumah (cek kedua ujung & tengah)
+        if (nearHouse(mx, my) || nearHouse(pa[0], pa[1]) || nearHouse(pb[0], pb[1])) continue
         pieces.push({ a: pa, b: pb, out: on })
       }
     }
