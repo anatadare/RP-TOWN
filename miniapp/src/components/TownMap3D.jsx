@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { unassignBuilding, createRoomForBuilding } from '../lib/rooms'
 import { MAPS, getMapByKey } from '../lib/maps'
 import { BUILDING_PREFIX } from '../lib/buildings'
+import { buildWalkWorld } from '../lib/walkWorld'
 import { addPantaiHouses } from '../lib/pantaiHouses'
 import { addPantaiSeaHouses } from '../lib/pantaiLaut'
 import { hapticSelect } from '../lib/telegram'
@@ -37,6 +38,82 @@ const MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(89.5) // nyaris sejajar horizon
 // dipasok dari aset Ocean_by_Poly_by_Google (lihat OceanSurface di bawah),
 // bukan dari shader custom lagi.
 const WATER_PREFIX = 'TPX_Waterways'
+const GREEN_PREFIX = 'TPX_GreenAreas'
+
+// ---------------------------------------------------------------------------
+// Tanah buatan buat tampilan Peta (TownMap3D) — lihat penjelasan di TownModel.
+// Helper ini cerminan kecil dari extractWorldData() di TownWalk.jsx: baca
+// segitiga dari scene yang SUDAH diposisikan (koordinat dunia, Y-up) buat
+// diumpankan ke buildWalkWorld() di lib/walkWorld.js.
+// ---------------------------------------------------------------------------
+const LAND_GROUP_PREFIXES = ['TPX_RoadsOutlines', 'TPX_Roads', 'TPX_Buildings', 'TPX_Waterways', 'TPX_Trees', 'TPX_GreenAreas']
+const LAND_TRUNK_MAX_VERTS = 40 // batang pohon = mesh kecil; tajuk = mesh besar (lihat TownWalk.jsx)
+
+function landGroupOf(obj) {
+  for (let o = obj; o; o = o.parent) {
+    const n = o.name || ''
+    for (const p of LAND_GROUP_PREFIXES) if (n.startsWith(p)) return p
+  }
+  return null
+}
+
+function extractMapTriangles(root) {
+  const out = { water: [], green: [], roads: [], buildings: [], trunks: [] }
+  const targets = {
+    TPX_Waterways: out.water,
+    TPX_GreenAreas: out.green,
+    TPX_RoadsOutlines: out.roads,
+    TPX_Buildings: out.buildings,
+  }
+  const tmp = new THREE.Vector3()
+  root.traverse((obj) => {
+    if (!obj.isMesh || !obj.geometry) return
+    if (obj.userData.replaced || obj.userData.noCollide || obj.userData.walkFloor) return
+    const grp = landGroupOf(obj)
+    if (!grp) return
+    const pos = obj.geometry.getAttribute('position')
+    if (!pos) return
+    const world = new Float32Array(pos.count * 3)
+    for (let i = 0; i < pos.count; i++) {
+      tmp.fromBufferAttribute(pos, i).applyMatrix4(obj.matrixWorld)
+      world[i * 3] = tmp.x
+      world[i * 3 + 1] = tmp.y
+      world[i * 3 + 2] = tmp.z
+    }
+    if (grp === 'TPX_Trees') {
+      if (pos.count > LAND_TRUNK_MAX_VERTS) return // tajuk: bukan jangkar tanah
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
+      for (let i = 0; i < world.length; i += 3) {
+        minX = Math.min(minX, world[i]); maxX = Math.max(maxX, world[i])
+        minY = Math.min(minY, world[i + 1]); maxY = Math.max(maxY, world[i + 1])
+        minZ = Math.min(minZ, world[i + 2]); maxZ = Math.max(maxZ, world[i + 2])
+      }
+      out.trunks.push({
+        x: (minX + maxX) / 2,
+        z: (minZ + maxZ) / 2,
+        r: Math.max(maxX - minX, maxZ - minZ) / 2,
+        y0: minY,
+        y1: maxY,
+      })
+      return
+    }
+    const target = targets[grp]
+    if (!target) return
+    const idx = obj.geometry.index
+    const n = idx ? idx.count : pos.count
+    for (let k = 0; k < n; k++) {
+      const v = idx ? idx.getX(k) : k
+      target.push(world[v * 3], world[v * 3 + 1], world[v * 3 + 2])
+    }
+  })
+  return {
+    water: Float32Array.from(out.water),
+    green: Float32Array.from(out.green),
+    roads: Float32Array.from(out.roads),
+    buildings: Float32Array.from(out.buildings),
+    trunks: out.trunks,
+  }
+}
 
 // Aset laut stylized low-poly (Google Poly, sudah Y-up standar glTF — beda
 // dari model peta yang Z-up, makanya dipasang TERPISAH, di luar
@@ -434,6 +511,19 @@ function TownModel({
 }) {
   const { scene } = useGLTF(modelUrl)
   const rotatedGroupRef = useRef()
+  // Tanah buatan (land fill) buat tampilan Peta — lihat komentar di useEffect
+  // footprint di bawah. Null = belum dihitung / gagal dihitung (peta tetap
+  // tampil seperti sebelumnya, tanpa tanah tambahan).
+  const [landFill, setLandFill] = useState(null)
+  const landFillGeo = useMemo(() => {
+    if (!landFill) return null
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(landFill.positions, 3))
+    g.setIndex(new THREE.BufferAttribute(landFill.indices, 1))
+    g.computeVertexNormals()
+    g.computeBoundingSphere()
+    return g
+  }, [landFill])
 
   // Kawasan Pantai: rumah daratan diganti tampak luar rumah 2 lantai yang baru
   // (sama dengan yang dipakai mode Jelajahi, lihat lib/pantaiHouses.js).
@@ -507,16 +597,63 @@ function TownModel({
         onBuildingsFootprintComputed({ size: bSize, center: bCenter })
       }
     }
+
+    // ---- Tanah buatan (land fill) buat tampilan Peta ----------------------
+    // Kenapa perlu: file .glb LPM TIDAK punya mesh tanah di tengah pulau.
+    // Daratan itu "lubang" di mesh TPX_Waterways (air) & TPX_GreenAreas
+    // (hijau) — keduanya cuma cincin di sekeliling pulau, tengahnya kosong.
+    // Di mode Jelajahi (TownWalk) lubang itu ditutup tanah buatan dari
+    // buildWalkWorld(), tapi di tampilan Peta ini belum ada — jadinya yang
+    // kelihatan lewat lubang itu laut (OceanSurface) yang biru, daratan
+    // kelihatan seperti "air menggenang" dan avatar pun dikira gak bisa lewat.
+    // Di sini tanah yang SAMA PERSIS dengan mode Jelajahi dibangun & dirender
+    // (posisi sudah koordinat dunia, termasuk landRaise), jadi Peta & Jelajahi
+    // nunjukin daratan yang sama: tanah padat, bukan air. Warna tanahnya ikut
+    // warna mesh hijau peta ini (sama seperti di Jelajahi). Kalau hitungannya
+    // gagal, landFill tetap null & peta tampil seperti sebelumnya.
+    // polygonOffsetFactor 2 di material (lihat return di bawah) bikin tanah
+    // ini "mundur" di belakang mesh hijau/jalan di area yang sudah punya
+    // tanah asli, jadi gak z-fighting — cuma nutup lubang yang kosong.
+    try {
+      const mapDef = MAPS.find((m) => m.modelUrl === modelUrl)
+      const waterDrop = mapDef?.walkWaterDrop ?? 0
+      const data = extractMapTriangles(rotatedGroupRef.current)
+      if (waterDrop > 0) {
+        for (let i = 1; i < data.water.length; i += 3) data.water[i] -= waterDrop
+      }
+      const world = buildWalkWorld({ ...data, props: [], floors: new Float32Array(0), cell: 2 })
+      let groundColor = new THREE.Color('#8ad384')
+      scene.traverse((obj) => {
+        if (groundColor && obj.isMesh && obj.name.startsWith(GREEN_PREFIX) && obj.material?.color) {
+          groundColor = obj.material.color.clone()
+        }
+      })
+      setLandFill({
+        positions: world.groundMesh.positions,
+        indices: world.groundMesh.indices,
+        color: groundColor,
+      })
+    } catch (err) {
+      console.warn('[TownMap3D] gagal membangun tanah buatan:', err)
+      setLandFill(null)
+    }
   }, [scene, onFootprintComputed, onBuildingsFootprintComputed, landRaise])
 
 
   // Sungai/kanal kecil bawaan tiap peta disembunyiin — laut utamanya sekarang
   // dari OceanSurface (aset Google Poly), jadi mesh air lama ini gak perlu
   // dirender lagi (biar gak dobel/tabrakan sama laut yang baru).
+  // Sekalian pastiin mesh hijau (tanah) SELALU kelihatan: scene .glb dipakai
+  // bareng (cache) sama mode Jelajahi, jadi kalau ada kode lain yang sempat
+  // menyembunyikannya, di sini dibalikin — kalau tidak, daratan bisa hilang
+  // & yang tersisa cuma laut biru di bawahnya.
   useEffect(() => {
     scene.traverse((obj) => {
-      if (obj.isMesh && obj.name.startsWith(WATER_PREFIX)) {
+      if (!obj.isMesh) return
+      if (obj.name.startsWith(WATER_PREFIX)) {
         obj.visible = false
+      } else if (obj.name.startsWith(GREEN_PREFIX)) {
+        obj.visible = true
       }
     })
   }, [scene])
@@ -589,15 +726,33 @@ function TownModel({
     }
   }
 
+  // Tanah buatan dirender di world space (posisinya sudah koordinat dunia,
+  // termasuk landRaise), BUKAN di dalam <group rotation={AXIS_FIX_ROTATION}>
+  // di bawah — kalau ikut masuk group itu, posisinya keputar 2x & meleset.
   return (
-    <group ref={rotatedGroupRef} rotation={AXIS_FIX_ROTATION}>
-      <primitive
-        object={scene}
-        onClick={handleClick}
-        onPointerMove={handlePointerMove}
-        onPointerOut={() => onHover(null)}
-      />
-    </group>
+    <>
+      <group ref={rotatedGroupRef} rotation={AXIS_FIX_ROTATION}>
+        <primitive
+          object={scene}
+          onClick={handleClick}
+          onPointerMove={handlePointerMove}
+          onPointerOut={() => onHover(null)}
+        />
+      </group>
+      {landFillGeo && (
+        <mesh geometry={landFillGeo}>
+          <meshStandardMaterial
+            color={landFill.color}
+            roughness={0.9}
+            metalness={0}
+            flatShading
+            polygonOffset
+            polygonOffsetFactor={2}
+            polygonOffsetUnits={2}
+          />
+        </mesh>
+      )}
+    </>
   )
 }
 
