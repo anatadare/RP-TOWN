@@ -9,6 +9,7 @@ import { buildWalkWorld } from '../lib/walkWorld'
 import { addPantaiHouses } from '../lib/pantaiHouses'
 import { addPantaiSeaHouses } from '../lib/pantaiLaut'
 import { addLpmHouses } from '../lib/lpmHouses'
+import { getCityScene } from '../lib/cityMap'
 import { hapticSelect } from '../lib/telegram'
 import AdBillboard from './Billboard3D'
 
@@ -497,8 +498,12 @@ function OceanSurface({ footprint, landRaise = 0 }) {
   )
 }
 
-function TownModel({
+// Isi TownModel — scene sudah di-resolve pemanggil (cache .glb atau salinan
+// template kota prosedural). `proceduralCity` = peta LPM baru (tanpa .glb).
+function TownModelInner({
+  scene,
   modelUrl,
+  proceduralCity = false,
   assignedByKey,
   adminMode,
   hoveredKey,
@@ -510,7 +515,6 @@ function TownModel({
   focusedKey,
   landRaise = 0,
 }) {
-  const { scene } = useGLTF(modelUrl)
   const rotatedGroupRef = useRef()
   // Tanah buatan (land fill) buat tampilan Peta — lihat komentar di useEffect
   // footprint di bawah. Null = belum dihitung / gagal dihitung (peta tetap
@@ -528,8 +532,10 @@ function TownModel({
 
   // Kawasan Pantai: rumah daratan diganti tampak luar rumah 2 lantai yang baru
   // (sama dengan yang dipakai mode Jelajahi, lihat lib/pantaiHouses.js).
-  // LPM: sama, pakai tampak luar "Rumah LPM" 2 lantai (lib/lpmHouses.js).
+  // LPM lama: sama, pakai tampak luar "Rumah LPM" 2 lantai (lib/lpmHouses.js).
+  // Kota prosedural: rumah SUDAH ada di scene (lib/cityMap.js) — jangan dipanggil.
   useMemo(() => {
+    if (proceduralCity) return
     const mapDef = MAPS.find((m) => m.modelUrl === modelUrl)
     if (mapDef?.interiorPlan === 'pantai') {
       addPantaiHouses(scene)
@@ -537,7 +543,7 @@ function TownModel({
     } else if (mapDef?.interiorPlan === 'lpm') {
       addLpmHouses(scene, mapDef.walkWaterDrop ?? 0, mapDef.landExpand ?? 0)
     }
-  }, [scene, modelUrl])
+  }, [scene, modelUrl, proceduralCity])
 
   // Ukur bounding-box seluruh pulau (bukan cuma bangunan) sekali tiap peta
   // kebaca, lalu lapor ke atas — dipakai OceanSurface buat nentuin seberapa
@@ -619,30 +625,35 @@ function TownModel({
     // polygonOffsetFactor 2 di material (lihat return di bawah) bikin tanah
     // ini "mundur" di belakang mesh hijau/jalan di area yang sudah punya
     // tanah asli, jadi gak z-fighting — cuma nutup lubang yang kosong.
-    try {
-      const mapDef = MAPS.find((m) => m.modelUrl === modelUrl)
-      const waterDrop = mapDef?.walkWaterDrop ?? 0
-      const data = extractMapTriangles(rotatedGroupRef.current)
-      if (waterDrop > 0) {
-        for (let i = 1; i < data.water.length; i += 3) data.water[i] -= waterDrop
-      }
-      const world = buildWalkWorld({ ...data, props: [], floors: new Float32Array(0), cell: 2, landExpand: mapDef?.landExpand ?? 0 })
-      let groundColor = new THREE.Color('#8ad384')
-      scene.traverse((obj) => {
-        if (groundColor && obj.isMesh && obj.name.startsWith(GREEN_PREFIX) && obj.material?.color) {
-          groundColor = obj.material.color.clone()
+    // Kota prosedural: terrain-nya utuh (tidak ada lubang seperti .glb LPM),
+    // jadi tanah buatan tidak dibutuhkan — dan buildWalkWorld cell 2 di pulau
+    // 3.2 km akan berat. Lewati perhitungan ini sepenuhnya.
+    if (!proceduralCity) {
+      try {
+        const mapDef = MAPS.find((m) => m.modelUrl === modelUrl)
+        const waterDrop = mapDef?.walkWaterDrop ?? 0
+        const data = extractMapTriangles(rotatedGroupRef.current)
+        if (waterDrop > 0) {
+          for (let i = 1; i < data.water.length; i += 3) data.water[i] -= waterDrop
         }
-      })
-      setLandFill({
-        positions: world.groundMesh.positions,
-        indices: world.groundMesh.indices,
-        color: groundColor,
-      })
-    } catch (err) {
-      console.warn('[TownMap3D] gagal membangun tanah buatan:', err)
-      setLandFill(null)
+        const world = buildWalkWorld({ ...data, props: [], floors: new Float32Array(0), cell: 2, landExpand: mapDef?.landExpand ?? 0 })
+        let groundColor = new THREE.Color('#8ad384')
+        scene.traverse((obj) => {
+          if (groundColor && obj.isMesh && obj.name.startsWith(GREEN_PREFIX) && obj.material?.color) {
+            groundColor = obj.material.color.clone()
+          }
+        })
+        setLandFill({
+          positions: world.groundMesh.positions,
+          indices: world.groundMesh.indices,
+          color: groundColor,
+        })
+      } catch (err) {
+        console.warn('[TownMap3D] gagal membangun tanah buatan:', err)
+        setLandFill(null)
+      }
     }
-  }, [scene, onFootprintComputed, onBuildingsFootprintComputed, landRaise])
+  }, [scene, onFootprintComputed, onBuildingsFootprintComputed, landRaise, proceduralCity])
 
 
   // Sungai/kanal kecil bawaan tiap peta disembunyiin — laut utamanya sekarang
@@ -773,9 +784,24 @@ function TownModel({
   )
 }
 
-// Preload semua peta yang terdaftar (bukan cuma yang lagi aktif), biar pas
+// Peta .glb (Kawasan Pantai & RP Town City): scene dari cache useGLTF.
+function TownModel(props) {
+  const { scene } = useGLTF(props.modelUrl)
+  return <TownModelInner {...props} scene={scene} />
+}
+
+// Peta LPM (kota prosedural): scene = salinan segar template kota. Efek-efek
+// TownModelInner memutasi scene (sembunyikan air, dsb.), jadi tidak boleh
+// memakai template bersama — tiap mount dapat salinannya sendiri.
+function TownModelCity(props) {
+  const scene = useMemo(() => getCityScene(), [])
+  return <TownModelInner {...props} scene={scene} proceduralCity />
+}
+
+// Preload semua peta .glb yang terdaftar (bukan cuma yang lagi aktif), biar pas
 // user pindah peta modelnya sudah kebaca duluan di background dan gak nunggu.
-MAPS.forEach((map) => useGLTF.preload(map.modelUrl))
+// Peta prosedural (tanpa modelUrl) dilewati.
+MAPS.forEach((map) => { if (map.modelUrl) useGLTF.preload(map.modelUrl) })
 useGLTF.preload(OCEAN_SURFACE_URL)
 
 // Naro posisi kamera SEKALI aja pas model pertama kali kebaca, fokus ke area
@@ -1050,6 +1076,8 @@ export default function TownMap3D({
   const billboardConfig = useMemo(() => getMapByKey(mapKey)?.billboard || {}, [mapKey])
   // Berapa meter daratan peta ini diangkat terhadap laut (default 0).
   const landRaise = useMemo(() => getMapByKey(mapKey)?.landRaise ?? 0, [mapKey])
+  // Peta LPM = kota prosedural (tanpa .glb) — TownModelCity, bukan TownModel.
+  const proceduralCity = useMemo(() => !!getMapByKey(mapKey)?.proceduralCity, [mapKey])
 
   const assignedByKey = useMemo(() => {
     const map = {}
@@ -1080,6 +1108,10 @@ export default function TownMap3D({
     if (room) onSelectRoom(room)
   }
 
+  // Komponen model dipilih dari jenis peta (identitas stabil per jenis —
+  // TownModelCity vs TownModel — jadi tidak ada remount tiap render).
+  const Model = proceduralCity ? TownModelCity : TownModel
+
   return (
     <div className="map3d-viewport">
       {/* key={mapKey} di sini sengaja bikin seluruh <Canvas> remount pas pindah
@@ -1104,7 +1136,7 @@ export default function TownMap3D({
             imageUrl={billboardConfig.imageUrl ?? null}
           />
           <group ref={modelGroupRef}>
-            <TownModel
+            <Model
               modelUrl={modelUrl}
               assignedByKey={assignedByKey}
               adminMode={adminMode}

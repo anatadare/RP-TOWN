@@ -71,20 +71,18 @@ export const MAPS = [
   {
     key: 'lpm',
     name: 'LPM',
-    modelUrl: '/models/lpm.glb',
-    landRaise: 2, // daratan +2 m di atas laut, biar ombak gak naik ke atas pulau
-    walkWaterDrop: 0.6, // mode Jelajahi: air 0.6 m di bawah daratan, bukan rata = gak kelihatan genangan
-    landExpand: 20, // BESARKAN PULAU: daratan baru 20 m ke arah laut di sekeliling
-    // pulau lama (cincin mengikuti garis pantai, lihat walkWorld.js). Tanpa ini
-    // layout perumahan rapi cuma muat ~50 rumah; dengan ini 67 rumah muat +
-    // banyak ruang hijau. Teluk timur-laut tetap terlihat (menyempit, tidak tertutup).
-    enterableBuildings: true, // semua bangunan bisa dimasuki di mode Jelajahi (lihat houseInteriorLpm.js)
+    // Kota pulau prosedural (dibangun dari NOL di kode, tanpa lpm.glb — lihat
+    // lib/cityMap.js). Key 'lpm' dipertahankan (room di database merujuk
+    // map_key). Rumah warga memakai desain Rumah LPM yang sama (500 rumah,
+    // interiorPlan 'lpm'), jalan + terrain + air prosedural.
+    proceduralCity: true,
+    enterableBuildings: true, // semua rumah bisa dimasuki di mode Jelajahi (lihat houseInteriorLpm.js)
     interiorPlan: 'lpm', // Rumah LPM 2 lantai (lib/houseInteriorLpm.js + lib/lpmHouses.js)
     billboard: { offsetXFactor: -0.3, offsetZFactor: -1.15, imageUrl: null },
     walkBillboards: [
-      { x: 194, z: -80, imageUrl: null }, // samping persimpangan R2-CE (layout 67 rumah, pulau diperluas)
-      { x: 18, z: -108, imageUrl: null }, // samping persimpangan R3-CW
-      { x: 46, z: -62, imageUrl: null }, // samping persimpangan CW-R2
+      { x: -100, z: 220, imageUrl: null }, // selatan persimpangan C1-C2 (sipil tengah)
+      { x: 300, z: 600, imageUrl: null }, // utara persimpangan W3a-W3b (Pemukiman Lembah)
+      { x: 400, z: -500, imageUrl: null }, // utara pelabuhan F9 (teluk selatan)
     ],
   },
   {

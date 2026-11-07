@@ -18,8 +18,8 @@ import { buildWalkWorld } from './walkWorld'
 const HOUSE_RE = /^TPX_Buildings_(\d+)$/
 // Dimensi model (denah): lebar PW (12) + atap menjorok 0.45 kiri-kanan;
 // kedalaman PD (10) + balkon/teras di depan + atap menjorok.
-const MODEL_W = PW + 0.9
-const MODEL_D = PD + BALKON_D + 0.9
+export const MODEL_W = PW + 0.9
+export const MODEL_D = PD + BALKON_D + 0.9
 const FRONT_MIN_Z = -(BALKON_D + 0.05) // sisi terdepan (pelat balkon lantai 2 / teras)
 const MIN_SCALE = 0.7
 const GAP = 1.5 // jarak minimum antar rumah (meter)
@@ -93,7 +93,7 @@ function porchExit(p, all, selfNum, onLand) {
   }
   return false
 }
-function doorOk(h, all, onLand) {
+export function doorOk(h, all, onLand) {
   const p = porchCenter(h)
   return onLand(p.x, p.y) && !porchBlocked(p, all, h.num) && porchExit(p, all, h.num, onLand)
 }
@@ -134,7 +134,7 @@ export function footprintOnLand(h, onLand) {
 // menimbulkan tumpang tindih dan tidak melewati geser maks 9 m dari posisi
 // asal. Diulang sampai fixpoint (maks 3 ronde) karena memutar/menggeser satu
 // rumah bisa membebaskan atau justru menutup teras tetangganya.
-function doorFixPass(infos, onLand) {
+export function doorFixPass(infos, onLand) {
   for (let round = 0; round < 3; round++) {
     let changed = false
     for (const h of infos) {
@@ -397,8 +397,21 @@ export function edgeGap(a, b) {
 //   - rect (diperluas SIDE_GAP_MIN/2) tidak tumpang tindih slot yang sudah diterima,
 //   - jarak busur dari slot sebelumnya di sisi yang sama >= W + SIDE_GAP_MIN.
 // Mengembalikan { bySide: [slot, ...] } (satu list per sisi jalan).
-export function buildSlots(k, onLand, roadSegs) {
+export function buildSlots(k, onLand, roadSegs, opts = {}) {
   const W = MODEL_W * k, D = MODEL_D * k
+  // Opsi (kota baru mengisi sendiri; default = nilai LPM, perilaku LPM tidak berubah):
+  // roadHalf = setengah lebar jalan (boleh beda per segmen via seg.half),
+  // yard = halaman depan, sideGapMin = gap samping minimum,
+  // junctions = titik persimpangan (JUNCTION_CLEAR), blockedRects = tapak
+  // fasilitas [{x0,y0,x1,y1}] yang tidak boleh ditabrak rumah.
+  const ROAD_HALF_O = opts.roadHalf ?? ROAD_HALF
+  const YARD_O = opts.yard ?? YARD
+  const SIDE_GAP_MIN_O = opts.sideGapMin ?? SIDE_GAP_MIN
+  const JUNCTIONS_O = opts.junctions ?? LPM_JUNCTIONS
+  const BLOCKED_O = opts.blockedRects ?? []
+  // onlySegs: cuma segmen-segmen ini yang dibuatkan slot (mis. kota: sekunder
+  // saja, ring highway tidak); segmen lain tetap dihitung di uji "jalan lain".
+  const ONLY = opts.onlySegs ? new Set(opts.onlySegs) : null
   const accepted = []
   const bySide = []
   // bounding box tiap segmen (buat mempercepat uji "jalan lain")
@@ -413,7 +426,7 @@ export function buildSlots(k, onLand, roadSegs) {
   const expandedOverlap = (a, b) => {
     // tolak kalau rect (diperluas SIDE_GAP_MIN/2 tiap sisi) bersentuhan:
     // |dx|*2 < aw+bw + SIDE_GAP_MIN*2  <=>  celah tepi < SIDE_GAP_MIN
-    const pad = SIDE_GAP_MIN
+    const pad = SIDE_GAP_MIN_O
     return Math.abs(a.cx - b.cx) * 2 < a.w + b.w + pad * 2 && Math.abs(a.cy - b.cy) * 2 < a.d + b.d + pad * 2
   }
   // jarak titik ke garis tengah segmen (pakai titik sampel 1 m; cukup akurat)
@@ -427,11 +440,12 @@ export function buildSlots(k, onLand, roadSegs) {
   }
   for (let si = 0; si < roadSegs.length; si++) {
     const seg = roadSegs[si]
+    if (ONLY && !ONLY.has(seg.id)) continue
     for (const side of [1, -1]) {
       const list = []
       let lastArc = -Infinity
       for (let i = 0; i < seg.pts.length; i++) {
-        if (seg.arc[i] - lastArc < W + SIDE_GAP_MIN) continue
+        if (seg.arc[i] - lastArc < W + SIDE_GAP_MIN_O) continue
         const [px, py] = seg.pts[i]
         const [nx, ny] = seg.nrm[i]
         // arah hadap = ke jalan, dibulatkan ke 4 arah mata angin
@@ -443,12 +457,12 @@ export function buildSlots(k, onLand, roadSegs) {
         const ux = nx * side, uy = ny * side // dari jalan ke rumah
         const cosT = Math.abs(ux * fx + uy * fy)
         const sinT = Math.sqrt(Math.max(0, 1 - cosT * cosT))
-        const dist = ROAD_HALF + YARD + (D / 2) * cosT + (W / 2) * sinT
+        const dist = (seg.half ?? ROAD_HALF_O) + YARD_O + (D / 2) * cosT + (W / 2) * sinT
         const cx = px + ux * dist, cy = py + uy * dist
         const h = { cx, cy, fx, fy, k, tx: seg.tan[i][0], ty: seg.tan[i][1], roadId: seg.id, side, s: seg.arc[i] }
         // jauh dari persimpangan
         let nearJ = false
-        for (const [jx, jy] of LPM_JUNCTIONS) {
+        for (const [jx, jy] of JUNCTIONS_O) {
           if (Math.hypot(cx - jx, cy - jy) < JUNCTION_CLEAR) { nearJ = true; break }
         }
         if (nearJ) continue
@@ -456,20 +470,27 @@ export function buildSlots(k, onLand, roadSegs) {
         if (!footprintOnLand(h, onLand)) continue
         const p = porchCenter(h)
         if (!onLand(p.x, p.y)) continue
-        // tidak menabrak jalan lain (rect harus >= ROAD_HALF+1 dari garis tengahnya)
+        // tidak menabrak jalan lain (rect harus >= setengah lebar jalan lain + 1 dari garis tengahnya)
         const r = rectOf(h)
         const corners = [[r.cx, r.cy], [r.cx - r.w / 2, r.cy - r.d / 2], [r.cx + r.w / 2, r.cy - r.d / 2], [r.cx - r.w / 2, r.cy + r.d / 2], [r.cx + r.w / 2, r.cy + r.d / 2]]
         let hitOtherRoad = false
         for (let sj = 0; sj < roadSegs.length; sj++) {
           if (sj === si) continue
+          const otherHalf = roadSegs[sj].half ?? ROAD_HALF_O
           const b = boxes[sj]
-          if (r.cx + r.w / 2 + ROAD_HALF + 1 < b.minX || r.cx - r.w / 2 - ROAD_HALF - 1 > b.maxX || r.cy + r.d / 2 + ROAD_HALF + 1 < b.minY || r.cy - r.d / 2 - ROAD_HALF - 1 > b.maxY) continue
+          if (r.cx + r.w / 2 + otherHalf + 1 < b.minX || r.cx - r.w / 2 - otherHalf - 1 > b.maxX || r.cy + r.d / 2 + otherHalf + 1 < b.minY || r.cy - r.d / 2 - otherHalf - 1 > b.maxY) continue
           for (const [qx, qy] of corners) {
-            if (distToSeg(qx, qy, roadSegs[sj]) < ROAD_HALF + 1) { hitOtherRoad = true; break }
+            if (distToSeg(qx, qy, roadSegs[sj]) < otherHalf + 1) { hitOtherRoad = true; break }
           }
           if (hitOtherRoad) break
         }
         if (hitOtherRoad) continue
+        // tidak menabrak tapak fasilitas (rect sudah termasuk pad)
+        let hitBlocked = false
+        for (const b of BLOCKED_O) {
+          if (r.cx - r.w / 2 < b.x1 && r.cx + r.w / 2 > b.x0 && r.cy - r.d / 2 < b.y1 && r.cy + r.d / 2 > b.y0) { hitBlocked = true; break }
+        }
+        if (hitBlocked) continue
         // tidak tumpang tindih slot lain (gap minimum SIDE_GAP_MIN)
         if (accepted.some((o) => expandedOverlap(r, rectOf(o)))) continue
         accepted.push(h)
@@ -486,7 +507,7 @@ export function buildSlots(k, onLand, roadSegs) {
 // sisi jalan terisi merata (tidak ada jalan yang kosong). Di tiap sisi, slot
 // diambil merata sepanjang sisi itu (jarak antar slot jadi >= SIDE_GAP_MIN,
 // biasanya >= SIDE_GAP).
-function selectSlots(bySide, total) {
+export function selectSlots(bySide, total) {
   const all = bySide.flat()
   if (all.length < total) return null
   const counts = bySide.map((l) => Math.round((l.length / all.length) * total))
@@ -522,7 +543,10 @@ function selectSlots(bySide, total) {
 // digeser sepanjang jalannya sendiri (busur terdekat yang pintunya OK,
 // tapak di tanah, tidak tumpang tindih, jauh dari persimpangan).
 // Kalau tidak ada, rumah dibiarkan (tes yang melaporkan).
-function relocateHouses(infos, onLand, roadSegs) {
+export function relocateHouses(infos, onLand, roadSegs, opts = {}) {
+  const ROAD_HALF_O = opts.roadHalf ?? ROAD_HALF
+  const YARD_O = opts.yard ?? YARD
+  const JUNCTIONS_O = opts.junctions ?? LPM_JUNCTIONS
   const byId = new Map(roadSegs.map((s) => [s.id, s]))
   for (const h of infos) {
     if (doorOk(h, infos, onLand)) continue
@@ -547,13 +571,13 @@ function relocateHouses(infos, onLand, roadSegs) {
       const W = MODEL_W * h.k, D = MODEL_D * h.k
       const cosT = Math.abs(ux * fx + uy * fy)
       const sinT = Math.sqrt(Math.max(0, 1 - cosT * cosT))
-      const dist = ROAD_HALF + YARD + (D / 2) * cosT + (W / 2) * sinT
+      const dist = (seg.half ?? ROAD_HALF_O) + YARD_O + (D / 2) * cosT + (W / 2) * sinT
       const cand = { ...h, cx: px + ux * dist, cy: py + uy * dist, fx, fy, s }
       if (!footprintOnLand(cand, onLand)) continue
       if (overlapsAny(cand, infos)) continue
       if (!doorOk(cand, infos, onLand)) continue
       let nearJ = false
-      for (const [jx, jy] of LPM_JUNCTIONS) {
+      for (const [jx, jy] of JUNCTIONS_O) {
         if (Math.hypot(cand.cx - jx, cand.cy - jy) < JUNCTION_CLEAR) { nearJ = true; break }
       }
       if (nearJ) continue
@@ -689,6 +713,10 @@ function shared() {
       solid: boxesToGeometry(solid),
       glass: boxesToGeometry(glass.map((g) => ({ ...g, c: 0x6f93a8 }))),
       extra: boxesToGeometry(extra),
+      // cangkang gabungan (badan + carport + pagar, 1 geometri) — dipakai kota
+      // baru supaya tiap rumah cuma 1 mesh tampak (bukan 2). Sama persis isinya
+      // dengan solid+extra di atas, cuma digabung.
+      shell: boxesToGeometry([...solid, ...extra]),
       // kotak tabrakan (hanya badan rumah; teras, balkon, carport & pagar
       // dibiarkan bisa dilewati, seperti di Pantai)
       collider: new THREE.BoxGeometry(PW + 0.3, BODY_H, PD + 0.3).translate(PW / 2, BODY_H / 2, PD / 2),
@@ -704,6 +732,99 @@ function shared() {
     }
   }
   return SHARED
+}
+
+// Aset geometri/material bersama buat SATU desain rumah (dipakai ulang semua
+// rumah — jangan material unik per rumah). Diekspor buat kota baru.
+export function sharedHouseAssets() {
+  return shared()
+}
+
+// Bangun SATU rumah (grup + tabrakan pondasi opsional) dari info penempatan h
+// ({cx, cy, fx, fy, k, z, drop}). Dipakai addLpmHouses (LPM) dan kota baru.
+// `colliderName` = nama mesh kotak tabrakan: LPM pakai LpmTabrak_N; kota pakai
+// TPX_Buildings_N (supaya efek kunci/bangunan di TownMap3D + visit di TownWalk
+// menemukannya sebagai bangunan bernomor). `shared` = true: tandai semua mesh
+// supaya TownMap3D/TownWalk tidak meng-clone materialnya (tetap berbagi).
+export function buildHouseGroup(sh, num, h, { colliderName = `LpmTabrak_${num}`, shared = false, shell = false } = {}) {
+  const { cx, cy, fx, fy, k } = h
+  // model: depan = -z denah. Setelah rotasi X +90 (Y-up -> Z-up) depan jadi +y;
+  // rotasi z phi mengarahkannya ke (fx, fy).
+  const phi = Math.atan2(-fx, fy)
+  // Kerangka rumah (posisi + rotasi + skala + cermin), dipakai dua kali: untuk
+  // rumahnya sendiri dan untuk tabrakan pondasi (grup terpisah, lihat bawah).
+  const frame = (name) => {
+    const root = new THREE.Group()
+    root.name = name
+    root.position.set(cx, cy, h.z)
+    root.rotation.z = phi
+    const tilt = new THREE.Group()
+    tilt.rotation.x = Math.PI / 2
+    tilt.scale.setScalar(k)
+    const m = new THREE.Group()
+    m.scale.set(-1, 1, 1)
+    // pusat jejak rumah (termasuk balkon & teras) -> titik tengah petak
+    m.position.set(PW / 2, 0, -(FRONT_MIN_Z + PD) / 2)
+    tilt.add(m)
+    root.add(tilt)
+    return { root, mirror: m }
+  }
+  const mark = (mesh) => {
+    if (!shared) return
+    mesh.userData.clonedMaterial = true
+    mesh.userData.sharedMaterial = true
+  }
+  // nama dikenali TownWalk (nomor rumah + tabrakan)
+  const { root: house, mirror } = frame(`TPX_Buildings_${num}`)
+  const solid = new THREE.Mesh(shell ? sh.shell : sh.solid, sh.solidMat)
+  const glass = new THREE.Mesh(sh.glass, sh.glassMat)
+  glass.renderOrder = 2
+  solid.name = `LpmRumah_${num}`
+  glass.name = `LpmKaca_${num}`
+  solid.userData.noCollide = true
+  glass.userData.noCollide = true
+  const col = new THREE.Mesh(sh.collider, sh.colliderMat)
+  col.name = colliderName
+  col.visible = false
+  mark(solid); mark(glass); mark(col)
+  mirror.add(solid, glass, col)
+  if (!shell) {
+    const extra = new THREE.Mesh(sh.extra, sh.solidMat)
+    extra.name = `LpmCarport_${num}`
+    extra.userData.noCollide = true
+    mark(extra)
+    mirror.add(extra)
+  }
+
+  // Pondasi bawaan model cuma setebal FOUND_D * k. Kalau tanah di sisi bawah
+  // lebih dalam dari itu, rumah kelihatan melayang: tambah blok pondasi
+  // (visual saja) sampai menyentuh tanah terendah.
+  const extraH = h.drop - FOUND_D * k + FOUND_MARGIN
+  if (extraH > 0.05) {
+    const fm = new THREE.Mesh(foundationGeo(sh, Math.ceil(extraH / k / FOUND_STEP) * FOUND_STEP), sh.foundMat)
+    fm.name = `LpmPondasi_${num}`
+    fm.userData.noCollide = true
+    mark(fm)
+    mirror.add(fm)
+  }
+
+  // Tabrakan pondasi: tanpa ini pemain di sisi tanah yang lebih rendah bisa
+  // berjalan menembus pondasi (kotak tabrakan badan mulai dari lantai). Dibuat
+  // di grup bernama "TPX_BuildingsBase_N": TownWalk tetap menganggapnya
+  // bangunan (awalan TPX_Buildings) sebagai dinding, tapi tidak dihitung
+  // sebagai node rumah bernomor, jadi dasar bangunan (baseY) untuk fitur
+  // Masuki rumah tetap setinggi lantai.
+  let base = null
+  if (h.drop > COLLIDE_MIN_DROP) {
+    const { root: baseRoot, mirror: baseMirror } = frame(`TPX_BuildingsBase_${num}`)
+    const bc = new THREE.Mesh(baseColliderGeo(sh, (h.drop + FOUND_MARGIN + 0.05) / k), sh.colliderMat)
+    bc.name = `LpmPondasiTabrak_${num}`
+    bc.visible = false
+    mark(bc)
+    baseMirror.add(bc)
+    base = baseRoot
+  }
+  return { house, base }
 }
 
 // Blok pondasi tambahan di bawah pondasi bawaan model (y = -FOUND_D), seluas
@@ -845,72 +966,10 @@ export function addLpmHouses(scene, waterDrop = 0, landExpand = 0) {
   }
 
   for (const h of infos) {
-    const { obj, num, cx, cy, fx, fy, k } = h
-    // model: depan = -z denah. Setelah rotasi X +90 (Y-up -> Z-up) depan jadi +y;
-    // rotasi z phi mengarahkannya ke (fx, fy).
-    const phi = Math.atan2(-fx, fy)
-    // Kerangka rumah (posisi + rotasi + skala + cermin), dipakai dua kali: untuk
-    // rumahnya sendiri dan untuk tabrakan pondasi (grup terpisah, lihat bawah).
-    const frame = (name) => {
-      const root = new THREE.Group()
-      root.name = name
-      root.position.set(cx, cy, h.z)
-      root.rotation.z = phi
-      const tilt = new THREE.Group()
-      tilt.rotation.x = Math.PI / 2
-      tilt.scale.setScalar(k)
-      const m = new THREE.Group()
-      m.scale.set(-1, 1, 1)
-      // pusat jejak rumah (termasuk balkon & teras) -> titik tengah petak
-      m.position.set(PW / 2, 0, -(FRONT_MIN_Z + PD) / 2)
-      tilt.add(m)
-      root.add(tilt)
-      return { root, mirror: m }
-    }
-    // nama dikenali TownWalk (nomor rumah + tabrakan)
-    const { root: house, mirror } = frame(`TPX_Buildings_${num}`)
-    const solid = new THREE.Mesh(sh.solid, sh.solidMat)
-    const glass = new THREE.Mesh(sh.glass, sh.glassMat)
-    glass.renderOrder = 2
-    solid.name = `LpmRumah_${num}`
-    glass.name = `LpmKaca_${num}`
-    solid.userData.noCollide = true
-    glass.userData.noCollide = true
-    const extra = new THREE.Mesh(sh.extra, sh.solidMat)
-    extra.name = `LpmCarport_${num}`
-    extra.userData.noCollide = true
-    const col = new THREE.Mesh(sh.collider, sh.colliderMat)
-    col.name = `LpmTabrak_${num}`
-    col.visible = false
-    mirror.add(solid, glass, extra, col)
-
-    // Pondasi bawaan model cuma setebal FOUND_D * k. Kalau tanah di sisi bawah
-    // lebih dalam dari itu, rumah kelihatan melayang: tambah blok pondasi
-    // (visual saja) sampai menyentuh tanah terendah.
-    const extraH = h.drop - FOUND_D * k + FOUND_MARGIN
-    if (extraH > 0.05) {
-      const fm = new THREE.Mesh(foundationGeo(sh, Math.ceil(extraH / k / FOUND_STEP) * FOUND_STEP), sh.foundMat)
-      fm.name = `LpmPondasi_${num}`
-      fm.userData.noCollide = true
-      mirror.add(fm)
-    }
+    const { obj, num } = h
+    const { house, base } = buildHouseGroup(sh, num, h)
     group.add(house)
-
-    // Tabrakan pondasi: tanpa ini pemain di sisi tanah yang lebih rendah bisa
-    // berjalan menembus pondasi (kotak tabrakan badan mulai dari lantai). Dibuat
-    // di grup bernama "TPX_BuildingsBase_N": TownWalk tetap menganggapnya
-    // bangunan (awalan TPX_Buildings) sebagai dinding, tapi tidak dihitung
-    // sebagai node rumah bernomor, jadi dasar bangunan (baseY) untuk fitur
-    // Masuki rumah tetap setinggi lantai.
-    if (h.drop > COLLIDE_MIN_DROP) {
-      const { root: baseRoot, mirror: baseMirror } = frame(`TPX_BuildingsBase_${num}`)
-      const bc = new THREE.Mesh(baseColliderGeo(sh, (h.drop + FOUND_MARGIN + 0.05) / k), sh.colliderMat)
-      bc.name = `LpmPondasiTabrak_${num}`
-      bc.visible = false
-      baseMirror.add(bc)
-      group.add(baseRoot)
-    }
-
+    if (base) group.add(base)
     obj.visible = false
     obj.userData.replaced = true
   }
