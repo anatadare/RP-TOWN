@@ -5,7 +5,6 @@ import * as THREE from 'three'
 import { MAPS } from '../lib/maps'
 import { WalkBillboard } from './Billboard3D'
 import { buildWalkWorld, ROAD_LIFT } from '../lib/walkWorld'
-import { getCityTemplate, getCityTreeProps } from '../lib/cityMap'
 import { createPlayer, stepPlayer, PLAYER } from '../lib/walkController'
 import { buildInteriorWorld, HOUSE } from '../lib/houseInterior'
 import { makeVisitBuilding, nearestVisitBuilding } from '../lib/houseVisit'
@@ -32,12 +31,6 @@ import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/item
 import { addPantaiHouses, pantaiBackdropTransform } from '../lib/pantaiHouses'
 import { addPantaiSeaHouses } from '../lib/pantaiLaut'
 import { addLpmHouses, lpmBackdropTransform } from '../lib/lpmHouses'
-import { facilityById } from '../lib/cityFacilities'
-import {
-  facilityInteriorPlan, hasFacilityInterior,
-  buildFacilityInteriorWorld, makeFacilityInteriorCam,
-} from '../lib/facilityInteriors'
-import FacilityInterior, { FacilityInteriorWatcher } from './FacilityInterior'
 import {
   lockTelegramSwipe,
   unlockTelegramSwipe,
@@ -182,16 +175,6 @@ function buildingKeyOf(obj) {
   return null
 }
 
-// Nama grup fasilitas ("TPX_Buildings_F3") dari mesh itu atau induknya.
-// Mengembalikan { key, fid } atau null.
-function facilityKeyOf(obj) {
-  for (let o = obj; o; o = o.parent) {
-    const m = /^TPX_Buildings_(F\d+[a-z]?)$/.exec(o.name || '')
-    if (m) return { key: o.name, fid: m[1] }
-  }
-  return null
-}
-
 function groupOf(obj) {
   for (let o = obj; o; o = o.parent) {
     const n = o.name || ''
@@ -215,7 +198,6 @@ function getSky() {
 function extractWorldData(root) {
   const out = { water: [], green: [], roads: [], floors: [], buildings: [], buildingBases: [], trunks: [] }
   const perBuilding = new Map() // 'TPX_Buildings_12' -> [x,y,z,...] (segitiga bangunan itu)
-  const perFacility = new Map() // 'TPX_Buildings_F3' -> { fid, tris }
   const targets = {
     TPX_Waterways: out.water,
     TPX_GreenAreas: out.green,
@@ -293,24 +275,17 @@ function extractWorldData(root) {
     const idx = obj.geometry.index
     const n = idx ? idx.count : pos.count
     let own = null
-    let ownF = null
     if (grp === 'TPX_Buildings') {
       const bk = buildingKeyOf(obj)
       if (bk) {
         own = perBuilding.get(bk)
         if (!own) perBuilding.set(bk, (own = []))
       }
-      const fk = facilityKeyOf(obj)
-      if (fk) {
-        ownF = perFacility.get(fk.key)
-        if (!ownF) perFacility.set(fk.key, (ownF = { fid: fk.fid, tris: [] }))
-      }
     }
     for (let k = 0; k < n; k++) {
       const v = idx ? idx.getX(k) : k
       target.push(world[v * 3], world[v * 3 + 1], world[v * 3 + 2])
       if (own) own.push(world[v * 3], world[v * 3 + 1], world[v * 3 + 2])
-      if (ownF) ownF.tris.push(world[v * 3], world[v * 3 + 1], world[v * 3 + 2])
     }
   })
 
@@ -318,15 +293,6 @@ function extractWorldData(root) {
   for (const [bk, tris] of perBuilding) {
     const number = Number(/(\d+)\s*$/.exec(bk)?.[1] || 0)
     visit.push(makeVisitBuilding(bk, number, tris))
-  }
-
-  // Fasilitas (grup TPX_Buildings_F<n>): bentuk kunjungan sama seperti rumah,
-  // tapi `fid` (mis. 'F3') dipakai buat cari denah interiornya. Yang masuk
-  // daftar cuma collider tak terlihatnya (eksterior ber-noCollide dilewati di
-  // atas), jadi dinding & jaraknya sama dengan tapak fasilitas.
-  const visitFacilities = []
-  for (const [bk, f] of perFacility) {
-    visitFacilities.push({ ...makeVisitBuilding(bk, 0, f.tris), fid: f.fid })
   }
 
   return {
@@ -338,7 +304,6 @@ function extractWorldData(root) {
     buildingBases: Float32Array.from(out.buildingBases),
     trunks: out.trunks,
     visit,
-    visitFacilities,
   }
 }
 
@@ -393,7 +358,7 @@ function raiseTrees(root) {
 // & dipakai bareng TownMap3D (yang memodifikasinya), jadi di sini SELALU
 // bekerja di salinan (clone) supaya peta tampilan luar gak ikut berubah.
 // ---------------------------------------------------------------------------
-function prepareWalkScene(scene, waterDrop = 0, interiorPlan = null, landExpand = 0, proceduralCity = false) {
+function prepareWalkScene(scene, waterDrop = 0, interiorPlan = null, landExpand = 0) {
   const root = scene.clone(true)
   root.position.set(0, 0, 0)
   root.scale.set(1, 1, 1)
@@ -405,23 +370,18 @@ function prepareWalkScene(scene, waterDrop = 0, interiorPlan = null, landExpand 
     addPantaiHouses(root)
     addPantaiSeaHouses(root) // area laut: rumah panggung + jembatan
     root.updateMatrixWorld(true)
-  } else if (interiorPlan === 'lpm' && !proceduralCity) {
-    // LPM lama: rumah diganti "Rumah LPM" 2 lantai (lib/lpmHouses.js). waterDrop
+  } else if (interiorPlan === 'lpm') {
+    // LPM: rumah diganti "Rumah LPM" 2 lantai (lib/lpmHouses.js). waterDrop
     // dipakai menilai tanah saat penempatan (lihat addLpmHouses). landExpand
     // = perluasan daratan ke laut (lihat maps.js).
-    // Kota prosedural: 500 rumah SUDAH ada di scene (lib/cityMap.js) — jangan dipanggil.
     addLpmHouses(root, waterDrop, landExpand)
     root.updateMatrixWorld(true)
   }
 
   // pohon dinaikkan dulu, supaya batang (tabrakan) & tajuk (efek memudar)
-  // yang dibaca di bawah sudah ikut tinggi barunya.
-  // Kota prosedural: pohon sudah dirancang 8 m ke atas (clearance) — menaikkan
-  // lagi (x1.8) akan membuat tajuk melayang absurd. Lewati.
-  if (!proceduralCity) {
-    raiseTrees(root)
-    root.updateMatrixWorld(true)
-  }
+  // yang dibaca di bawah sudah ikut tinggi barunya
+  raiseTrees(root)
+  root.updateMatrixWorld(true)
 
   // data tabrakan dibaca SEBELUM modifikasi visual di bawah
   const data = extractWorldData(root)
@@ -481,13 +441,9 @@ function prepareWalkScene(scene, waterDrop = 0, interiorPlan = null, landExpand 
       obj.material.polygonOffsetFactor = -2
       obj.material.polygonOffsetUnits = -2
     } else if (grp === 'TPX_Buildings') {
-      // Kota prosedural: material rumah dipakai bersama 500 rumah
-      // (userData.sharedMaterial) — jangan di-clone (emissive-nya sudah 0).
-      if (!obj.userData.sharedMaterial) {
-        obj.material = obj.material.clone()
-        if (obj.material.emissive) obj.material.emissive.set('#000000')
-        obj.material.emissiveIntensity = 0
-      }
+      obj.material = obj.material.clone()
+      if (obj.material.emissive) obj.material.emissive.set('#000000')
+      obj.material.emissiveIntensity = 0
     } else if (grp === 'TPX_GreenAreas') {
       if (!groundColor && obj.material?.color) groundColor = obj.material.color.clone()
       // Mesh hijau di LPM itu dasar laut (menutupi area air, bukan daratan).
@@ -930,39 +886,6 @@ function getWalkCache(scene, modelUrl) {
   return c
 }
 
-// Cache dunia jalan kota prosedural (LPM baru). Template kota dipakai sebagai
-// kunci cache (prepareWalkScene meng-clone di dalam, template tidak tersentuh).
-// cell 4 (pulau 3.2 km — grid cell 2 akan 1600x1150 simpul, terlalu berat);
-// tabrakan batang pohon dimasukkan sebagai `props` (mesh pohon digabung,
-// jadi tidak kebaca sebagai batang oleh ekstraktor).
-function getCityWalkCache() {
-  const scene = getCityTemplate()
-  let c = WALK_CACHE.get(scene)
-  if (!c) {
-    const mapDef = MAPS.find((m) => m.key === 'lpm')
-    const built = prepareWalkScene(scene, 0, 'lpm', 0, true)
-    const defs = mapDef?.walkBillboards || []
-    const world = buildWalkWorld({
-      ...built.data,
-      landExpand: 0,
-      cell: 4,
-      props: [
-        ...defs.map((b) => ({
-          x: b.x,
-          z: b.z,
-          r: BILLBOARD_COLLIDER_RADIUS,
-          y0: -1e4, // penghalang setinggi apa pun (tiang + panel)
-          y1: 1e4,
-        })),
-        ...getCityTreeProps(),
-      ],
-    })
-    c = { built, world, defs, proceduralCity: true }
-    WALK_CACHE.set(scene, c)
-  }
-  return c
-}
-
 // Pantau bangunan terdekat -> kabari TownWalk (cuma pas berubah) buat pop up
 // "Masuki rumah".
 function NearHouseWatcher({ buildings, selfRef, onNear }) {
@@ -979,26 +902,6 @@ function NearHouseWatcher({ buildings, selfRef, onNear }) {
     if (k === last.current) return
     last.current = k
     onNear(b ? { key: b.key, number: b.number } : null)
-  })
-  return null
-}
-
-// Pantau fasilitas terdekat -> kabari TownWalk buat pop up "Masuki <nama>".
-// Daftar fasilitas sudah disaring ke yang punya interior (WalkSceneInner).
-function NearFacilityWatcher({ facilities, selfRef, onNear }) {
-  const acc = useRef(0)
-  const last = useRef(null)
-  useFrame((_, delta) => {
-    acc.current += delta
-    if (acc.current < 0.15) return
-    acc.current = 0
-    const me = selfRef.current
-    if (!me.ready) return
-    const b = nearestVisitBuilding(facilities, me.x, me.y, me.z)
-    const k = b ? b.key : null
-    if (k === last.current) return
-    last.current = k
-    onNear(b ? { key: b.key, fid: b.fid } : null)
   })
   return null
 }
@@ -1062,17 +965,13 @@ function InteriorScenePantai({ character, inputRef, selfRef, net, onReady, equip
 
 // Interior "Rumah LPM" 2 lantai (peta LPM). Fisika & denahnya di
 // lib/houseInteriorLpm.js, gambarnya di HouseInteriorLpm.jsx.
-function InteriorSceneLpm({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo, doorsRef, modelUrl, houseNumber, sky, proceduralCity = false }) {
+function InteriorSceneLpm({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo, doorsRef, modelUrl, houseNumber, sky }) {
   const world = useMemo(() => buildLpmInteriorWorld({ isDoorOpen: (id) => !!doorsRef.current[id] }), [doorsRef])
   const spawn = useMemo(() => world.findSpawn(), [world])
   const cam = useMemo(() => makeLpmInteriorCam(world), [world])
   return (
     <>
-      {proceduralCity ? (
-        <LpmMapBackdropCity houseNumber={houseNumber} sky={sky} />
-      ) : (
-        <LpmMapBackdrop modelUrl={modelUrl} houseNumber={houseNumber} sky={sky} />
-      )}
+      <LpmMapBackdrop modelUrl={modelUrl} houseNumber={houseNumber} sky={sky} />
       <HouseInteriorLpm doorsRef={doorsRef} />
       <WalkPlayer
         world={world}
@@ -1089,38 +988,6 @@ function InteriorSceneLpm({ character, inputRef, selfRef, net, onReady, equipped
       />
       <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
       <LpmInteriorWatcher selfRef={selfRef} doorsRef={doorsRef} onInfo={onInfo} />
-    </>
-  )
-}
-
-// Interior fasilitas kota prosedural (RS, Polisi, Bank, Job Center, Pasar,
-// Mall, Kampus). Fisika & denahnya di lib/facilityInteriors.js, gambarnya di
-// FacilityInterior.jsx. Denah diposisikan di dalam rect fasilitas (lihat
-// facilityBackdropTransform di bawah).
-function InteriorSceneFacility({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo, doorsRef, facilityId, sky }) {
-  const plan = useMemo(() => facilityInteriorPlan(facilityId), [facilityId])
-  const world = useMemo(() => buildFacilityInteriorWorld(plan, { isDoorOpen: (id) => !!doorsRef.current[id] }), [plan, doorsRef])
-  const spawn = useMemo(() => world.findSpawn(), [world])
-  const cam = useMemo(() => makeFacilityInteriorCam(world, plan), [world, plan])
-  return (
-    <>
-      <FacilityMapBackdropCity facilityId={facilityId} sky={sky} />
-      <FacilityInterior plan={plan} doorsRef={doorsRef} />
-      <WalkPlayer
-        world={world}
-        spawn={spawn}
-        character={character}
-        inputRef={inputRef}
-        selfRef={selfRef}
-        net={net}
-        canopies={NO_CANOPIES}
-        onReady={onReady}
-        equippedPhone={equippedPhone}
-        phoneFoldT={phoneFoldT}
-        camPreset={cam}
-      />
-      <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
-      <FacilityInteriorWatcher plan={plan} selfRef={selfRef} doorsRef={doorsRef} onInfo={onInfo} />
     </>
   )
 }
@@ -1144,16 +1011,13 @@ function MapVisuals({ cached, clip }) {
   )
 
   const groundGeo = useMemo(() => {
-    // Kota prosedural: tanah visualnya mesh terrain sendiri (built.root) —
-    // groundMesh walkWorld tidak dirender (hemat ~600rb segitiga/frame).
-    if (cached.proceduralCity) return null
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(world.groundMesh.positions, 3))
     g.setIndex(new THREE.BufferAttribute(world.groundMesh.indices, 1))
     g.computeVertexNormals()
     g.computeBoundingSphere()
     return g
-  }, [world, cached])
+  }, [world])
 
   const span = mapSpan(world)
   const cx = (world.bounds.minX + world.bounds.maxX) / 2
@@ -1165,20 +1029,18 @@ function MapVisuals({ cached, clip }) {
   return (
     <>
       <primitive object={built.root} />
-      {groundGeo && (
-        <mesh geometry={groundGeo}>
-          <meshStandardMaterial
-            color={built.groundColor}
-            roughness={0.9}
-            metalness={0}
-            flatShading
-            polygonOffset
-            polygonOffsetFactor={2}
-            polygonOffsetUnits={2}
-            {...clipProps}
-          />
-        </mesh>
-      )}
+      <mesh geometry={groundGeo}>
+        <meshStandardMaterial
+          color={built.groundColor}
+          roughness={0.9}
+          metalness={0}
+          flatShading
+          polygonOffset
+          polygonOffsetFactor={2}
+          polygonOffsetUnits={2}
+          {...clipProps}
+        />
+      </mesh>
       {/* laut sampai cakrawala, sedikit di bawah mesh Waterways */}
       <mesh rotation-x={-Math.PI / 2} position={[cx, world.waterLevel - 0.12, cz]}>
         <planeGeometry args={[span * 10, span * 10]} />
@@ -1191,36 +1053,14 @@ function MapVisuals({ cached, clip }) {
   )
 }
 
-function WalkScene({ modelUrl, ...rest }) {
+function WalkScene({ modelUrl, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT, enterable, enterableNumbers, onNearHouse, spawnOverride }) {
   const { scene } = useGLTF(modelUrl)
   const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
-  return <WalkSceneInner cached={cached} {...rest} />
-}
-
-// Jelajahi kota prosedural (LPM baru): tanpa .glb.
-function WalkSceneCity(props) {
-  const cached = useMemo(() => getCityWalkCache(), [])
-  return <WalkSceneInner cached={cached} {...props} />
-}
-
-// Pembungkus mode luar: pilih scene .glb atau kota prosedural.
-function WalkSceneOutdoor({ proceduralCity, modelUrl, ...rest }) {
-  if (proceduralCity) return <WalkSceneCity {...rest} />
-  return <WalkScene modelUrl={modelUrl} {...rest} />
-}
-
-function WalkSceneInner({ cached, character, inputRef, selfRef, net, sky, onReady, equippedPhone, phoneFoldT, enterable, enterableNumbers, onNearHouse, onNearFacility, spawnOverride }) {
   const { built, world } = cached
   // Bangunan yang boleh dimasuki (kalau peta membatasi nomornya, lihat maps.js)
   const visitBuildings = useMemo(
     () => (enterableNumbers ? built.data.visit.filter((b) => enterableNumbers.includes(b.number)) : built.data.visit),
     [built, enterableNumbers]
-  )
-  // Fasilitas yang boleh dimasuki: cuma yang punya denah interior
-  // (lib/facilityInteriors.js). Peta GLB tidak punya fasilitas (daftar kosong).
-  const visitFacilities = useMemo(
-    () => (built.data.visitFacilities || []).filter((b) => hasFacilityInterior(b.fid)),
-    [built]
   )
   const spawn = useMemo(() => spawnOverride || world.findSpawn(), [world, spawnOverride])
   const span = mapSpan(world)
@@ -1243,7 +1083,6 @@ function WalkSceneInner({ cached, character, inputRef, selfRef, net, sky, onRead
       />
       <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
       {enterable && <NearHouseWatcher buildings={visitBuildings} selfRef={selfRef} onNear={onNearHouse} />}
-      {enterable && <NearFacilityWatcher facilities={visitFacilities} selfRef={selfRef} onNear={onNearFacility} />}
     </>
   )
 }
@@ -1341,110 +1180,6 @@ function PantaiMapBackdrop({ modelUrl, houseNumber, sky }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Latar interior fasilitas kota prosedural.
-// ---------------------------------------------------------------------------
-// Entri registry fasilitas dari id interior ('F3' -> n=3, 'F14a' -> n='14a').
-function facilityEntry(fid) {
-  const raw = String(fid).replace(/^F/, '')
-  const n = /^\d+$/.test(raw) ? Number(raw) : raw
-  return facilityById(n)
-}
-
-// Transform backdrop fasilitas: denah (x 0..W, y 0..D, z naik) dipetakan ke
-// dunia lewat posisi rect fasilitas di peta. Denah (px,py,pz) -> lokal
-// (x0+px, y0+py, fz+pz) -> dunia (x0+px, fz+pz, -(y0+py)): rotasi -90°
-// terhadap sumbu X + translasi. Grup latar memakai inversnya: rotasi +90°
-// terhadap X, posisi (-x0, -y0, -fz). Sudut (x0,y0,fz) mendarat di origin
-// interior — diverifikasi: T=(x0,fz,-y0) -> p + R^-1 T = (0,0,0).
-function facilityBackdropTransform(cached, facilityId) {
-  const plan = facilityInteriorPlan(facilityId)
-  const fac = facilityEntry(facilityId)
-  if (!plan || !fac) return null
-  const x0 = fac.x - plan.w / 2
-  const y0 = fac.y - plan.d / 2
-  // lantai fasilitas = tanah tertinggi di tapaknya (eksterior dibangun di atas
-  // titik tertinggi tapak + 0.05; groundY dunia di sini = (x, -y) lokal)
-  const { world } = cached
-  let fz = -Infinity
-  for (const [sx, sy] of [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    const g = world.groundY(fac.x + (sx * fac.w) / 2, -(fac.y + (sy * fac.d) / 2), Infinity)
-    if (g !== null && g > fz) fz = g
-  }
-  if (!Number.isFinite(fz)) fz = 0
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0))
-  return {
-    position: [-x0, -y0, -(fz + 0.05)],
-    quaternion: [q.x, q.y, q.z, q.w],
-    scale: [1, 1, 1],
-  }
-}
-
-// Kolom tapak fasilitas di koordinat interior (x 0..W, z 0..D). Di dalam kolom
-// ini air dipotong (sama seperti makeLpmFootprintPlanes).
-function makeFacilityFootprintPlanes(plan) {
-  return [
-    new THREE.Plane(new THREE.Vector3(1, 0, 0), -(plan.w + 0.25)),
-    new THREE.Plane(new THREE.Vector3(-1, 0, 0), -0.25),
-    new THREE.Plane(new THREE.Vector3(0, 0, 1), -(plan.d + 0.25)),
-    new THREE.Plane(new THREE.Vector3(0, 0, -1), -0.25),
-  ]
-}
-
-// Latar interior kota prosedural (fasilitas): tanpa .glb.
-function FacilityMapBackdropCity({ facilityId, sky }) {
-  const cached = useMemo(() => getCityWalkCache(), [])
-  const plan = useMemo(() => facilityInteriorPlan(facilityId), [facilityId])
-  const gl = useThree((state) => state.gl)
-  const { built, world } = cached
-  const place = useMemo(() => facilityBackdropTransform(cached, facilityId), [cached, facilityId])
-  const planes = useMemo(() => makeFacilityFootprintPlanes(plan), [plan])
-
-  // Semua perubahan pada peta bersama dicatat dan dikembalikan saat keluar.
-  useEffect(() => {
-    if (!place) return undefined
-    const root = built.root
-    root.updateWorldMatrix(true, true)
-    const hidden = []
-    const hide = (o) => { if (o.visible) { o.visible = false; hidden.push(o) } }
-
-    // eksterior fasilitas diganti interior; bangunan lain tetap terlihat
-    const facGroup = root.getObjectByName(`TPX_Buildings_${facilityId}`)
-    if (facGroup) hide(facGroup)
-
-    // air (satu material bersama) dipotong di kolom tapak
-    const waterMats = new Set()
-    root.traverse((o) => { if (o.isMesh && groupOf(o) === 'TPX_Waterways') waterMats.add(o.material) })
-    waterMats.forEach((m) => { m.clippingPlanes = planes; m.clipIntersection = true; m.needsUpdate = true })
-    const prevLocal = gl.localClippingEnabled
-    gl.localClippingEnabled = true
-
-    return () => {
-      hidden.forEach((o) => { o.visible = true })
-      waterMats.forEach((m) => { m.clippingPlanes = null; m.clipIntersection = false; m.needsUpdate = true })
-      gl.localClippingEnabled = prevLocal
-    }
-  }, [built, facilityId, place, planes, gl])
-
-  // matahari ikut diputar seperti petanya, jadi sisi bangunan yang terang sama dengan di luar
-  const sun = useMemo(
-    () => (place ? new THREE.Vector3(...BACKDROP_SUN).applyQuaternion(new THREE.Quaternion(...place.quaternion)).toArray() : BACKDROP_SUN),
-    [place]
-  )
-
-  return (
-    <>
-      <fog attach="fog" args={[sky.color, 110, Math.max(520, mapSpan(world) * 1.3)]} />
-      <directionalLight position={sun} intensity={sky.sun} />
-      {place && (
-        <group position={place.position} quaternion={place.quaternion} scale={place.scale}>
-          <MapVisuals cached={cached} clip={planes} />
-        </group>
-      )}
-    </>
-  )
-}
-
 // Latar interior Rumah LPM: PETA ASLI di balik jendela (bukan pemandangan buatan).
 // Sama seperti PantaiMapBackdrop, tapi dengan ukuran Rumah LPM (PW 12, PD 10,
 // balkon 1.2 m) dan cangkang LpmRumah_N / LpmKaca_N yang disembunyikan.
@@ -1466,18 +1201,8 @@ const LPM_TREE_ZONE = new THREE.Box3(
 
 function LpmMapBackdrop({ modelUrl, houseNumber, sky }) {
   const { scene } = useGLTF(modelUrl)
-  const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
-  return <LpmMapBackdropInner cached={cached} houseNumber={houseNumber} sky={sky} />
-}
-
-// Latar interior kota prosedural (LPM baru): tanpa .glb.
-function LpmMapBackdropCity({ houseNumber, sky }) {
-  const cached = useMemo(() => getCityWalkCache(), [])
-  return <LpmMapBackdropInner cached={cached} houseNumber={houseNumber} sky={sky} />
-}
-
-function LpmMapBackdropInner({ cached, houseNumber, sky }) {
   const gl = useThree((state) => state.gl)
+  const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
   const { built, world } = cached
   const place = useMemo(() => lpmBackdropTransform(built.root, houseNumber), [built, houseNumber])
   const planes = useMemo(makeLpmFootprintPlanes, [])
@@ -1712,24 +1437,20 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // buat dikirim ke pemain lain di peta yang sama).
   const selfRef = useRef({ ready: false, x: 0, y: 0, z: 0, yaw: 0, anim: 0 })
   // ---- Masuk / keluar rumah -------------------------------------------------
-  // `interior` = rumah yang lagi dimasuki ({ key, number }) atau fasilitas
-  // ({ key, facility: 'F3' }) atau null (di luar).
-  // Interior = scene terpisah + room multiplayer terpisah per rumah/fasilitas.
+  // `interior` = rumah yang lagi dimasuki ({ key, number }) atau null (di luar).
+  // Interior = scene terpisah + room multiplayer terpisah per rumah.
   const mapDef = MAPS.find((m) => m.key === mapKey)
   const enterable = !!mapDef?.enterableBuildings
   const interiorPlan = mapDef?.interiorPlan || null // 'pantai'/'lpm' = rumah 2 lantai (lihat maps.js)
-  const proceduralCity = !!mapDef?.proceduralCity // LPM baru: kota prosedural tanpa .glb
   const [interior, setInterior] = useState(null)
-  // rumah Pantai & LPM + fasilitas punya jendela yang melihat keluar -> langit
-  // & cahaya luar tetap dipakai (bukan ruang gelap)
-  const interiorOpen = !!interior && (interiorPlan === 'pantai' || interiorPlan === 'lpm' || !!interior.facility)
+  // rumah Pantai & LPM punya jendela yang melihat keluar -> langit & cahaya luar tetap dipakai (bukan ruang gelap)
+  const interiorOpen = !!interior && (interiorPlan === 'pantai' || interiorPlan === 'lpm')
   const [nearHouse, setNearHouse] = useState(null) // { key, number } | null
-  const [nearFacility, setNearFacility] = useState(null) // { key, fid } | null
   const [returnSpot, setReturnSpot] = useState(null) // posisi di luar pas mau masuk -> tempat muncul lagi pas keluar
   const [interiorInfo, setInteriorInfo] = useState({ room: null, emoji: null, atDoor: false, door: null })
   // status pintu kamar yang lagi dibuka (id pintu -> true); direset tiap masuk rumah
   const doorsRef = useRef({})
-  const netKey = interior ? (interior.facility ? `${mapKey}-f${interior.facility}` : `${mapKey}-h${interior.number}`) : mapKey
+  const netKey = interior ? `${mapKey}-h${interior.number}` : mapKey
   const net = useWalkNet({ mapKey: netKey, characterId: character?.id, selfRef })
   const sky = useMemo(getSky, [])
   const isLandscape = useLandscapeLock()
@@ -1917,20 +1638,6 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
     setInterior({ key: house.key, number: house.number })
   }
 
-  // Masuk fasilitas (RS, Polisi, Bank, Job Center, Pasar, Mall, Kampus):
-  // sama seperti masuk rumah, tapi interiornya denah fasilitas.
-  function enterFacility(f) {
-    if (!f || interior) return
-    const me = selfRef.current
-    hapticSelect()
-    setReturnSpot({ x: me.x, y: me.y, z: me.z, yaw: me.yaw })
-    selfRef.current.ready = false // jangan kirim posisi luar ke room fasilitas
-    setNearFacility(null)
-    doorsRef.current = {} // semua pintu ruangan tertutup lagi
-    setInteriorInfo({ room: null, emoji: null, atDoor: false, door: null })
-    setInterior({ key: f.key, facility: f.fid })
-  }
-
   function exitHouse() {
     if (!interior) return
     hapticSelect()
@@ -1948,9 +1655,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
     setInteriorInfo((cur) => (cur.door ? { ...cur, door: { ...cur.door, open: next } } : cur))
   }
 
-  // Tombol E (desktop) = aksi pop up yang lagi tampil (masuk / keluar rumah,
-  // masuk fasilitas, buka / tutup pintu kamar). Fasilitas didahulukan kalau
-  // karakter berdiri dekat rumah sekaligus fasilitas.
+  // Tombol E (desktop) = aksi pop up yang lagi tampil (masuk / keluar rumah, buka / tutup pintu kamar).
   const doorActionRef = useRef(null)
   doorActionRef.current = interior
     ? interiorInfo.atDoor
@@ -1958,11 +1663,9 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
       : interiorInfo.door
         ? toggleDoor
         : null
-    : nearFacility
-      ? () => enterFacility(nearFacility)
-      : nearHouse
-        ? () => enterHouse(nearHouse)
-        : null
+    : nearHouse
+      ? () => enterHouse(nearHouse)
+      : null
   useEffect(() => {
     function onKey(e) {
       if (e.code !== 'KeyE' || e.repeat) return
@@ -2005,7 +1708,6 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
     setReady(false)
     setInterior(null)
     setNearHouse(null)
-    setNearFacility(null)
     setReturnSpot(null)
     setShowHint(true)
     const t = setTimeout(() => setShowHint(false), 6000)
@@ -2030,7 +1732,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // kalau multiplayer gak tersedia -- mode Jelajahi tetap jalan solo.
   const netBadge =
     net.status === 'online'
-      ? `👥 ${net.peerIds.length + 1} di ${interior ? (interior.facility ? 'fasilitas' : 'rumah') : 'peta'} ini`
+      ? `👥 ${net.peerIds.length + 1} di ${interior ? 'rumah' : 'peta'} ini`
       : net.status === 'connecting'
         ? 'Menyambung…'
         : net.status === 'offline'
@@ -2059,22 +1761,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         <hemisphereLight args={[sky.hemi[0], sky.hemi[1], interior && !interiorOpen ? 0.2 : 0.55]} />
         {!interiorOpen && <directionalLight position={[80, 140, 60]} intensity={interior ? 0.2 : sky.sun} />}
         <Suspense fallback={null}>
-          {interior && interior.facility ? (
-            <InteriorSceneFacility
-              key={`in-${interior.key}`}
-              facilityId={interior.facility}
-              sky={sky}
-              character={character}
-              inputRef={inputRef}
-              selfRef={selfRef}
-              net={net}
-              onReady={handleReady}
-              equippedPhone={equippedPhone}
-              phoneFoldT={phoneFoldT}
-              onInfo={setInteriorInfo}
-              doorsRef={doorsRef}
-            />
-          ) : interior && interiorPlan === 'pantai' ? (
+          {interior && interiorPlan === 'pantai' ? (
             <InteriorScenePantai
               key={`in-${interior.key}`}
               modelUrl={modelUrl}
@@ -2094,7 +1781,6 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
             <InteriorSceneLpm
               key={`in-${interior.key}`}
               modelUrl={modelUrl}
-              proceduralCity={proceduralCity}
               houseNumber={interior.number}
               sky={sky}
               character={character}
@@ -2121,9 +1807,8 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
               doorsRef={doorsRef}
             />
           ) : (
-            <WalkSceneOutdoor
+            <WalkScene
               key="outdoor"
-              proceduralCity={proceduralCity}
               modelUrl={modelUrl}
               character={character}
               inputRef={inputRef}
@@ -2136,7 +1821,6 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
               enterable={enterable}
               enterableNumbers={mapDef?.enterableNumbers}
               onNearHouse={setNearHouse}
-              onNearFacility={setNearFacility}
               spawnOverride={returnSpot}
             />
           )}
@@ -2153,19 +1837,8 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
       {/* transisi masuk/keluar rumah: layar hitam yang memudar */}
       <div key={interior ? `in-${interior.key}` : 'out'} className="walk-fade" />
 
-      {/* Pop up masuk fasilitas: muncul pas karakter berdiri dekat dinding fasilitas */}
-      {!interior && nearFacility && ready && (
-        <div className="walk-enter-popup" role="dialog" aria-label={facilityInteriorPlan(nearFacility.fid)?.name || 'Fasilitas'}>
-          <div className="walk-enter-title">🏢 {facilityInteriorPlan(nearFacility.fid)?.name || 'Fasilitas'}</div>
-          <div className="walk-enter-sub">Interior bisa dimasuki · ruang roleplay</div>
-          <button type="button" className="walk-enter-btn" onClick={() => enterFacility(nearFacility)}>
-            Masuki {facilityInteriorPlan(nearFacility.fid)?.name || 'fasilitas'}
-          </button>
-        </div>
-      )}
-
       {/* Pop up masuk rumah: muncul pas karakter berdiri dekat dinding rumah */}
-      {!interior && nearHouse && !nearFacility && ready && (
+      {!interior && nearHouse && ready && (
         <div className="walk-enter-popup" role="dialog" aria-label={`Rumah nomor ${nearHouse.number}`}>
           <div className="walk-enter-title">🏠 Rumah No. {nearHouse.number}</div>
           <div className="walk-enter-sub">{interiorPlan === 'lpm' ? '3 kamar tidur · 3 kamar mandi · dapur · ruang tamu' : '3 kamar tidur · 1 kamar mandi · dapur · ruang tamu'}</div>
@@ -2175,15 +1848,11 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         </div>
       )}
 
-      {/* di dalam rumah/fasilitas: nama ruangan + pop up keluar kalau dekat pintu depan */}
+      {/* di dalam rumah: nama ruangan + pop up keluar kalau dekat pintu depan */}
       {interior && (
         <>
           <div className="walk-room-badge">
-            {interiorInfo.room
-              ? `${interiorInfo.emoji} ${interiorInfo.room}`
-              : interior.facility
-                ? `🏢 ${facilityInteriorPlan(interior.facility)?.name || 'Fasilitas'}`
-                : `🏠 Rumah No. ${interior.number}`}
+            {interiorInfo.room ? `${interiorInfo.emoji} ${interiorInfo.room}` : `🏠 Rumah No. ${interior.number}`}
           </div>
           {!interiorInfo.atDoor && interiorInfo.door && (
             <div className="walk-enter-popup" role="dialog" aria-label={interiorInfo.door.name}>
@@ -2194,10 +1863,10 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
             </div>
           )}
           {interiorInfo.atDoor && (
-            <div className="walk-enter-popup" role="dialog" aria-label={interior.facility ? 'Keluar fasilitas' : 'Keluar rumah'}>
+            <div className="walk-enter-popup" role="dialog" aria-label="Keluar rumah">
               <div className="walk-enter-title">🚪 Pintu depan</div>
               <button type="button" className="walk-enter-btn" onClick={exitHouse}>
-                {interior.facility ? `Keluar dari ${facilityInteriorPlan(interior.facility)?.name || 'fasilitas'}` : 'Keluar rumah'}
+                Keluar rumah
               </button>
             </div>
           )}
