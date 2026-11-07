@@ -7,8 +7,9 @@
 // lib/pantaiHouses.js (Kawasan Pantai).
 //
 // Tiap rumah lama: disembunyikan (userData.replaced), lalu rumah baru ditaruh
-// di titik tengah yang sama (digeser/diskala kalau petaknya sempit), menghadap
-// ke jalan terdekat, dengan jalur masuk yang jelas (lihat computeLpmPlacement).
+// di slot sepanjang jalan baru (lihat computeLpmPlacement), menghadap jalan,
+// dengan jalur masuk yang jelas. Rumah yang tidak kebagian slot ikut
+// disembunyikan (petaknya jadi ruang hijau).
 import * as THREE from 'three'
 import { buildStaticBoxes, PW, PD, BALKON_D } from './houseInteriorLpm'
 import { boxesToGeometry } from './pantaiHouses'
@@ -24,7 +25,6 @@ const MIN_SCALE = 0.7
 const GAP = 1.5 // jarak minimum antar rumah (meter)
 const MAX_SHIFT = 9 // rumah boleh digeser sejauh ini dari titik aslinya (meter)
 const BODY_H = 7.0
-const ROAD_NEAR = 25 // meter
 
 // Carport & pagar (denah, di depan rumah; dicerminkan bersama rumah, jadi di
 // model akhirnya carport ada di sisi berlawanan dari denah -- simetris dengan
@@ -48,30 +48,16 @@ const COLLIDE_MIN_DROP = 0.3 // tabrakan pondasi dipasang kalau lantai setinggi 
 // ---------------------------------------------------------------------------
 // Penempatan rumah (murni JavaScript, tanpa three.js, supaya bisa dites di Node).
 //
-// Per petak, selain skala & geseran (relaksasi seperti Pantai), arah pintu masuk
-// dipilih supaya jalur masuknya jelas:
-//   - pintu menghadap jalan terdekat (bukan ke rumah tetangga / ke air),
-//   - "teras" di depan pintu (titik 1.5 m di depan fasad) harus di tanah yang
-//     bisa dipijak, tidak tertutup rect tetangga, dan punya satu jalan keluar
-//     (salah satu dari 4 arah mata angin dari teras yang di tanah & bebas),
-//   - kalau terasnya bermasalah, rumah diputar 180° (gratis -- rect simetris),
-//     lalu ±90°, lalu digeser (ke arah posisi asal / searah sumbu, maks 3 m),
-//     selama tidak menimbulkan tumpang tindih.
-//   - rumah yang pintunya MASIH tidak OK setelah itu (di LPM: #104, #148,
-//     #153, #189 di tepi air, petaknya terjepit air & tetangga) dipindah ke
-//     daratan lapang terdekat (relocateHouses: cincin meluas dari node asal,
-//     tapak harus di tanah, pintu OK, tidak tumpang tindih; geser boleh lebih
-//     dari 9 m tapi sedekat mungkin). Setelah relokasi, pass perbaikan pintu
-//     dijalankan sekali lagi karena rumah yang pindah bisa menutup teras
-//     tetangga (mis. #153 menutup teras #83 -- diperbaiki dengan putar 180°).
-// Lihat ~/workspace/lpm-work/test_placement_final.mjs buat angka validasinya
-// (data GLB asli): 0 tumpang tindih, skala rata-rata 0.92, pintu OK 67/67.
-// Keempat rumah yang dipindah: #189 geser 21 m (skala 1.0), #148 geser 26 m,
-// #104 geser 36 m, #153 geser 51 m (semuanya skala 0.7 kecuali #189).
+// Rumah ditaruh di slot sepanjang jalan baru (lihat bagian "Jaringan jalan baru"
+// di bawah): tiap slot menghadap jalan, teras di tanah, ada jalan keluar.
+// doorFixPass memperbaiki teras yang bermasalah (putar/geser kecil); kalau
+// masih gagal, relocateHouses menggesernya sepanjang jalan.
+// Lihat ~/workspace/lpm-work/test_layout_curved.mjs buat angka validasinya
+// (data GLB asli).
 // ---------------------------------------------------------------------------
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 
-function rectOf(h) {
+export function rectOf(h) {
   const alongY = h.fx === 0
   return { cx: h.cx, cy: h.cy, w: (alongY ? MODEL_W : MODEL_D) * h.k, d: (alongY ? MODEL_D : MODEL_W) * h.k }
 }
@@ -82,7 +68,7 @@ function pointInRect(px, py, r, pad = 0) {
   return Math.abs(px - r.cx) <= r.w / 2 + pad && Math.abs(py - r.cy) <= r.d / 2 + pad
 }
 // pusat teras: 1.5 m di depan fasad, tengah lebar pintu
-function porchCenter(h) {
+export function porchCenter(h) {
   const r = rectOf(h)
   const fd = h.fx === 0 ? r.d : r.w
   return { x: h.cx + h.fx * (fd / 2 + 1.5), y: h.cy + h.fy * (fd / 2 + 1.5) }
@@ -134,7 +120,7 @@ function gapViolationsOf(h, all) {
 }
 
 // Pusat + 4 sudut tapak rumah di tanah yang bisa dipijak (bukan air).
-function footprintOnLand(h, onLand) {
+export function footprintOnLand(h, onLand) {
   const r = rectOf(h)
   return [[r.cx, r.cy],
     [r.cx - r.w / 2, r.cy - r.d / 2], [r.cx + r.w / 2, r.cy - r.d / 2],
@@ -204,195 +190,409 @@ function doorFixPass(infos, onLand) {
   }
 }
 
-// Cari daratan lapang terdekat buat satu rumah: cincin meluas dari node ASAL
-// (x0, y0), radius 0..80 m, sudut tiap ~1.5 m busur. Kandidat harus: rect
-// tidak tumpang tindih, tapak di tanah, pintu OK. Skor = jarak + penalti
-// skala ((1-k)*10 m): rumah yang lebih besar diutamakan bila selisih jaraknya
-// kecil; lalu GAP sedikit, lalu jarak. Scan berhenti 5 m setelah cincin
-// pertama yang berisi kandidat. Mengembalikan {cx, cy, fx, fy, k, r, gv} / null.
-function findRelocSpot(h, all, onLand) {
-  const cands = []
-  let firstRing = null
-  for (let r = 0; r <= 80; r += 1) {
-    if (firstRing !== null && r > firstRing + 5) break
-    const nAng = r === 0 ? 1 : Math.max(12, Math.round((2 * Math.PI * r) / 1.5))
-    for (let a = 0; a < nAng; a++) {
-      const th = (a / nAng) * 2 * Math.PI
-      const cx = h.x0 + r * Math.cos(th), cy = h.y0 + r * Math.sin(th)
-      for (const k of [1.0, 0.9, 0.8, 0.7]) {
-        for (const [fx, fy] of DIRS) {
-          const cand = { num: h.num, cx, cy, fx, fy, k }
-          if (overlapsAny(cand, all)) continue
-          if (!footprintOnLand(cand, onLand)) continue
-          if (!doorOk(cand, all, onLand)) continue
-          cands.push({ ...cand, r, gv: gapViolationsOf(cand, all), score: r + (1 - k) * 10 })
-          if (firstRing === null) firstRing = r
-        }
-      }
+// ---------------------------------------------------------------------------
+// Jaringan jalan baru (layout perumahan) + penempatan rumah di sepanjang jalan.
+//
+// Dulu: rumah ditaruh di titik node lama (relaksasi + relokasi). Sekarang:
+// jalan-jalan melengkung (Catmull-Rom) digambar dulu sebagai jaringan
+// perumahan, lalu rumah ditaruh di slot sepanjang kedua sisi jalan,
+// menghadap jalan, dengan halaman depan ~3 m. Jalan lama GLB disembunyikan
+// (hideOldRoads) dan jalan baru digambar prosedural (buildLpmRoadTriangles).
+//
+// Frame lokal: x 0..207 (barat->timur), y 0..150 (utara->selatan, y = -z dunia).
+// ---------------------------------------------------------------------------
+const ROAD_HALF = 2 // setengah lebar jalan baru (lebar 4 m)
+const YARD = 3 // halaman depan: rect rumah -> tepi jalan (m)
+const SIDE_GAP_MIN = 2 // gap samping antar rumah, minimum (m); target 3 m
+const JUNCTION_CLEAR = 8 // pusat slot harus sejauh ini dari persimpangan (m)
+const SCALE_STEPS = [1.0, 0.9, 0.8, 0.7] // dicoba dari besar ke kecil
+const DASH_ON = 1.6 // garis tengah putus-putus: panjang garis (m)
+const DASH_OFF = 1.6 // ...dan celahnya (m)
+const DASH_HALF_W = 0.07 // setengah lebar garis tengah (m)
+const ROAD_ASPHALT = 0x646464 // warna aspal (sama dengan jalan GLB)
+const ROAD_LINE = 0xd8c33c // warna garis tengah kuning
+
+// Persimpangan jaringan jalan (dipakai JUNCTION_CLEAR + kandidat billboard).
+// Termasuk titik sambung cabang (S1->R3, S3->R2).
+const LPM_JUNCTIONS = [[64, 39], [46, 72], [26, 105], [188, 46], [186, 77], [95, 103]]
+
+// Jalan utama (desain pertama, terverifikasi 49 rumah):
+// R1/R2/R3 = jalan timur-barat melengkung; CW = konektor barat (R3->R2->R1);
+// CE = konektor timur (R1->R2). `bulb` = ujung bundar (cul-de-sac) di ujung timur R3.
+const LPM_ROADS = [
+  { id: 'R1', pts: [[64, 39], [88, 40], [112, 42], [135, 41], [155, 44], [172, 45], [188, 46]] },
+  { id: 'R2', pts: [[46, 72], [75, 70], [105, 72], [135, 71], [150, 74], [160, 75], [186, 77]] },
+  { id: 'R3', pts: [[26, 105], [55, 101], [85, 104], [112, 102], [138, 103], [144, 102]], bulb: 3 },
+  { id: 'CW', pts: [[26, 105], [38, 88], [46, 72], [55, 55], [64, 39]] },
+  { id: 'CE', pts: [[188, 46], [187, 61], [186, 77]] },
+]
+// Jalan sambungan (cabang) ke lobus selatan & strip timur -- tahap 2.
+// S1 = tulang punggung lobus selatan: dari R3 (95,103) melengkung ke selatan,
+// ujung bundar (cul-de-sac) di ujung lobus (88,132). Rumah di kedua sisi.
+// S3 = strip timur teluk: dari R2 (163,75) ke selatan, ujung bundar (162,99).
+// Cabang diproses SEBELUM jalan utama (lihat sampleLpmRoads) supaya rumah
+// jalan utama mengalah di titik sambung (jalur cabang bersih, tidak menembus
+// rumah yang sudah ada).
+const LPM_BRANCHES = [
+  { id: 'S1', pts: [[95, 103], [93, 112], [94, 120], [90, 128], [88, 132]], bulb: 3 },
+]
+
+// Sampel satu kurva Catmull-Rom (uniform) tiap ~1 m busur.
+// Mengembalikan { id, pts, nrm, tan, arc, len, bulb }.
+// pts: [[x, y], ...]; nrm: normal satuan (-ty, tx); tan: tangen satuan;
+// arc: jarak busur dari awal; len: panjang total.
+export function sampleRoadCurve(id, ctrl, bulb = 0) {
+  const dense = []
+  const n = ctrl.length
+  const P = (i) => ctrl[Math.max(0, Math.min(n - 1, i))]
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2)
+    const steps = Math.max(4, Math.ceil(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) * 4))
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps
+      const t2 = t * t, t3 = t2 * t
+      const x = 0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3)
+      const y = 0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
+      dense.push([x, y])
     }
   }
-  if (!cands.length) return null
-  cands.sort((a, b) => a.score - b.score || a.gv - b.gv || a.r - b.r)
-  return cands[0]
-}
-
-// Relokasi (langkah 4): rumah yang pintunya masih tidak OK setelah post-pass
-// dipindah ke daratan lapang terdekat. Urutan: skor kandidat terdekat paling
-// kecil dulu (yang paling sempit pilihannya didahulukan); tiap rumah dicari
-// ulang spotnya karena rumah yang sudah pindah mengubah tetangganya. Rumah
-// yang tidak ketemu spot (tidak ada dalam 80 m) dibiarkan di tempatnya.
-function relocateHouses(infos, onLand) {
-  const failing = infos.filter((h) => !doorOk(h, infos, onLand))
-  const ranked = failing
-    .map((h) => ({ h, spot: findRelocSpot(h, infos, onLand) }))
-    .sort((a, b) => (a.spot?.score ?? 1e9) - (b.spot?.score ?? 1e9))
-  for (const { h } of ranked) {
-    const spot = findRelocSpot(h, infos, onLand)
-    if (!spot) continue
-    h.cx = spot.cx; h.cy = spot.cy; h.fx = spot.fx; h.fy = spot.fy; h.k = spot.k
-  }
-}
-
-// `buildings`: [{ num, cx, cy, sx, sy }] (frame lokal, meter).
-// `roads`: [x, y, ...] titik jalan (frame lokal, jarang).
-// `isWaterXZ(x, z)`: true kalau titik (koordinat dunia) di dalam segitiga air.
-// `onLand(x, y)`: true kalau titik (frame lokal) bisa dipijak.
-export function computeLpmPlacement({ buildings, roads, isWaterXZ, onLand }) {
-  const center = { x: 0, y: 0 }
-  for (const b of buildings) { center.x += b.cx; center.y += b.cy }
-  center.x /= buildings.length; center.y /= buildings.length
-
-  // --- 1. pilih arah hadap: jalan terdekat, dengan penalti teras di air / tertutup ---
-  function chooseFacing(b) {
-    let bestAll = Infinity, tx = 0, ty = 0
-    for (let i = 0; i < roads.length; i += 2) {
-      const dx = roads[i] - b.cx, dy = roads[i + 1] - b.cy
-      const d = dx * dx + dy * dy
-      if (d < bestAll) { bestAll = d; tx = dx; ty = dy }
-    }
-    if (bestAll > ROAD_NEAR * ROAD_NEAR) {
-      tx = center.x - b.cx; ty = center.y - b.cy
-      if (Math.hypot(tx, ty) > 0.5) {
-        if (Math.abs(tx) > Math.abs(ty)) return { fx: Math.sign(tx), fy: 0 }
-        return { fx: 0, fy: Math.sign(ty) }
-      }
-      return { fx: 0, fy: -1 }
-    }
-    let bestDir = null, bestCost = Infinity
-    for (const [fx, fy] of DIRS) {
-      let rd = Infinity
-      for (let i = 0; i < roads.length; i += 2) {
-        const dx = roads[i] - b.cx, dy = roads[i + 1] - b.cy
-        if (dx * fx + dy * fy <= 1) continue
-        rd = Math.min(rd, Math.hypot(dx, dy))
-      }
-      if (rd === Infinity) rd = 40
-      const probe = { num: b.num, cx: b.cx, cy: b.cy, fx, fy, k: 1 }
-      const p = porchCenter(probe)
-      const waterN = isWaterXZ(p.x, -p.y) ? 1 : 0
-      let blocked = 0
-      for (const o of buildings) {
-        if (o.num === b.num) continue
-        if (Math.hypot(o.cx - b.cx, o.cy - b.cy) > 30) continue
-        if (pointInRect(p.x, p.y, { cx: o.cx, cy: o.cy, w: o.sx + 1, d: o.sy + 1 }, 0.5)) blocked++
-      }
-      let exit = false
-      for (const [ex, ey] of DIRS) {
-        const x = p.x + ex * 2.5, y = p.y + ey * 2.5
-        if (isWaterXZ(x, -y)) continue
-        let inside = false
-        for (const o of buildings) {
-          if (o.num === b.num) continue
-          if (pointInRect(x, y, { cx: o.cx, cy: o.cy, w: o.sx + 1, d: o.sy + 1 }, 0.5)) { inside = true; break }
-        }
-        if (!inside) { exit = true; break }
-      }
-      const cost = rd + 25 * waterN + 15 * blocked + (exit ? 0 : 10)
-      if (cost < bestCost) { bestCost = cost; bestDir = { fx, fy } }
-    }
-    return bestDir
-  }
-
-  const infos = buildings.map((b) => {
-    const f = chooseFacing(b)
-    return { num: b.num, cx: b.cx, cy: b.cy, x0: b.cx, y0: b.cy, fx: f.fx, fy: f.fy, k: 1 }
-  })
-
-  // --- 2. relaksasi (sama seperti Pantai): geser menjauh, lalu kecilkan skala ---
-  const dims = (h) => {
-    const alongY = h.fx === 0
-    return [(alongY ? MODEL_W : MODEL_D) * h.k, (alongY ? MODEL_D : MODEL_W) * h.k]
-  }
-  const pen = (A, B) => {
-    const [aw, ad] = dims(A), [bw, bd] = dims(B)
-    const ox = (aw + bw) / 2 + GAP - Math.abs(A.cx - B.cx)
-    const oy = (ad + bd) / 2 + GAP - Math.abs(A.cy - B.cy)
-    return ox > 0 && oy > 0 ? [ox, oy] : null
-  }
-  const clampShift = (h) => {
-    const dx = h.cx - h.x0, dy = h.cy - h.y0, d = Math.hypot(dx, dy)
-    if (d > MAX_SHIFT) { h.cx = h.x0 + (dx / d) * MAX_SHIFT; h.cy = h.y0 + (dy / d) * MAX_SHIFT }
-  }
-  for (let round = 0; round < 30; round++) {
-    for (let it = 0; it < 60; it++) {
-      let moved = false
-      for (let i = 0; i < infos.length; i++) for (let j = i + 1; j < infos.length; j++) {
-        const A = infos[i], B = infos[j], o = pen(A, B)
-        if (!o) continue
-        moved = true
-        const sx = A.cx === B.cx ? (i % 2 ? 1 : -1) : Math.sign(A.cx - B.cx)
-        const sy = A.cy === B.cy ? (i % 2 ? 1 : -1) : Math.sign(A.cy - B.cy)
-        if (o[0] < o[1]) { A.cx += (sx * o[0]) / 2; B.cx -= (sx * o[0]) / 2 } else { A.cy += (sy * o[1]) / 2; B.cy -= (sy * o[1]) / 2 }
-        clampShift(A); clampShift(B)
-      }
-      if (!moved) break
-    }
-    let still = false
-    for (let i = 0; i < infos.length; i++) for (let j = i + 1; j < infos.length; j++) {
-      if (!pen(infos[i], infos[j])) continue
-      still = true
-      for (const h of [infos[i], infos[j]]) h.k = Math.max(MIN_SCALE, h.k * 0.96)
-    }
-    if (!still) break
-  }
-
-  // --- 3. post-pass: perbaiki jalur masuk rumah yang terasnya bermasalah ---
-  doorFixPass(infos, onLand)
-
-  // --- 4. relokasi: rumah yang pintunya masih tidak OK (di LPM: #104, #148,
-  // #153, #189 di tepi air) dipindah ke daratan lapang terdekat; geser boleh
-  // lebih dari 9 m, tapi sedekat mungkin dengan node asalnya.
-  relocateHouses(infos, onLand)
-
-  // --- 5. perbaikan ulang: relokasi bisa menutup teras tetangga (mis. #83
-  // yang terasnya tertutup #153 yang pindah) -- perbaiki lagi seperti langkah 3.
-  // Catatan: fits() di doorFixPass membatasi geser 9 m dari node asal, jadi
-  // rumah yang sudah direlokasi (19-51 m) hanya bisa diperbaiki lewat putar
-  // 180° di langkah ini -- itu cukup karena relokasi sudah menjamin pintunya OK.
-  doorFixPass(infos, onLand)
-  return infos
-}
-
-// Titik-titik jalan (frame lokal scene), diambil jarang supaya ringan.
-function collectRoadPoints(scene, inv) {
+  dense.push(ctrl[n - 1].slice())
+  // panjang busur kumulatif, lalu sampel ulang tiap 1 m
+  const cum = [0]
+  for (let i = 1; i < dense.length; i++) cum.push(cum[i - 1] + Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1]))
+  const len = cum[cum.length - 1]
   const pts = []
-  const v = new THREE.Vector3()
+  let j = 0
+  for (let a = 0; a <= len; a += 1) {
+    while (j < cum.length - 2 && cum[j + 1] < a) j++
+    const segLen = cum[j + 1] - cum[j] || 1
+    const f = Math.max(0, Math.min(1, (a - cum[j]) / segLen))
+    pts.push([dense[j][0] + (dense[j + 1][0] - dense[j][0]) * f, dense[j][1] + (dense[j + 1][1] - dense[j][1]) * f])
+  }
+  // pastikan titik akhir persis di ujung
+  const last = pts[pts.length - 1], end = ctrl[n - 1]
+  if (Math.hypot(last[0] - end[0], last[1] - end[1]) > 0.01) pts.push(end.slice())
+  const arc = [], tan = [], nrm = []
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]
+    let tx = b[0] - a[0], ty = b[1] - a[1]
+    const l = Math.hypot(tx, ty) || 1
+    tx /= l; ty /= l
+    tan.push([tx, ty])
+    nrm.push([-ty, tx])
+    arc.push(i === 0 ? 0 : arc[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]))
+  }
+  return { id, pts, nrm, tan, arc, len: arc[arc.length - 1], bulb }
+}
+
+export function sampleLpmRoads() {
+  // Cabang dulu, baru jalan utama: slot cabang diterima lebih dulu, jadi
+  // rumah jalan utama yang berdekatan dengan jalur cabang ditolak
+  // (uji "jalan lain" di buildSlots) dan persimpangan tetap bersih.
+  return [...LPM_BRANCHES, ...LPM_ROADS].map((r) => sampleRoadCurve(r.id, r.pts, r.bulb || 0))
+}
+
+// Segitiga jalan baru (frame lokal: [x, y, z=tinggi]).
+// groundY(x, y) = tinggi tanah dunia lama di titik itu (atau null kalau di air).
+// Mengembalikan [{ name, tris, color, noCollide }]:
+//  - aspal: pita 4 m mengikuti tanah (+0.02), sampel tiap 2 m, + kipas cul-de-sac
+//  - garis tengah: kuning putus-putus 1.6/1.6 m (visual saja, noCollide)
+export function buildLpmRoadTriangles(groundY) {
+  const segs = sampleLpmRoads()
+  const asphalt = []
+  const line = []
+  const hAt = (x, y, fallback) => {
+    const g = groundY(x, y)
+    return g === null || g === undefined ? fallback : g + 0.02
+  }
+  // titik di busur `a` pada segmen (interpolasi titik + normal)
+  const at = (seg, a) => {
+    let i = 0
+    while (i < seg.arc.length - 2 && seg.arc[i + 1] < a) i++
+    const f = (a - seg.arc[i]) / ((seg.arc[i + 1] - seg.arc[i]) || 1)
+    return [
+      seg.pts[i][0] + (seg.pts[i + 1][0] - seg.pts[i][0]) * f,
+      seg.pts[i][1] + (seg.pts[i + 1][1] - seg.pts[i][1]) * f,
+      seg.nrm[i][0] + (seg.nrm[i + 1][0] - seg.nrm[i][0]) * f,
+      seg.nrm[i][1] + (seg.nrm[i + 1][1] - seg.nrm[i][1]) * f,
+    ]
+  }
+  for (const seg of segs) {
+    const { pts, nrm } = seg
+    // --- aspal: quad tiap 2 m ---
+    let prevH = 0
+    for (let i = 0; i < pts.length - 1; i += 2) {
+      const i2 = Math.min(i + 2, pts.length - 1)
+      const [x0, y0] = pts[i], [x1, y1] = pts[i2]
+      const [nx0, ny0] = nrm[i], [nx1, ny1] = nrm[i2]
+      const h0 = hAt(x0, y0, prevH), h1 = hAt(x1, y1, h0)
+      prevH = h1
+      const L0 = [x0 + nx0 * ROAD_HALF, y0 + ny0 * ROAD_HALF, h0]
+      const R0 = [x0 - nx0 * ROAD_HALF, y0 - ny0 * ROAD_HALF, h0]
+      const L1 = [x1 + nx1 * ROAD_HALF, y1 + ny1 * ROAD_HALF, h1]
+      const R1 = [x1 - nx1 * ROAD_HALF, y1 - ny1 * ROAD_HALF, h1]
+      asphalt.push(...L0, ...R0, ...R1, ...L0, ...R1, ...L1)
+    }
+    // --- garis tengah putus-putus ---
+    for (let s = 0; s + DASH_ON <= seg.len; s += DASH_ON + DASH_OFF) {
+      const [ax, ay, anx, any] = at(seg, s)
+      const [bx, by, bnx, bny] = at(seg, s + DASH_ON)
+      const ha = hAt(ax, ay, prevH) + 0.025, hb = hAt(bx, by, ha - 0.025) + 0.025
+      const aL = [ax + anx * DASH_HALF_W, ay + any * DASH_HALF_W, ha]
+      const aR = [ax - anx * DASH_HALF_W, ay - any * DASH_HALF_W, ha]
+      const bL = [bx + bnx * DASH_HALF_W, by + bny * DASH_HALF_W, hb]
+      const bR = [bx - bnx * DASH_HALF_W, by - bny * DASH_HALF_W, hb]
+      line.push(...aL, ...aR, ...bR, ...aL, ...bR, ...bL)
+    }
+    // --- kipas cul-de-sac di ujung ---
+    if (seg.bulb > 0) {
+      const [cx, cy] = pts[pts.length - 1]
+      const h = hAt(cx, cy, prevH)
+      const N = 10
+      for (let k = 0; k < N; k++) {
+        const a0 = (k / N) * Math.PI * 2, a1 = ((k + 1) / N) * Math.PI * 2
+        asphalt.push(cx, cy, h,
+          cx + Math.cos(a0) * seg.bulb, cy + Math.sin(a0) * seg.bulb, h,
+          cx + Math.cos(a1) * seg.bulb, cy + Math.sin(a1) * seg.bulb, h)
+      }
+    }
+  }
+  return [
+    { name: 'TPX_RoadsOutlines_Lpm_Asphalt', tris: asphalt, color: ROAD_ASPHALT },
+    { name: 'TPX_RoadsOutlines_Lpm_Center', tris: line, color: ROAD_LINE, noCollide: true },
+  ]
+}
+
+// Sembunyikan jalan lama GLB (semua mesh di bawah ancestor TPX_Roads*):
+// visible=false (tidak tampil di Peta/Jelajahi) + userData.replaced=true
+// (dikeluarkan dari ekstraktor dunia jalan di TownWalk/TownMap3D).
+// HARUS dipanggil sebelum jalan baru ditambah (jalan baru juga berawalan TPX_Roads).
+export function hideOldRoads(scene) {
   scene.traverse((obj) => {
     if (!obj.isMesh || !obj.geometry) return
-    let inRoad = false
     for (let o = obj; o; o = o.parent) {
-      if ((o.name || '').startsWith('TPX_Roads')) { inRoad = true; break }
-    }
-    if (!inRoad) return
-    const pos = obj.geometry.getAttribute('position')
-    if (!pos) return
-    const step = Math.max(1, Math.floor(pos.count / 4000))
-    for (let i = 0; i < pos.count; i += step) {
-      v.fromBufferAttribute(pos, i).applyMatrix4(obj.matrixWorld).applyMatrix4(inv)
-      pts.push(v.x, v.y)
+      if ((o.name || '').startsWith('TPX_Roads')) {
+        obj.visible = false
+        obj.userData.replaced = true
+        break
+      }
     }
   })
-  return pts
+}
+
+// jarak tepi-ke-tepi antar dua AABB (0 bila bersentuhan, negatif bila tumpang tindih)
+export function edgeGap(a, b) {
+  const gx = Math.abs(a.cx - b.cx) - (a.w + b.w) / 2
+  const gy = Math.abs(a.cy - b.cy) - (a.d + b.d) / 2
+  if (gx > 0 && gy > 0) return Math.hypot(gx, gy)
+  if (gx > 0 || gy > 0) return Math.max(gx, gy)
+  return -Math.min(-gx, -gy)
+}
+
+// Bangun daftar slot (posisi + arah hadap) buat satu skala k.
+// Tiap sisi jalan dijalani sepanjang garis tengah; slot diterima kalau:
+//   - tapak (pusat + 4 sudut rect) di tanah, dan teras di tanah,
+//   - pusat slot >= JUNCTION_CLEAR dari semua persimpangan,
+//   - rect >= ROAD_HALF + 1 m dari garis tengah jalan LAIN,
+//   - rect (diperluas SIDE_GAP_MIN/2) tidak tumpang tindih slot yang sudah diterima,
+//   - jarak busur dari slot sebelumnya di sisi yang sama >= W + SIDE_GAP_MIN.
+// Mengembalikan { bySide: [slot, ...] } (satu list per sisi jalan).
+export function buildSlots(k, onLand, roadSegs) {
+  const W = MODEL_W * k, D = MODEL_D * k
+  const accepted = []
+  const bySide = []
+  // bounding box tiap segmen (buat mempercepat uji "jalan lain")
+  const boxes = roadSegs.map((seg) => {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (const [x, y] of seg.pts) {
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+    }
+    return { minX, maxX, minY, maxY }
+  })
+  const expandedOverlap = (a, b) => {
+    // tolak kalau rect (diperluas SIDE_GAP_MIN/2 tiap sisi) bersentuhan:
+    // |dx|*2 < aw+bw + SIDE_GAP_MIN*2  <=>  celah tepi < SIDE_GAP_MIN
+    const pad = SIDE_GAP_MIN
+    return Math.abs(a.cx - b.cx) * 2 < a.w + b.w + pad * 2 && Math.abs(a.cy - b.cy) * 2 < a.d + b.d + pad * 2
+  }
+  // jarak titik ke garis tengah segmen (pakai titik sampel 1 m; cukup akurat)
+  const distToSeg = (x, y, seg) => {
+    let best = Infinity
+    for (const [px, py] of seg.pts) {
+      const d = (px - x) ** 2 + (py - y) ** 2
+      if (d < best) best = d
+    }
+    return Math.sqrt(best)
+  }
+  for (let si = 0; si < roadSegs.length; si++) {
+    const seg = roadSegs[si]
+    for (const side of [1, -1]) {
+      const list = []
+      let lastArc = -Infinity
+      for (let i = 0; i < seg.pts.length; i++) {
+        if (seg.arc[i] - lastArc < W + SIDE_GAP_MIN) continue
+        const [px, py] = seg.pts[i]
+        const [nx, ny] = seg.nrm[i]
+        // arah hadap = ke jalan, dibulatkan ke 4 arah mata angin
+        const fx = Math.abs(nx) > Math.abs(ny) ? -Math.sign(nx) * side : 0
+        const fy = fx === 0 ? -Math.sign(ny) * side : 0
+        // Tapak axis-aligned menjorok lebih jauh ke arah normal kalau jalannya
+        // diagonal: jarak pusat ke tepi depan sepanjang normal =
+        // (D/2)*cos + (W/2)*sin, dengan cos/sin sudut hadap-bulat vs normal.
+        const ux = nx * side, uy = ny * side // dari jalan ke rumah
+        const cosT = Math.abs(ux * fx + uy * fy)
+        const sinT = Math.sqrt(Math.max(0, 1 - cosT * cosT))
+        const dist = ROAD_HALF + YARD + (D / 2) * cosT + (W / 2) * sinT
+        const cx = px + ux * dist, cy = py + uy * dist
+        const h = { cx, cy, fx, fy, k, tx: seg.tan[i][0], ty: seg.tan[i][1], roadId: seg.id, side, s: seg.arc[i] }
+        // jauh dari persimpangan
+        let nearJ = false
+        for (const [jx, jy] of LPM_JUNCTIONS) {
+          if (Math.hypot(cx - jx, cy - jy) < JUNCTION_CLEAR) { nearJ = true; break }
+        }
+        if (nearJ) continue
+        // tapak + teras di tanah
+        if (!footprintOnLand(h, onLand)) continue
+        const p = porchCenter(h)
+        if (!onLand(p.x, p.y)) continue
+        // tidak menabrak jalan lain (rect harus >= ROAD_HALF+1 dari garis tengahnya)
+        const r = rectOf(h)
+        const corners = [[r.cx, r.cy], [r.cx - r.w / 2, r.cy - r.d / 2], [r.cx + r.w / 2, r.cy - r.d / 2], [r.cx - r.w / 2, r.cy + r.d / 2], [r.cx + r.w / 2, r.cy + r.d / 2]]
+        let hitOtherRoad = false
+        for (let sj = 0; sj < roadSegs.length; sj++) {
+          if (sj === si) continue
+          const b = boxes[sj]
+          if (r.cx + r.w / 2 + ROAD_HALF + 1 < b.minX || r.cx - r.w / 2 - ROAD_HALF - 1 > b.maxX || r.cy + r.d / 2 + ROAD_HALF + 1 < b.minY || r.cy - r.d / 2 - ROAD_HALF - 1 > b.maxY) continue
+          for (const [qx, qy] of corners) {
+            if (distToSeg(qx, qy, roadSegs[sj]) < ROAD_HALF + 1) { hitOtherRoad = true; break }
+          }
+          if (hitOtherRoad) break
+        }
+        if (hitOtherRoad) continue
+        // tidak tumpang tindih slot lain (gap minimum SIDE_GAP_MIN)
+        if (accepted.some((o) => expandedOverlap(r, rectOf(o)))) continue
+        accepted.push(h)
+        list.push(h)
+        lastArc = seg.arc[i]
+      }
+      bySide.push(list)
+    }
+  }
+  return { bySide, accepted }
+}
+
+// Pilih `total` slot dari semua sisi jalan secara proporsional, supaya semua
+// sisi jalan terisi merata (tidak ada jalan yang kosong). Di tiap sisi, slot
+// diambil merata sepanjang sisi itu (jarak antar slot jadi >= SIDE_GAP_MIN,
+// biasanya >= SIDE_GAP).
+function selectSlots(bySide, total) {
+  const all = bySide.flat()
+  if (all.length < total) return null
+  const counts = bySide.map((l) => Math.round((l.length / all.length) * total))
+  let sum = counts.reduce((a, b) => a + b, 0)
+  let i = 0
+  while (sum > total && i < counts.length * total + 100) {
+    const j = i % counts.length
+    if (counts[j] > 0) { counts[j]--; sum-- }
+    i++
+  }
+  while (sum < total) {
+    let best = -1
+    for (let j = 0; j < counts.length; j++) {
+      if (counts[j] < bySide[j].length && (best < 0 || bySide[j].length > bySide[best].length)) best = j
+    }
+    if (best < 0) break
+    counts[best]++; sum++
+  }
+  const picked = []
+  const seen = new Set()
+  bySide.forEach((list, j) => {
+    const n = counts[j]
+    for (let t = 0; t < n; t++) {
+      const idx = Math.floor(((t + 0.5) * list.length) / n)
+      const h = list[idx]
+      if (!seen.has(h)) { seen.add(h); picked.push(h) }
+    }
+  })
+  return picked
+}
+
+// Relokasi darurat: rumah yang pintunya masih tidak OK setelah doorFixPass
+// digeser sepanjang jalannya sendiri (busur terdekat yang pintunya OK,
+// tapak di tanah, tidak tumpang tindih, jauh dari persimpangan).
+// Kalau tidak ada, rumah dibiarkan (tes yang melaporkan).
+function relocateHouses(infos, onLand, roadSegs) {
+  const byId = new Map(roadSegs.map((s) => [s.id, s]))
+  for (const h of infos) {
+    if (doorOk(h, infos, onLand)) continue
+    const seg = byId.get(h.roadId)
+    if (!seg) continue
+    let best = null
+    for (let ds = -12; ds <= 12; ds += 1) {
+      if (ds === 0) continue
+      const s = h.s + ds
+      if (s < 0 || s > seg.len) continue
+      let i = 0
+      while (i < seg.arc.length - 2 && seg.arc[i + 1] < s) i++
+      const f = (s - seg.arc[i]) / ((seg.arc[i + 1] - seg.arc[i]) || 1)
+      const px = seg.pts[i][0] + (seg.pts[i + 1][0] - seg.pts[i][0]) * f
+      const py = seg.pts[i][1] + (seg.pts[i + 1][1] - seg.pts[i][1]) * f
+      const nx = seg.nrm[i][0] + (seg.nrm[i + 1][0] - seg.nrm[i][0]) * f
+      const ny = seg.nrm[i][1] + (seg.nrm[i + 1][1] - seg.nrm[i][1]) * f
+      const side = h.side
+      const ux = nx * side, uy = ny * side
+      const fx = Math.abs(nx) > Math.abs(ny) ? -Math.sign(nx) * side : 0
+      const fy = fx === 0 ? -Math.sign(ny) * side : 0
+      const W = MODEL_W * h.k, D = MODEL_D * h.k
+      const cosT = Math.abs(ux * fx + uy * fy)
+      const sinT = Math.sqrt(Math.max(0, 1 - cosT * cosT))
+      const dist = ROAD_HALF + YARD + (D / 2) * cosT + (W / 2) * sinT
+      const cand = { ...h, cx: px + ux * dist, cy: py + uy * dist, fx, fy, s }
+      if (!footprintOnLand(cand, onLand)) continue
+      if (overlapsAny(cand, infos)) continue
+      if (!doorOk(cand, infos, onLand)) continue
+      let nearJ = false
+      for (const [jx, jy] of LPM_JUNCTIONS) {
+        if (Math.hypot(cand.cx - jx, cand.cy - jy) < JUNCTION_CLEAR) { nearJ = true; break }
+      }
+      if (nearJ) continue
+      if (!best || Math.abs(ds) < Math.abs(best.ds)) best = { cand, ds }
+    }
+    if (best) {
+      h.cx = best.cand.cx; h.cy = best.cand.cy
+      h.fx = best.cand.fx; h.fy = best.cand.fy; h.s = best.cand.s
+    }
+  }
+}
+
+// `buildings`: [{ num, ... }] (frame lokal, meter) -- cuma nomornya yang dipakai;
+// posisi rumah BARU ditentukan slot sepanjang jalan baru (bukan node lama).
+// `onLand(x, y)`: true kalau titik (frame lokal) bisa dipijak.
+// Mengembalikan info rumah [{ num, cx, cy, fx, fy, k, tx, ty, roadId, side, x0, y0 }].
+export function computeLpmPlacement({ buildings, onLand }) {
+  const roadSegs = sampleLpmRoads()
+  let infos = null
+  for (const k of SCALE_STEPS) {
+    const { bySide } = buildSlots(k, onLand, roadSegs)
+    const picked = selectSlots(bySide, buildings.length)
+    if (!picked) continue
+    infos = picked
+    break
+  }
+  if (!infos) {
+    // tidak muat 67 rumah bahkan di skala 0.7: kembalikan sebanyak yang muat
+    // (pemanggil membiarkan sisanya memakai model lama; tes yang melaporkan).
+    const { bySide } = buildSlots(MIN_SCALE, onLand, roadSegs)
+    infos = bySide.flat()
+  }
+  const nums = buildings.map((b) => b.num).sort((a, b) => a - b)
+  infos = infos.map((h, i) => ({ ...h, num: nums[i], x0: h.cx, y0: h.cy }))
+  // perbaikan pintu (geser sepanjang jalan) + relokasi fallback
+  doorFixPass(infos, onLand)
+  relocateHouses(infos, onLand, roadSegs)
+  doorFixPass(infos, onLand)
+  return infos
 }
 
 // Segitiga air/hijau/jalan + batang pohon (koordinat dunia, Y-up) buat dunia
@@ -537,7 +737,9 @@ function baseColliderGeo(sh, depth) {
 // Pasang rumah baru menggantikan semua TPX_Buildings_N di `scene`. Aman dipanggil
 // berulang (ditandai di scene.userData). `waterDrop` = penurunan permukaan air
 // peta ini (lihat maps.js: walkWaterDrop), dipakai menilai tanah saat penempatan.
-export function addLpmHouses(scene, waterDrop = 0) {
+// `landExpand` = perluasan daratan LPM ke laut (lihat maps.js), dipakai di dunia
+// jalan lama & final supaya rumah/jalan di daratan baru ikut terhitung darat.
+export function addLpmHouses(scene, waterDrop = 0, landExpand = 0) {
   if (!scene || scene.userData.lpmHouses) return
   scene.updateWorldMatrix(true, true)
   const inv = new THREE.Matrix4().copy(scene.matrixWorld).invert()
@@ -549,11 +751,12 @@ export function addLpmHouses(scene, waterDrop = 0) {
   })
   if (!old.length) return
 
-  const roads = collectRoadPoints(scene, inv)
-  const walk = buildWalkWorld({ ...collectWalkTriangles(scene, inv, waterDrop), props: [], floors: new Float32Array(0), cell: 2 })
+  // Dunia jalan LAMA (jalan GLB) buat penempatan; lantai dihitung dari dunia
+  // jalan FINAL (jalan baru) -- lihat di bawah.
+  const tris = collectWalkTriangles(scene, inv, waterDrop)
+  const walkOld = buildWalkWorld({ ...tris, props: [], floors: new Float32Array(0), cell: 2, landExpand })
   // frame lokal (x, y) -> dunia (x, -y) buat uji tanah
-  const onLand = (x, y) => walk.groundY(x, -y, Infinity) !== null
-  const isWaterXZ = (x, z) => walk.isWaterXZ(x, z)
+  const onLand = (x, y) => walkOld.groundY(x, -y, Infinity) !== null
   const sh = shared()
   const group = new THREE.Group()
   group.name = 'LpmHouses'
@@ -583,13 +786,34 @@ export function addLpmHouses(scene, waterDrop = 0) {
     })
   }
 
-  const infos = computeLpmPlacement({ buildings, roads, isWaterXZ, onLand })
+  const infos = computeLpmPlacement({ buildings, onLand })
   const byNum = new Map(infos.map((h) => [h.num, h]))
   for (const b of buildings) {
     const h = byNum.get(b.num)
+    if (!h) { // tidak kebagian slot: model lama disembunyikan, petak jadi hijau
+      b.obj.visible = false
+      b.obj.userData.replaced = true
+      continue
+    }
     h.obj = b.obj
     h.minZ = b.minZ
   }
+
+  // Sembunyikan jalan lama, lalu bangun jalan baru + dunia jalan FINAL.
+  // Lantai rumah dihitung dari dunia final (bukan dunia lama): tanah di bawah
+  // rumah bisa selisih sampai ~0.4 m antara keduanya.
+  hideOldRoads(scene)
+  const roadParts = buildLpmRoadTriangles((x, y) => walkOld.groundY(x, -y, Infinity))
+  const newRoadWorld = []
+  for (const part of roadParts) {
+    for (let i = 0; i < part.tris.length; i += 3) {
+      newRoadWorld.push(part.tris[i], part.tris[i + 2], -part.tris[i + 1])
+    }
+  }
+  const walk = buildWalkWorld({
+    water: tris.water, green: tris.green, roads: Float32Array.from(newRoadWorld),
+    buildings: new Float32Array(0), trunks: tris.trunks, props: [], floors: new Float32Array(0), cell: 2, landExpand,
+  })
 
   // tinggi tanah di titik baru (dunia jalan yang sama dipakai penempatan);
   // cadangan: dasar rumah lama. Lantai = tanah tertinggi, jadi tidak ada
@@ -690,6 +914,22 @@ export function addLpmHouses(scene, waterDrop = 0) {
     obj.visible = false
     obj.userData.replaced = true
   }
+
+  // Jalan baru (visual + dibaca ekstraktor dunia jalan sebagai TPX_RoadsOutlines).
+  const roadGroup = new THREE.Group()
+  roadGroup.name = 'LpmRoads'
+  for (const part of roadParts) {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(part.tris), 3))
+    geo.computeVertexNormals()
+    geo.computeBoundingSphere()
+    const mat = new THREE.MeshStandardMaterial({ color: part.color, roughness: 0.95, metalness: 0, side: THREE.DoubleSide })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.name = part.name
+    if (part.noCollide) mesh.userData.noCollide = true
+    roadGroup.add(mesh)
+  }
+  scene.add(roadGroup)
 
   scene.add(group)
   scene.userData.lpmHouses = true

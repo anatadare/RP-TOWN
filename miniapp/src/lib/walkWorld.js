@@ -133,8 +133,13 @@ function smoothstep(t) {
 //            Sama seperti batang pohon (jadi penghalang tabrakan), tapi TIDAK
 //            dipakai sebagai jangkar ketinggian tanah.
 //   cell   : ukuran sel grid tanah pengisi (meter)
+//   landExpand: (opsional, meter, default 0) perluas daratan sejauh ini ke
+//     arah laut di luar garis pantai lama (morfologi dilasi: cincin daratan
+//     baru mengikuti garis pantai). Dipakai LPM (lihat maps.js) supaya pulau
+//     lebih besar. Daratan baru: tanah visual + bisa dipijak, tepi melandai
+//     ke air seperti pantai (lihat BEACH_WIDTH di bawah).
 // ---------------------------------------------------------------------------
-export function buildWalkWorld({ water, green, roads, buildings, trunks = [], props = [], floors = new Float32Array(0), cell = 2 }) {
+export function buildWalkWorld({ water, green, roads, buildings, trunks = [], props = [], floors = new Float32Array(0), cell = 2, landExpand = 0 }) {
   // ---- jalan diangkat sedikit --------------------------------------------
   const roadTris = new Float32Array(roads)
   for (let i = 1; i < roadTris.length; i += 3) roadTris[i] += ROAD_LIFT
@@ -182,6 +187,14 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], pr
   const floorHash = floors.length ? new TriHash(floors) : null
 
   // ---- grid tanah pengisi --------------------------------------------------
+  // Perluasan daratan: grid diperluas sejauh landExpand ke segala arah supaya
+  // cincin daratan baru muat. Padding simetris: titik tengah bounds tidak berubah.
+  if (landExpand > 0) {
+    bounds.minX -= landExpand
+    bounds.maxX += landExpand
+    bounds.minZ -= landExpand
+    bounds.maxZ += landExpand
+  }
   const minX = Math.floor(bounds.minX / cell) * cell
   const minZ = Math.floor(bounds.minZ / cell) * cell
   const nx = Math.ceil((bounds.maxX - minX) / cell) + 1
@@ -208,6 +221,34 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], pr
           heights[n] = t
         }
       }
+    }
+  }
+
+  // ---- perluasan daratan ke laut (landExpand) ------------------------------
+  // BFS 8-arah dari daratan lama menembus sel air, dibatasi `steps` langkah
+  // grid (~landExpand meter). Hasilnya cincin daratan baru yang mengikuti
+  // garis pantai lama. Semua langkah di bawah (jangkar IDW, distToWater,
+  // pelandaian pantai, batas kemiringan, mesh) memakai mask final ini, jadi
+  // daratan baru otomatis melandai turun ke permukaan air di tepi barunya.
+  if (landExpand > 0) {
+    const steps = Math.ceil(landExpand / cell)
+    let frontier = []
+    for (let n = 0; n < count; n++) if (land[n]) frontier.push(n)
+    for (let d = 0; d < steps && frontier.length; d++) {
+      const next = []
+      for (const n of frontier) {
+        const i = n % nx, j = (n - i) / nx
+        for (let dj = -1; dj <= 1; dj++) {
+          for (let di = -1; di <= 1; di++) {
+            if (!di && !dj) continue
+            const ii = i + di, jj = j + dj
+            if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue
+            const m = jj * nx + ii
+            if (!land[m]) { land[m] = 1; next.push(m) }
+          }
+        }
+      }
+      frontier = next
     }
   }
 
@@ -605,6 +646,14 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], pr
     return { x: prefX, y: waterLevel, z: prefZ }
   }
 
+  // Titik di daratan baru (perluasan) bukan lagi air, walau masih di dalam
+  // segitiga air GLB -- isWaterXZ harus mengeluarkannya (cek node grid terdekat).
+  function landNodeAt(x, z) {
+    const i = Math.round((x - minX) / cell), j = Math.round((z - minZ) / cell)
+    if (i < 0 || j < 0 || i >= nx || j >= nz) return false
+    return land[j * nx + i] === 1
+  }
+
   return {
     bounds,
     waterLevel,
@@ -616,7 +665,7 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], pr
     clearanceAt,
     insideBuilding,
     findSpawn,
-    isWaterXZ: (x, z) => hasWater && waterHash.containsXZ(x, z),
+    isWaterXZ: (x, z) => hasWater && waterHash.containsXZ(x, z) && !landNodeAt(x, z),
   }
 }
 
