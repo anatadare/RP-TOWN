@@ -6,6 +6,7 @@ import { unassignBuilding, createRoomForBuilding } from '../lib/rooms'
 import { MAPS, getMapByKey } from '../lib/maps'
 import { BUILDING_PREFIX } from '../lib/buildings'
 import { addPantaiHouses } from '../lib/pantaiHouses'
+import { addPantaiSeaHouses } from '../lib/pantaiLaut'
 import { hapticSelect } from '../lib/telegram'
 import AdBillboard from './Billboard3D'
 
@@ -437,7 +438,10 @@ function TownModel({
   // Kawasan Pantai: rumah daratan diganti tampak luar rumah 2 lantai yang baru
   // (sama dengan yang dipakai mode Jelajahi, lihat lib/pantaiHouses.js).
   useMemo(() => {
-    if (MAPS.find((m) => m.modelUrl === modelUrl)?.interiorPlan === 'pantai') addPantaiHouses(scene)
+    if (MAPS.find((m) => m.modelUrl === modelUrl)?.interiorPlan === 'pantai') {
+      addPantaiHouses(scene)
+      addPantaiSeaHouses(scene) // area laut: rumah panggung + jembatan (lib/pantaiLaut.js)
+    }
   }, [scene, modelUrl])
 
   // Ukur bounding-box seluruh pulau (bukan cuma bangunan) sekali tiap peta

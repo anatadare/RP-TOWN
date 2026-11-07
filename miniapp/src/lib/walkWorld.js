@@ -134,7 +134,7 @@ function smoothstep(t) {
 //            dipakai sebagai jangkar ketinggian tanah.
 //   cell   : ukuran sel grid tanah pengisi (meter)
 // ---------------------------------------------------------------------------
-export function buildWalkWorld({ water, green, roads, buildings, trunks = [], props = [], cell = 2 }) {
+export function buildWalkWorld({ water, green, roads, buildings, trunks = [], props = [], floors = new Float32Array(0), cell = 2 }) {
   // ---- jalan diangkat sedikit --------------------------------------------
   const roadTris = new Float32Array(roads)
   for (let i = 1; i < roadTris.length; i += 3) roadTris[i] += ROAD_LIFT
@@ -178,6 +178,8 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], pr
   const greenHash = new TriHash(greenTris)
   const roadHash = new TriHash(roadTris)
   const buildingHash = new TriHash(buildings)
+  // lantai tambahan (mis. rumah panggung di laut): hanya jadi pijakan, tidak ikut jangkar tanah/spawn
+  const floorHash = floors.length ? new TriHash(floors) : null
 
   // ---- grid tanah pengisi --------------------------------------------------
   const minX = Math.floor(bounds.minX / cell) * cell
@@ -380,6 +382,7 @@ export function buildWalkWorld({ water, green, roads, buildings, trunks = [], pr
   // gak ada pijakan sama sekali (laut / tepi dunia).
   function groundY(x, z, yMax) {
     let best = roadHash.heightAt(x, z, yMax)
+    if (floorHash) { const fl = floorHash.heightAt(x, z, yMax); if (fl > best) best = fl }
     const g = greenHash.heightAt(x, z, yMax)
     if (g > best) best = g
     const f = fillAt(x, z)

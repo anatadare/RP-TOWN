@@ -27,6 +27,7 @@ import PhoneOverlay from './phone/PhoneOverlay'
 import RpCameraHud, { RpCaptureBridge } from './RpCameraHud'
 import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/items'
 import { addPantaiHouses, pantaiBackdropTransform } from '../lib/pantaiHouses'
+import { addPantaiSeaHouses } from '../lib/pantaiLaut'
 import {
   lockTelegramSwipe,
   unlockTelegramSwipe,
@@ -192,7 +193,7 @@ function getSky() {
 // Baca segitiga dari scene (koordinat dunia) buat dunia tabrakan.
 // ---------------------------------------------------------------------------
 function extractWorldData(root) {
-  const out = { water: [], green: [], roads: [], buildings: [], buildingBases: [], trunks: [] }
+  const out = { water: [], green: [], roads: [], floors: [], buildings: [], buildingBases: [], trunks: [] }
   const perBuilding = new Map() // 'TPX_Buildings_12' -> [x,y,z,...] (segitiga bangunan itu)
   const targets = {
     TPX_Waterways: out.water,
@@ -206,6 +207,17 @@ function extractWorldData(root) {
     if (!obj.isMesh || !obj.geometry) return
     // rumah lama yang sudah diganti, dan kulit visual rumah baru: bukan tabrakan
     if (obj.userData.replaced || obj.userData.noCollide) return
+    // lantai rumah panggung laut (lib/pantaiLaut.js): pijakan tambahan, bukan jalan/tembok
+    if (obj.userData.walkFloor) {
+      const fp = obj.geometry.getAttribute('position')
+      const fi = obj.geometry.index
+      const fn = fi ? fi.count : fp.count
+      for (let k = 0; k < fn; k++) {
+        tmp.fromBufferAttribute(fp, fi ? fi.getX(k) : k).applyMatrix4(obj.matrixWorld)
+        out.floors.push(tmp.x, tmp.y, tmp.z)
+      }
+      return
+    }
     const grp = groupOf(obj)
     if (!grp) return
     const pos = obj.geometry.getAttribute('position')
@@ -284,6 +296,7 @@ function extractWorldData(root) {
     water: Float32Array.from(out.water),
     green: Float32Array.from(out.green),
     roads: Float32Array.from(out.roads),
+    floors: Float32Array.from(out.floors),
     buildings: Float32Array.from(out.buildings),
     buildingBases: Float32Array.from(out.buildingBases),
     trunks: out.trunks,
@@ -352,6 +365,7 @@ function prepareWalkScene(scene, waterDrop = 0, pantaiHouses = false) {
   // Kawasan Pantai: rumah daratan diganti rumah 2 lantai baru (lib/pantaiHouses.js)
   if (pantaiHouses) {
     addPantaiHouses(root)
+    addPantaiSeaHouses(root) // area laut: rumah panggung + jembatan
     root.updateMatrixWorld(true)
   }
 

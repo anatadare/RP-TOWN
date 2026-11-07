@@ -55,7 +55,8 @@ export const MAPS = [
     // Rumah di daratan bisa dimasuki di mode Jelajahi, pakai denah "Rumah Pantai"
     // 2 lantai (lib/houseInteriorPantai.js). Cuma bangunan yang punya model
     // BeachHouse_N di .glb (nomor 0-17 & 45-47). Bangunan nomor 18-44 ada di
-    // area perairan/dermaga, sengaja belum bisa dimasuki (desainnya beda, nanti).
+    // area laut: rumah panggung (lib/pantaiLaut.js) yang interiornya langsung ada
+    // di peta (tanpa layar "Masuki rumah"), jadi tidak masuk daftar ini.
     enterableBuildings: true,
     interiorPlan: 'pantai',
     enterableNumbers: [...Array(18).keys(), 45, 46, 47],
