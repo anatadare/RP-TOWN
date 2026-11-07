@@ -44,7 +44,8 @@
 // 1 kamar mandi, dapur, ruang makan, ruang tamu, ruang cuci.
 // `interiorPlan`: (opsional) denah interior yang dipakai kalau `enterableBuildings`
 // true. Kosong = denah standar 1 lantai (lib/houseInterior.js). 'pantai' = Rumah
-// Pantai 2 lantai (lib/houseInteriorPantai.js).
+// Pantai 2 lantai (lib/houseInteriorPantai.js). 'lpm' = Rumah LPM 2 lantai
+// (lib/houseInteriorLpm.js).
 // `enterableNumbers`: (opsional) kalau diisi, cuma bangunan dengan nomor di daftar
 // ini yang muncul pop up "Masuki rumah" (kosong = semua bangunan bernomor).
 export const MAPS = [
@@ -73,7 +74,8 @@ export const MAPS = [
     modelUrl: '/models/lpm.glb',
     landRaise: 2, // daratan +2 m di atas laut, biar ombak gak naik ke atas pulau
     walkWaterDrop: 0.6, // mode Jelajahi: air 0.6 m di bawah daratan, bukan rata = gak kelihatan genangan
-    enterableBuildings: true, // semua bangunan bisa dimasuki di mode Jelajahi (lihat houseInterior.js)
+    enterableBuildings: true, // semua bangunan bisa dimasuki di mode Jelajahi (lihat houseInteriorLpm.js)
+    interiorPlan: 'lpm', // Rumah LPM 2 lantai (lib/houseInteriorLpm.js + lib/lpmHouses.js)
     billboard: { offsetXFactor: -0.3, offsetZFactor: -1.15, imageUrl: null },
     walkBillboards: [
       { x: 76.1, z: -104.2, imageUrl: null },

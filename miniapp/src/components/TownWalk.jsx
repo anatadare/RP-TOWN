@@ -11,6 +11,8 @@ import { makeVisitBuilding, nearestVisitBuilding } from '../lib/houseVisit'
 import HouseInterior, { InteriorWatcher } from './HouseInterior'
 import HouseInteriorPantai, { PantaiInteriorWatcher } from './HouseInteriorPantai'
 import { buildPantaiInteriorWorld, makeInteriorCam, PW, PD, BALKON_D } from '../lib/houseInteriorPantai'
+import HouseInteriorLpm, { LpmInteriorWatcher } from './HouseInteriorLpm'
+import { buildLpmInteriorWorld, makeLpmInteriorCam, PW as LPM_PW, PD as LPM_PD, BALKON_D as LPM_BALKON_D } from '../lib/houseInteriorLpm'
 import { cloneSkinnedScene } from '../lib/skinnedClone'
 import { PHONE_OFFSET_POS, PHONE_OFFSET_ROT, PHONE_GRIP_SHIFT, PHONE_BACK_SHIFT, applyPhonePose, alignPhoneUpright } from './PhonePose'
 import FoldablePhone from './FoldablePhone'
@@ -28,6 +30,7 @@ import RpCameraHud, { RpCaptureBridge } from './RpCameraHud'
 import { getMyItems, equipItem, unequipItem, claimStarterBox } from '../lib/items'
 import { addPantaiHouses, pantaiBackdropTransform } from '../lib/pantaiHouses'
 import { addPantaiSeaHouses } from '../lib/pantaiLaut'
+import { addLpmHouses, lpmBackdropTransform } from '../lib/lpmHouses'
 import {
   lockTelegramSwipe,
   unlockTelegramSwipe,
@@ -355,7 +358,7 @@ function raiseTrees(root) {
 // & dipakai bareng TownMap3D (yang memodifikasinya), jadi di sini SELALU
 // bekerja di salinan (clone) supaya peta tampilan luar gak ikut berubah.
 // ---------------------------------------------------------------------------
-function prepareWalkScene(scene, waterDrop = 0, pantaiHouses = false) {
+function prepareWalkScene(scene, waterDrop = 0, interiorPlan = null) {
   const root = scene.clone(true)
   root.position.set(0, 0, 0)
   root.scale.set(1, 1, 1)
@@ -363,9 +366,14 @@ function prepareWalkScene(scene, waterDrop = 0, pantaiHouses = false) {
   root.updateMatrixWorld(true)
 
   // Kawasan Pantai: rumah daratan diganti rumah 2 lantai baru (lib/pantaiHouses.js)
-  if (pantaiHouses) {
+  if (interiorPlan === 'pantai') {
     addPantaiHouses(root)
     addPantaiSeaHouses(root) // area laut: rumah panggung + jembatan
+    root.updateMatrixWorld(true)
+  } else if (interiorPlan === 'lpm') {
+    // LPM: rumah diganti "Rumah LPM" 2 lantai (lib/lpmHouses.js). waterDrop
+    // dipakai menilai tanah saat penempatan (lihat addLpmHouses).
+    addLpmHouses(root, waterDrop)
     root.updateMatrixWorld(true)
   }
 
@@ -858,7 +866,7 @@ function getWalkCache(scene, modelUrl) {
   let c = WALK_CACHE.get(scene)
   if (!c) {
     const mapDef = MAPS.find((m) => m.modelUrl === modelUrl)
-    const built = prepareWalkScene(scene, mapDef?.walkWaterDrop ?? 0, mapDef?.interiorPlan === 'pantai')
+    const built = prepareWalkScene(scene, mapDef?.walkWaterDrop ?? 0, mapDef?.interiorPlan || null)
     const defs = mapDef?.walkBillboards || []
     const world = buildWalkWorld({
       ...built.data,
@@ -949,6 +957,35 @@ function InteriorScenePantai({ character, inputRef, selfRef, net, onReady, equip
       />
       <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
       <PantaiInteriorWatcher selfRef={selfRef} doorsRef={doorsRef} onInfo={onInfo} />
+    </>
+  )
+}
+
+// Interior "Rumah LPM" 2 lantai (peta LPM). Fisika & denahnya di
+// lib/houseInteriorLpm.js, gambarnya di HouseInteriorLpm.jsx.
+function InteriorSceneLpm({ character, inputRef, selfRef, net, onReady, equippedPhone, phoneFoldT, onInfo, doorsRef, modelUrl, houseNumber, sky }) {
+  const world = useMemo(() => buildLpmInteriorWorld({ isDoorOpen: (id) => !!doorsRef.current[id] }), [doorsRef])
+  const spawn = useMemo(() => world.findSpawn(), [world])
+  const cam = useMemo(() => makeLpmInteriorCam(world), [world])
+  return (
+    <>
+      <LpmMapBackdrop modelUrl={modelUrl} houseNumber={houseNumber} sky={sky} />
+      <HouseInteriorLpm doorsRef={doorsRef} />
+      <WalkPlayer
+        world={world}
+        spawn={spawn}
+        character={character}
+        inputRef={inputRef}
+        selfRef={selfRef}
+        net={net}
+        canopies={NO_CANOPIES}
+        onReady={onReady}
+        equippedPhone={equippedPhone}
+        phoneFoldT={phoneFoldT}
+        camPreset={cam}
+      />
+      <RemotePlayers peersRef={net.peersRef} peerIds={net.peerIds} selfRef={selfRef} bubblesRef={net.bubblesRef} world={world} />
+      <LpmInteriorWatcher selfRef={selfRef} doorsRef={doorsRef} onInfo={onInfo} />
     </>
   )
 }
@@ -1106,6 +1143,89 @@ function PantaiMapBackdrop({ modelUrl, houseNumber, sky }) {
       if (!o.isMesh || !o.geometry || groupOf(o) !== 'TPX_Trees') return
       box.setFromObject(o)
       if (box.intersectsBox(TREE_ZONE)) hide(/^TPX_Trees_tree/.test(o.parent?.name || '') ? o.parent : o)
+    })
+
+    // air (satu material bersama) dipotong di kolom tapak
+    const waterMats = new Set()
+    root.traverse((o) => { if (o.isMesh && groupOf(o) === 'TPX_Waterways') waterMats.add(o.material) })
+    waterMats.forEach((m) => { m.clippingPlanes = planes; m.clipIntersection = true; m.needsUpdate = true })
+    const prevLocal = gl.localClippingEnabled
+    gl.localClippingEnabled = true
+
+    return () => {
+      hidden.forEach((o) => { o.visible = true })
+      waterMats.forEach((m) => { m.clippingPlanes = null; m.clipIntersection = false; m.needsUpdate = true })
+      gl.localClippingEnabled = prevLocal
+    }
+  }, [built, houseNumber, place, planes, gl])
+
+  // matahari ikut diputar seperti petanya, jadi sisi bangunan yang terang sama dengan di luar
+  const sun = useMemo(
+    () => (place ? new THREE.Vector3(...BACKDROP_SUN).applyQuaternion(new THREE.Quaternion(...place.quaternion)).toArray() : BACKDROP_SUN),
+    [place]
+  )
+
+  return (
+    <>
+      <fog attach="fog" args={[sky.color, 110, Math.max(520, mapSpan(world) * 1.3)]} />
+      <directionalLight position={sun} intensity={sky.sun} />
+      {place && (
+        <group position={place.position} quaternion={place.quaternion} scale={place.scale}>
+          <MapVisuals cached={cached} clip={planes} />
+        </group>
+      )}
+    </>
+  )
+}
+
+// Latar interior Rumah LPM: PETA ASLI di balik jendela (bukan pemandangan buatan).
+// Sama seperti PantaiMapBackdrop, tapi dengan ukuran Rumah LPM (PW 12, PD 10,
+// balkon 1.2 m) dan cangkang LpmRumah_N / LpmKaca_N yang disembunyikan.
+// Carport & pagar (LpmCarport_N) TIDAK disembunyikan: posisinya di depan rumah
+// (di luar interior), jadi terlihat wajar dari jendela depan.
+const LPM_FOOT = { x0: -0.25, x1: LPM_PW + 0.25, z0: -0.25, z1: LPM_PD + 0.25 }
+function makeLpmFootprintPlanes() {
+  return [
+    new THREE.Plane(new THREE.Vector3(1, 0, 0), -LPM_FOOT.x1),
+    new THREE.Plane(new THREE.Vector3(-1, 0, 0), LPM_FOOT.x0),
+    new THREE.Plane(new THREE.Vector3(0, 0, 1), -LPM_FOOT.z1),
+    new THREE.Plane(new THREE.Vector3(0, 0, -1), LPM_FOOT.z0),
+  ]
+}
+const LPM_TREE_ZONE = new THREE.Box3(
+  new THREE.Vector3(-0.5, -1e4, -LPM_BALKON_D - 0.5),
+  new THREE.Vector3(LPM_PW + 0.5, 1e4, LPM_PD + 0.5),
+)
+
+function LpmMapBackdrop({ modelUrl, houseNumber, sky }) {
+  const { scene } = useGLTF(modelUrl)
+  const gl = useThree((state) => state.gl)
+  const cached = useMemo(() => getWalkCache(scene, modelUrl), [scene, modelUrl])
+  const { built, world } = cached
+  const place = useMemo(() => lpmBackdropTransform(built.root, houseNumber), [built, houseNumber])
+  const planes = useMemo(makeLpmFootprintPlanes, [])
+
+  // Semua perubahan pada peta bersama (scene cache dipakai juga mode luar) dicatat dan
+  // dikembalikan saat keluar rumah.
+  useEffect(() => {
+    if (!place) return undefined
+    const root = built.root
+    root.updateWorldMatrix(true, true) // sekarang di bawah grup latar -> koordinat interior
+    const hidden = []
+    const hide = (o) => { if (o.visible) { o.visible = false; hidden.push(o) } }
+
+    // cangkang rumah luar diganti interior; rumah tetangga tetap terlihat
+    for (const n of [`LpmRumah_${houseNumber}`, `LpmKaca_${houseNumber}`]) {
+      const o = root.getObjectByName(n)
+      if (o) hide(o)
+    }
+
+    // pohon yang menimpa rumah (1 pohon = 1 grup berisi batang + tajuk)
+    const box = new THREE.Box3()
+    root.traverse((o) => {
+      if (!o.isMesh || !o.geometry || groupOf(o) !== 'TPX_Trees') return
+      box.setFromObject(o)
+      if (box.intersectsBox(LPM_TREE_ZONE)) hide((o.parent?.name || '').startsWith('TPX_Trees_tree') ? o.parent : o)
     })
 
     // air (satu material bersama) dipotong di kolom tapak
@@ -1319,10 +1439,10 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
   // Interior = scene terpisah + room multiplayer terpisah per rumah.
   const mapDef = MAPS.find((m) => m.key === mapKey)
   const enterable = !!mapDef?.enterableBuildings
-  const interiorPlan = mapDef?.interiorPlan || null // 'pantai' = rumah 2 lantai (lihat maps.js)
+  const interiorPlan = mapDef?.interiorPlan || null // 'pantai'/'lpm' = rumah 2 lantai (lihat maps.js)
   const [interior, setInterior] = useState(null)
-  // rumah Pantai punya jendela yang melihat keluar -> langit & cahaya luar tetap dipakai (bukan ruang gelap)
-  const interiorOpen = !!interior && interiorPlan === 'pantai'
+  // rumah Pantai & LPM punya jendela yang melihat keluar -> langit & cahaya luar tetap dipakai (bukan ruang gelap)
+  const interiorOpen = !!interior && (interiorPlan === 'pantai' || interiorPlan === 'lpm')
   const [nearHouse, setNearHouse] = useState(null) // { key, number } | null
   const [returnSpot, setReturnSpot] = useState(null) // posisi di luar pas mau masuk -> tempat muncul lagi pas keluar
   const [interiorInfo, setInteriorInfo] = useState({ room: null, emoji: null, atDoor: false, door: null })
@@ -1630,10 +1750,10 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <color attach="background" args={[interior && !interiorOpen ? '#14161f' : sky.color]} />
-        {/* di dalam rumah (bukan Rumah Pantai) lampu luar diredupkan; lampu ruangan ada di
-            HouseInterior. Rumah Pantai (interiorOpen): peta asli terlihat di balik jendela,
+        {/* di dalam rumah (bukan Rumah Pantai/LPM) lampu luar diredupkan; lampu ruangan ada di
+            HouseInterior. Rumah Pantai/LPM (interiorOpen): peta asli terlihat di balik jendela,
             jadi cahaya scene = cahaya mode luar (+ sedikit ambient buat karakter); matahari
-            dipasang oleh PantaiMapBackdrop supaya ikut arah petanya. Interior sendiri tidak
+            dipasang oleh PantaiMapBackdrop/LpmMapBackdrop supaya ikut arah petanya. Interior sendiri tidak
             memakai lampu scene. */}
         <ambientLight intensity={interior && !interiorOpen ? 0.25 : sky.ambient + (interiorOpen ? PANTAI_CHAR_BOOST : 0)} />
         <hemisphereLight args={[sky.hemi[0], sky.hemi[1], interior && !interiorOpen ? 0.2 : 0.55]} />
@@ -1641,6 +1761,22 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
         <Suspense fallback={null}>
           {interior && interiorPlan === 'pantai' ? (
             <InteriorScenePantai
+              key={`in-${interior.key}`}
+              modelUrl={modelUrl}
+              houseNumber={interior.number}
+              sky={sky}
+              character={character}
+              inputRef={inputRef}
+              selfRef={selfRef}
+              net={net}
+              onReady={handleReady}
+              equippedPhone={equippedPhone}
+              phoneFoldT={phoneFoldT}
+              onInfo={setInteriorInfo}
+              doorsRef={doorsRef}
+            />
+          ) : interior && interiorPlan === 'lpm' ? (
+            <InteriorSceneLpm
               key={`in-${interior.key}`}
               modelUrl={modelUrl}
               houseNumber={interior.number}
@@ -1703,7 +1839,7 @@ export default function TownWalk({ mapKey, mapName, modelUrl, character, citizen
       {!interior && nearHouse && ready && (
         <div className="walk-enter-popup" role="dialog" aria-label={`Rumah nomor ${nearHouse.number}`}>
           <div className="walk-enter-title">🏠 Rumah No. {nearHouse.number}</div>
-          <div className="walk-enter-sub">3 kamar tidur · 1 kamar mandi · dapur · ruang tamu</div>
+          <div className="walk-enter-sub">{interiorPlan === 'lpm' ? '3 kamar tidur · 3 kamar mandi · dapur · ruang tamu' : '3 kamar tidur · 1 kamar mandi · dapur · ruang tamu'}</div>
           <button type="button" className="walk-enter-btn" onClick={() => enterHouse(nearHouse)}>
             Masuki rumah
           </button>

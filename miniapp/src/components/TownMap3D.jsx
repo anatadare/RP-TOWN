@@ -8,6 +8,7 @@ import { BUILDING_PREFIX } from '../lib/buildings'
 import { buildWalkWorld } from '../lib/walkWorld'
 import { addPantaiHouses } from '../lib/pantaiHouses'
 import { addPantaiSeaHouses } from '../lib/pantaiLaut'
+import { addLpmHouses } from '../lib/lpmHouses'
 import { hapticSelect } from '../lib/telegram'
 import AdBillboard from './Billboard3D'
 
@@ -527,10 +528,14 @@ function TownModel({
 
   // Kawasan Pantai: rumah daratan diganti tampak luar rumah 2 lantai yang baru
   // (sama dengan yang dipakai mode Jelajahi, lihat lib/pantaiHouses.js).
+  // LPM: sama, pakai tampak luar "Rumah LPM" 2 lantai (lib/lpmHouses.js).
   useMemo(() => {
-    if (MAPS.find((m) => m.modelUrl === modelUrl)?.interiorPlan === 'pantai') {
+    const mapDef = MAPS.find((m) => m.modelUrl === modelUrl)
+    if (mapDef?.interiorPlan === 'pantai') {
       addPantaiHouses(scene)
       addPantaiSeaHouses(scene) // area laut: rumah panggung + jembatan (lib/pantaiLaut.js)
+    } else if (mapDef?.interiorPlan === 'lpm') {
+      addLpmHouses(scene, mapDef.walkWaterDrop ?? 0)
     }
   }, [scene, modelUrl])
 
@@ -710,17 +715,29 @@ function TownModel({
     })
   }, [scene, assignedByKey, hoveredKey, adminMode, focusedKey])
 
+  // Nomor bangunan dari mesh yang diklik/di-hover. Rumah baru (LPM/Pantai)
+  // mesh-nya bernama LpmRumah_N / PantaiRumah_N di dalam grup TPX_Buildings_N,
+  // jadi naik ke induk sampai ketemu grup bernomor itu; rumah lama (mesh
+  // TPX_Buildings_N langsung) tetap ketemu di langkah pertama.
+  function buildingKeyOf(obj) {
+    for (let o = obj; o; o = o.parent) {
+      const n = o.name || ''
+      if (/^TPX_Buildings_\d+$/.test(n)) return n
+    }
+    return null
+  }
+
   function handleClick(e) {
-    const name = e.object?.name
-    if (name && name.startsWith(BUILDING_PREFIX)) {
+    const name = buildingKeyOf(e.object)
+    if (name) {
       e.stopPropagation()
       onBuildingClick(name)
     }
   }
 
   function handlePointerMove(e) {
-    const name = e.object?.name
-    if (name && name.startsWith(BUILDING_PREFIX)) {
+    const name = buildingKeyOf(e.object)
+    if (name) {
       e.stopPropagation()
       onHover(name)
     }
