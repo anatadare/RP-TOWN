@@ -434,7 +434,15 @@ export function placeHouse(center, lines) {
       let F = E, sF = 0
       for (let s = 0; s <= path.total; s += 0.1) { const p = path.at(s); if (Math.hypot(p[0] - cx, p[1] - cy) >= D / 2 + 0.1) { F = p; sF = s; break } }
       const ahead = path.at(Math.max(0, sF - 1.5)) // sedikit ke arah rumah, buat menghitung arah
-      h = unit2(ahead[0] - F[0], ahead[1] - F[1])
+      if (Math.hypot(ahead[0] - F[0], ahead[1] - F[1]) < 0.5) {
+        // Ujung jalur sudah di luar lingkaran petak (F = ujung, sF ~ 0) -> "ahead" == F dan arahnya
+        // jadi (0,0): rumah selalu menghadap utara, jembatan lewat menyamping di depan panggung dan
+        // pagarnya menutup jalan ke pintu. Pakai arah jalan masuk (dari 2,5 m sebelum F menuju F).
+        const back = path.at(sF + 2.5)
+        h = unit2(F[0] - back[0], F[1] - back[1])
+      } else {
+        h = unit2(ahead[0] - F[0], ahead[1] - F[1])
+      }
       o = F
     } else {
       const B = path.at(3.0)
