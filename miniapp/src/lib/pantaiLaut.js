@@ -150,7 +150,11 @@ const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], 
 // ---------------------------------------------------------------------------
 const bx = (x0, x1, y0, y1, z0, z1, c) => ({ x0, x1, y0, y1, z0, z1, c })
 
-export function houseParts() {
+// opts.openings: celah di pagar keliling panggung tempat jembatan lain menyentuh sisi kiri/kanan/
+// belakang (selain celah depan yang selalu ada): [{ side: 'L'|'R'|'B', c, half }]
+//   side L/R: c = posisi y (lokal) tengah celah; side B: c = posisi x. half = setengah lebar celah.
+export function houseParts(opts = {}) {
+  const openings = opts.openings || []
   const { halfW: W, y0: FY, y1: BY, slab, block: K, wallH: H, gap } = PLAN
   const solid = [] // [kotak, omit]
   const glass = []
@@ -227,16 +231,60 @@ export function houseParts() {
   // ---- pagar keliling panggung (celah di depan tempat jembatan masuk) -------
   const inset = 0.08
   const xL = -W + inset, xR = W - inset, yF = FY + 0.08, yB = BY - inset
-  const run = [[-gap, yF], [xL, yF], [xL, yB], [xR, yB], [xR, yF], [gap, yF]]
-  const pts = [run[0]]
-  for (let i = 1; i < run.length; i++) {
-    const a = run[i - 1], b = run[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 2.0))
-    for (let k = 1; k <= n; k++) pts.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n])
+  // pagar keliling dipecah per sisi; celah (pintu masuk jembatan) dipotong dari sisinya
+  const edges = [
+    { side: 'F', a: [-gap, yF], b: [xL, yF] },
+    { side: 'L', a: [xL, yF], b: [xL, yB] },
+    { side: 'B', a: [xL, yB], b: [xR, yB] },
+    { side: 'R', a: [xR, yB], b: [xR, yF] },
+    { side: 'F', a: [xR, yF], b: [gap, yF] },
+  ]
+  const runs = []
+  let cur = []
+  const flush = () => { if (cur.length > 1) runs.push(cur); cur = [] }
+  for (const ed of edges) {
+    const ax = ed.side === 'B' ? 0 : 1 // sumbu yang berubah sepanjang sisi (B: x, L/R: y)
+    const c0 = ed.a[ax === 0 ? 0 : 1], c1 = ed.b[ax === 0 ? 0 : 1]
+    const cuts = openings
+      .filter((o) => o.side === ed.side)
+      .map((o) => [(o.c - o.half - c0) / (c1 - c0), (o.c + o.half - c0) / (c1 - c0)].sort((m, n) => m - n))
+      .sort((m, n) => m[0] - n[0])
+    let t = 0
+    const keep = []
+    for (const [u0, u1] of cuts) {
+      if (u1 <= t) continue
+      if (u0 > t) keep.push([t, Math.min(1, u0)])
+      t = Math.max(t, u1)
+      if (t >= 1) break
+    }
+    if (t < 1) keep.push([t, 1])
+    const pt = (u) => [ed.a[0] + (ed.b[0] - ed.a[0]) * u, ed.a[1] + (ed.b[1] - ed.a[1]) * u]
+    for (const [u0, u1] of keep) {
+      if (u1 - u0 < 1e-6) continue
+      const p0 = pt(u0), p1 = pt(u1)
+      const last = cur[cur.length - 1]
+      if (!last || Math.hypot(last[0] - p0[0], last[1] - p0[1]) > 1e-6) { flush(); cur.push(p0) }
+      cur.push(p1)
+    }
   }
+  flush()
   const RAIL_H = 1.05
   const rails = []
-  for (const p of pts) add(bx(p[0] - 0.05, p[0] + 0.05, p[1] - 0.05, p[1] + 0.05, 0, RAIL_H, COL.post), 'tb')
-  for (let i = 1; i < pts.length; i++) rails.push([pts[i - 1], pts[i]])
+  const postAt = new Set()
+  for (const run of runs) {
+    const pts = [run[0]]
+    for (let i = 1; i < run.length; i++) {
+      const a = run[i - 1], b = run[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 2.0))
+      for (let k = 1; k <= n; k++) pts.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n])
+    }
+    for (const p of pts) {
+      const key = Math.round(p[0] * 1000) + ',' + Math.round(p[1] * 1000)
+      if (postAt.has(key)) continue
+      postAt.add(key)
+      add(bx(p[0] - 0.05, p[0] + 0.05, p[1] - 0.05, p[1] + 0.05, 0, RAIL_H, COL.post), 'tb')
+    }
+    for (let i = 1; i < pts.length; i++) rails.push([pts[i - 1], pts[i]])
+  }
   for (const [a, b] of rails) { // pegangan atas & rel tengah (balok sejajar sumbu: kotak biasa)
     const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1])
     const alongX = Math.abs(b[0] - a[0]) > Math.abs(b[1] - a[1])
@@ -465,6 +513,33 @@ export function placeHouse(center, lines) {
   return { o, h, phi, c: Math.cos(phi), s: Math.sin(phi), center: [o[0] + h[0] * D / 2, o[1] + h[1] * D / 2] }
 }
 
+// Celah di pagar keliling panggung rumah `h` ({ o, c, s }) untuk tiap garis tengah jembatan yang
+// menembus sisi kiri / kanan / belakang panggung (celah depan selalu ada). Celah selebar jembatan
+// (+ 0,3 m, dilebarkan kalau jembatan menyilang miring), supaya jembatan itu tidak mentok di pagar.
+export function platformOpenings(h, lines) {
+  const HW = PLAN.halfW, Y0 = PLAN.y0, Y1 = PLAN.y1
+  const toLocal = (X, Y) => [(X - h.o[0]) * h.c + (Y - h.o[1]) * h.s, -(X - h.o[0]) * h.s + (Y - h.o[1]) * h.c]
+  const out = []
+  for (const ln of lines) for (let i = 0; i + 1 < ln.pts.length; i++) {
+    const a = toLocal(ln.pts[i][0], ln.pts[i][1]), b = toLocal(ln.pts[i + 1][0], ln.pts[i + 1][1])
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy)
+    if (L < 1e-9) continue
+    for (const side of ['L', 'R', 'B']) {
+      const den = side === 'B' ? dy : dx
+      if (Math.abs(den) < 1e-12) continue
+      const t = side === 'B' ? (Y1 - a[1]) / dy : ((side === 'L' ? -HW : HW) - a[0]) / dx
+      if (t < 0 || t > 1) continue
+      const px = a[0] + dx * t, py = a[1] + dy * t
+      if (side === 'B' ? Math.abs(px) > HW : py < Y0 || py > Y1) continue
+      const c = side === 'B' ? px : py // posisi tengah celah sepanjang sisinya
+      if (out.some((o) => o.side === side && Math.abs(o.c - c) < 0.5)) continue // titik sambung ruas ganda
+      const cosN = Math.abs(side === 'B' ? dy : dx) / L // 1 = tegak lurus sisi
+      out.push({ side, c, half: Math.min(2.6, (BRIDGE_HALF + 0.3) / Math.max(0.5, cosN)) })
+    }
+  }
+  return out
+}
+
 // ---------------------------------------------------------------------------
 // Pasang. Aman dipanggil berulang (ditandai di scene.userData).
 // ---------------------------------------------------------------------------
@@ -508,11 +583,20 @@ export function addPantaiSeaHouses(scene) {
   // koordinat lokal-rumah dari koordinat scene
   const toLocal = (h, X, Y) => [(X - h.o[0]) * h.c + (Y - h.o[1]) * h.s, -(X - h.o[0]) * h.s + (Y - h.o[1]) * h.c]
 
-  // zona bebas pagar jembatan di sekitar rumah: 1 m di kiri/kanan/belakang panggung,
-  // di depan cuma 0,2 m supaya pagar jembatan tetap rapat sampai ke pintu masuk
+  // Celah pagar keliling panggung di tiap tempat jembatan menembus sisi kiri / kanan / belakang
+  // panggung (lihat platformOpenings). Contoh: jembatan di belakang rumah 26.
+  for (const h of placed) {
+    h.openings = platformOpenings(h, lines)
+    // sisi yang punya celah: pagar jembatan tetap rapat sampai ke panggung (seperti di depan)
+    h.margin = { L: 1.0, R: 1.0, B: 1.0 }
+    for (const o of h.openings) h.margin[o.side] = 0.2
+  }
+
+  // zona bebas pagar jembatan di sekitar rumah: 1 m di kiri/kanan/belakang panggung (0,2 m di sisi
+  // yang punya celah jembatan), di depan cuma 0,2 m supaya pagar jembatan tetap rapat sampai ke pintu
   const nearHouse = (X, Y) => placed.some((h) => {
     const [lx, ly] = toLocal(h, X, Y)
-    return lx > -PLAN.halfW - 1.0 && lx < PLAN.halfW + 1.0 && ly > PLAN.y0 - 0.2 && ly < PLAN.y1 + 1.0
+    return lx > -PLAN.halfW - h.margin.L && lx < PLAN.halfW + h.margin.R && ly > PLAN.y0 - 0.2 && ly < PLAN.y1 + h.margin.B
   })
 
   // ---- jalan -> jembatan ---------------------------------------------------
@@ -591,13 +675,19 @@ export function addPantaiSeaHouses(scene) {
   buildBridgeRails(bridgeTris, unionHash, nearHouse, frame, lamps, W, plateau)
 
   // ---- rumah -----------------------------------------------------------------
-  const parts = houseParts()
+  const partsCache = new Map() // rumah tanpa celah tambahan berbagi satu geometri
+  const partsOf = (h) => {
+    const key = JSON.stringify(h.openings.map((o) => [o.side, Math.round(o.c * 100), Math.round(o.half * 100)]))
+    if (!partsCache.has(key)) partsCache.set(key, houseParts({ openings: h.openings }))
+    return partsCache.get(key)
+  }
   let totalTris = 0
   const doorLeaf = doorLeafGeometry()
   for (const h of placed) {
     const T = { ox: h.o[0], oy: h.o[1], oz: base, c: h.c, s: h.s }
     const relInv = h.rel.clone().invert()
     const toObj = (g) => { g.applyMatrix4(relInv); return g }
+    const parts = partsOf(h)
     const solid = toObj(meshParts(parts.solid, T).geometry())
     const glassG = toObj(meshParts(parts.glass, T).geometry())
     const flo = new Float32Array(18)
