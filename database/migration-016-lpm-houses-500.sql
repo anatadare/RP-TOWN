@@ -1,7 +1,7 @@
 -- ============================================
--- RP TOWN — Migration 016: petak rumah LPM 68..500
+-- RP TOWN — Migration 016: petak rumah LPM 1..500
 -- Peta LPM baru (gugusan 7 pulau) punya 500 rumah warga (TPX_Buildings_1..500),
--- sebelumnya hanya 1..67. Migration ini menambah petak 68..500 untuk map_key 'lpm'.
+-- sebelumnya hanya sedikit petak. Migration ini melengkapi petak 1..500 untuk map_key 'lpm'.
 -- Additive & idempoten: petak yang sudah ada tidak diubah, boleh dijalankan ulang.
 -- Jalankan di: Supabase Dashboard > SQL Editor
 -- ============================================
@@ -29,7 +29,7 @@ begin
 
   insert into houses (district_room_id, plot_number, map_key, rent_price)
   select v_room, gs, 'lpm', v_price
-  from generate_series(68, 500) gs
+  from generate_series(1, 500) gs
   where not exists (
     select 1 from houses h
     where h.map_key = 'lpm' and h.plot_number = gs
