@@ -202,12 +202,35 @@ for t in trees:
 trees = kept
 print('trees', len(trees))
 
+# ---------------------------------------------------------------- celah sungai (jalan yang menyeberangi sungai)
+# Jalan abu-abu yang melintasi sungai/kanal terbaca sebagai daratan sehingga sungai terpotong-potong.
+# Celah = hasil closing air yang berimpit dengan piksel jalan; hanya yang dekat titik penyeberangan
+# sungai berikut (koordinat tampilan 2000 px; x1.8 = piksel asli) yang dipakai, supaya tidak menyentuh
+# leher-leher daratan lain. 3 penyeberangan sungai Pusat Kota + 1 kanal ke Danau Pemukiman.
+RIVER_CROSSINGS = [(923, 691), (1026, 705), (1134, 781), (227, 964)]
+gap = mclose(water, 21) & ~water & mdil(roadmask, 4) & isl
+gap = mopen(gap, 1)
+_, labg, csg = comps(gap, 150)
+river_gaps = []
+for (cx_, cy_) in RIVER_CROSSINGS:
+    best = None
+    for c in csg:
+        dd = np.hypot(c[2][0] - cx_ * 1.8, c[2][1] - cy_ * 1.8)
+        if dd < 40 and (best is None or dd < best[0]): best = (dd, c[0])
+    if best is None:
+        print('PERINGATAN: celah sungai tidak ditemukan di', (cx_, cy_)); continue
+    m_ = mdil(labg == best[1], 2)
+    cs_, _ = cv2.findContours(m_.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for c in cs_:
+        river_gaps.append(cv2.approxPolyDP(c, 1.2, True)[:, 0, :].astype(float).tolist())
+print('celah sungai', len(river_gaps))
+
 # ---------------------------------------------------------------- simpan
 def km(p): return [(p[0] - X0) / PXKM, (p[1] - Y0) / PXKM]
 data = {
     'meta': {'W': W, 'H': H, 'X0': X0, 'Y0': Y0, 'PXKM': PXKM},
     'islands': islands, 'lakes': lake_polys, 'roads': roads, 'houses': houses,
-    'markers': markers, 'trees': trees, 'junctions': junctions,
+    'markers': markers, 'trees': trees, 'junctions': junctions, 'river_gaps': river_gaps,
 }
 json.dump(data, open(OUT + 'layout_px.json', 'w'))
 

@@ -13,6 +13,7 @@ X0, Y0, PXKM = M['X0'], M['Y0'], M['PXKM']
 IW, IH = M['W'], M['H']
 M_PER_KM = float(__import__("os").environ.get("MPK", "150"))   # meter dunia per km peta referensi
 K = M_PER_KM / PXKM              # meter per piksel
+LAND_H = 1.2                      # tinggi daratan di atas permukaan air (m); tepi daratan = tebing
 PAD = 60.0                       # tepi laut di sekeliling pulau (m)
 rng = np.random.default_rng(7)
 
@@ -22,7 +23,14 @@ lakes = [np.array(p, np.float32) for p in d['lakes'] if cv2.contourArea(np.array
 land_u8 = np.zeros((IH, IW), np.uint8)
 for p in islands: cv2.fillPoly(land_u8, [np.round(p).astype(np.int32)], 1)
 for p in lakes: cv2.fillPoly(land_u8, [np.round(p).astype(np.int32)], 0)
+# sungai/kanal yang tadinya terputus oleh jalan penyeberang dibuka lagi (jalan jadi jembatan kecil)
+for p in d.get('river_gaps', []): cv2.fillPoly(land_u8, [np.round(np.array(p)).astype(np.int32)], 0)
 land = land_u8.astype(bool)
+# haluskan garis pantai, sungai & danau (hilangkan gerigi piksel), buang serpihan kecil
+land = cv2.GaussianBlur(land.astype(np.float32), (0, 0), 3.5) > 0.5
+_n, _lab, _st, _ = cv2.connectedComponentsWithStats(land.astype(np.uint8), connectivity=8)
+for _i in range(1, _n):
+    if _st[_i, cv2.CC_STAT_AREA] < 1500: land[_lab == _i] = False
 allx = np.concatenate([p[:, 0] for p in islands]); ally = np.concatenate([p[:, 1] for p in islands])
 rx0 = max(0.0, allx.min() - PAD / K); rx1 = min(IW - 1.0, allx.max() + PAD / K)
 ry0 = max(0.0, ally.min() - PAD / K); ry1 = min(IH - 1.0, ally.max() + PAD / K)
@@ -93,7 +101,9 @@ ring_pts = np.vstack(ring) if ring else np.zeros((0, 2))
 gx, gy = np.meshgrid(np.arange(int(rx0), int(rx1), 40), np.arange(int(ry0), int(ry1), 40))
 grid = np.stack([gx.ravel(), gy.ravel()], 1).astype(float)
 grid = grid[edt_land[grid[:, 1].astype(int), grid[:, 0].astype(int)] > 34]
-LP = np.vstack([coast_pts, ring_pts, grid])
+ring8 = contour_pts(ero(land, 8), 12.0)
+ring8_pts = np.vstack(ring8) if ring8 else np.zeros((0, 2))
+LP = np.vstack([coast_pts, ring8_pts, ring_pts, grid])
 tri = Delaunay(jitter(LP))
 ls = tri_filter(LP, tri.simplices, land, land_d)
 dpt = edt_land[np.clip(LP[:, 1].astype(int), 0, IH - 1), np.clip(LP[:, 0].astype(int), 0, IW - 1)]
@@ -118,7 +128,10 @@ lg = np.stack([lgx.ravel(), lgy.ravel()], 1).astype(float)
 ix, iy = lg[:, 0].astype(int), lg[:, 1].astype(int)
 lake_mask = ndi.binary_fill_holes(land | (np.zeros_like(land))) & ~land
 lg = lg[lake_mask[iy, ix] & (edt_water[iy, ix] > 14)]
-WP = np.vstack([coast_pts, edge, sg, lg])
+wr1 = contour_pts(ero(water, 7), 12.0); wr2 = contour_pts(ero(water, 18), 20.0)
+wr_pts = np.vstack([p for p in (wr1 + wr2) if len(p)]) if (wr1 or wr2) else np.zeros((0, 2))
+wr_pts = wr_pts[at(water, wr_pts) & (edt_water[np.clip(wr_pts[:, 1].astype(int), 0, IH - 1), np.clip(wr_pts[:, 0].astype(int), 0, IW - 1)] > 5)]
+WP = np.vstack([coast_pts, wr_pts, edge, sg, lg])
 tri = Delaunay(jitter(WP))
 ws_ = tri_filter(WP, tri.simplices, water, water_d)
 chk = np.zeros((IH, IW), np.uint8)
@@ -199,10 +212,13 @@ def _road_labels():
             if c: break
         ids.append(c)
     return ids
+_gapzone = np.zeros((IH, IW), np.uint8)
+for p in d.get('river_gaps', []): cv2.fillPoly(_gapzone, [np.round(np.array(p)).astype(np.int32)], 1)
+_gapzone = (cv2.dilate(_gapzone, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (41, 41))) > 0) | land_d   # penyeberangan sungai dianggap boleh dilewati
 def _line_on_land(a, b):
     t = np.linspace(0, 1, max(3, int(np.hypot(*(b - a)) / 3)))
     P = a[None, :] * (1 - t[:, None]) + b[None, :] * t[:, None]
-    return at(land_d, P).mean() > 0.97
+    return at(_gapzone, P).mean() > 0.97
 n_before = len(set(_road_labels()))
 stitched = 0
 for _ in range(400):
@@ -435,11 +451,37 @@ def ccw_fix(P2, S):
 # daratan
 LP2 = L(LP); S = ccw_fix(LP2, ls)
 used = np.unique(S); remap = -np.ones(len(LP), int); remap[used] = np.arange(len(used))
-pos = np.column_stack([LP2[used], np.zeros(len(used))])
+pos = np.column_stack([LP2[used], np.full(len(used), LAND_H)])
 m_green = g.material('Material_LpmGround', BASE)
 mi = g.mesh('TPX_GreenAreas_0', pos, remap[S], m_green, colors=col[used])
 green_node = g.node('TPX_GreenAreas_0', mesh=mi)
 green_root = g.node('TPX_GreenAreas', children=[green_node])
+
+# tebing tepi: dinding dari tepi daratan (LAND_H) turun ke bawah permukaan air -> batas air/daratan jelas
+# (di luar grup TPX_* supaya tidak ikut jadi tanah/tabrakan di mode Jelajahi)
+BANK_BOTTOM = -1.0
+bank_V, bank_N, bank_C, bank_I = [], [], [], []
+C_TOP = np.array([0.92, 0.85, 0.64]); C_BOT = np.array([0.50, 0.43, 0.30])
+for ring_ in coast:
+    P_ = np.asarray(ring_, float)
+    if len(P_) < 4: continue
+    Lp_ = L(P_); n_ = len(Lp_)
+    tg_ = np.roll(Lp_, -1, axis=0) - np.roll(Lp_, 1, axis=0)
+    tg_ /= (np.hypot(tg_[:, 0], tg_[:, 1])[:, None] + 1e-9)
+    nm_ = np.stack([tg_[:, 1], -tg_[:, 0]], 1)
+    probe = P_ + np.stack([nm_[:, 0], -nm_[:, 1]], 1) * 4.0 / K   # titik di sisi "luar" (arah normal lokal -> px)
+    if at(land, probe).mean() > 0.5: nm_ = -nm_
+    base = len(bank_V)
+    for k_ in range(n_):
+        bank_V.append((Lp_[k_, 0], Lp_[k_, 1], LAND_H)); bank_V.append((Lp_[k_, 0], Lp_[k_, 1], BANK_BOTTOM))
+        for _ in range(2): bank_N.append((nm_[k_, 0], nm_[k_, 1], 0.0))
+        bank_C.append(C_TOP); bank_C.append(C_BOT)
+    for k_ in range(n_):
+        a_, b_ = base + 2 * k_, base + 2 * ((k_ + 1) % n_)
+        bank_I += [a_, a_ + 1, b_ + 1, a_, b_ + 1, b_]
+bank_mesh = g.mesh('LpmBanks', np.array(bank_V, np.float32), np.array(bank_I, np.uint32), g.material('Bank_soil', [1.0, 1.0, 1.0]),
+                   normals=np.array(bank_N, np.float32), colors=np.array(bank_C, np.float32))
+banks_root = g.node('LpmBanks', mesh=bank_mesh)
 # air
 WP2 = L(WP); S = ccw_fix(WP2, ws_)
 used = np.unique(S); remap = -np.ones(len(WP), int); remap[used] = np.arange(len(used))
@@ -448,7 +490,7 @@ mi = g.mesh('TPX_Waterways_0', pos, remap[S], g.material('Material_0x98DCFF', [0
 water_root = g.node('TPX_Waterways', children=[g.node('TPX_Waterways_0', mesh=mi)])
 
 # jalan
-ROAD_Z = 0.02
+ROAD_Z = LAND_H + 0.02
 def ribbon(pts_m, hw, z):
     p = np.asarray(pts_m, float)
     if len(p) < 2: return None
@@ -518,10 +560,27 @@ def box_tris(cx, cy, hx, hy, z0, z1, ang):
     I = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7, 4, 5, 6, 4, 6, 7]
     return np.array(V, np.float32), np.array(I, np.uint32)
 
+# lintasan berdek: 8 jembatan antar-pulau + ruas jalan biasa yang melintasi sungai/kanal/danau
+deck_lines = [(nm, pl, WIDTH_M['bridge'] / 2) for nm, pl in bridge_lines]
+n_cross = 0
+for r in roads:
+    if r['kind'] == 'bridge': continue
+    pt = np.asarray(r['pts']); wet = ~at(land, pt)
+    i = 0
+    while i < len(pt):
+        if not wet[i]: i += 1; continue
+        j = i
+        while j + 1 < len(pt) and wet[j + 1]: j += 1
+        if j - i + 1 >= 2:   # >= ~2 titik (10 px) di atas air
+            lo, hi = max(0, i - 2), min(len(pt) - 1, j + 2)
+            deck_lines.append(('Seberang-%d' % n_cross, pt[lo:hi + 1], WIDTH_M[r['kind']] / 2)); n_cross += 1
+        i = j + 1
+print('jalan menyeberangi air (bukan jembatan antar-pulau):', n_cross)
+
 rail_parts, post_parts, pier_parts = [], [], []
-HW = WIDTH_M['bridge'] / 2
-for name, pl in bridge_lines:
+for name, pl, HW in deck_lines:
     pm = L(pl)
+    if len(pm) < 2: continue
     for sgn in (-1, 1):
         rail_parts.append(wall_strip(pm, sgn * (HW - 0.15), ROAD_Z, ROAD_Z + 1.1))
     seg = np.hypot(*np.diff(pm, axis=0).T); cum = np.concatenate([[0], np.cumsum(seg)])
@@ -533,8 +592,8 @@ for name, pl in bridge_lines:
         for sgn in (-1, 1):
             ox, oy = -math.sin(ang) * sgn * (HW - 0.15), math.cos(ang) * sgn * (HW - 0.15)
             post_parts.append(box_tris(x + ox, y + oy, 0.18, 0.18, ROAD_Z, ROAD_Z + 1.3, ang))
-        if int(s_ / 24.0) != int((s_ + 6.0) / 24.0) or s_ == 0.0:
-            pier_parts.append(box_tris(x, y, 0.9, HW - 0.8, -6.0, ROAD_Z - 0.05, ang))
+        if name in dict(bridge_lines) and (int(s_ / 24.0) != int((s_ + 6.0) / 24.0) or s_ == 0.0):
+            pier_parts.append(box_tris(x, y, 0.9, HW - 0.8, -1.0, ROAD_Z - 0.05, ang))
         s_ += 6.0
 bridge_children = []
 if rail_parts:
@@ -546,7 +605,7 @@ if post_parts:
 if pier_parts:
     V, I = merge(pier_parts)
     bridge_children.append(g.node('LpmBridgePiers', mesh=g.mesh('LpmBridgePiers', V, I, g.material('Bridge_pier', [0.45, 0.46, 0.50]))))
-bridges_root = g.node('LpmBridges', children=bridge_children, extras={'count': len(bridge_lines)})
+bridges_root = g.node('LpmBridges', children=bridge_children, extras={'count': len(bridge_lines), 'crossings': n_cross})
 
 # pohon (batang 6 sisi ber-flat shading = 24 verts; tajuk ikosfer 240 verts; lihat TRUNK_MAX_VERTS di TownWalk.jsx)
 def flat_mesh(tris):
@@ -587,7 +646,7 @@ tree_nodes = []
 for i, (x, y, R) in enumerate(tr):
     lx, ly = to_local(x, y); s = R / 5.0
     tn_ = g.node('trunk', mesh=trunk_mesh); cn = g.node('crown', mesh=crown_meshes[0 if R < 3.6 else (1 if R < 5.8 else 2)])
-    tree_nodes.append(g.node('TPX_Trees_tree_%d' % i, t=[lx, ly, s - 1.0], s=[s, s, s], children=[tn_, cn]))
+    tree_nodes.append(g.node('TPX_Trees_tree_%d' % i, t=[lx, ly, s - 1.0 + LAND_H], s=[s, s, s], children=[tn_, cn]))
 trees_root = g.node('TPX_Trees', children=tree_nodes)
 
 # bangunan: rumah warga (penampung -> diganti Rumah LPM oleh lpmHouses.js) + kotak fasilitas
@@ -616,7 +675,7 @@ for i in range(len(H)):
     lx, ly = to_local(H[i][0], H[i][1]); fx, fy = face[i]
     phi = math.atan2(-fx, fy)
     n = house_no[i]
-    b_children.append(g.node('TPX_Buildings_%d' % n, mesh=house_mesh, t=[lx, ly, 0.0], r=quat_z(phi),
+    b_children.append(g.node('TPX_Buildings_%d' % n, mesh=house_mesh, t=[lx, ly, LAND_H], r=quat_z(phi),
                              extras={'house': n}))
     house_records.append({'n': n, 'x': float(lx), 'y': float(ly), 'phi': phi, 'color': hcol[i], 'island': ISL_CENTERS[isl_of[i]][0] if isl_of[i] >= 0 else None})
 FAC_COL = {'teal': [0.15, 0.55, 0.52], 'purple': [0.49, 0.25, 0.64], 'red': [0.80, 0.20, 0.18], 'brown': [0.55, 0.35, 0.20],
@@ -628,14 +687,14 @@ for b in sorted(placed_boxes, key=lambda b: b['n']):
     side = b['side']; h = FAC_H[b['big']]
     fv, fn_, fi_ = flat_mesh(box_tris(side, side, h))
     fm = g.mesh('facility_%d' % b['n'], fv, fi_, g.material('Facility_' + b['c'], FAC_COL[b['c']]), normals=fn_)
-    b_children.append(g.node('TPX_Buildings_F%d' % b['n'], mesh=fm, t=[lx, ly, 0.0], r=quat_z(-b['ang']),
+    b_children.append(g.node('TPX_Buildings_F%d' % b['n'], mesh=fm, t=[lx, ly, LAND_H], r=quat_z(-b['ang']),
                              extras={'facility': b['n'], 'kind': b['c'], 'big': bool(b['big'])}))
     mx, my = to_local(b['x'], b['y'])
     fac_records.append({'n': b['n'], 'x': float(lx), 'y': float(ly), 'side': side, 'h': h, 'kind': b['c'], 'big': bool(b['big']),
                         'marker_x': float(mx), 'marker_y': float(my)})
 buildings_root = g.node('TPX_Buildings', children=b_children)
 flag = g.node('LpmFixedLayout', extras={'version': 1, 'width': WM, 'height': HM, 'houseScale': KH})
-for n_ in (buildings_root, roads_root, bridges_root, water_root, trees_root, green_root, flag): g.root(n_)
+for n_ in (buildings_root, roads_root, bridges_root, banks_root, water_root, trees_root, green_root, flag): g.root(n_)
 size = g.write(OUT + 'lpm_new.glb')
 print('GLB %.2f MB' % (size / 1e6), 'node', len(g.nodes))
 json.dump({'width': WM, 'height': HM, 'houses': house_records, 'facilities': fac_records,

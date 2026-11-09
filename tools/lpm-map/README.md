@@ -26,3 +26,14 @@ Ekstraksi jalan dari gambar memecah jaringan jadi ~29 potongan (celah di bawah i
 garis kuning putus-putus). `build_lpm.py` menyambung ujung jalan yang menggantung ke jalan terdekat di komponen
 lain (maks ~80 m, garis harus di daratan; ujung jembatan boleh melintasi pantai) sampai jaringan jadi 1 komponen.
 Relaksasi posisi rumah dijalankan minimal 8 iterasi supaya rumah menjauh dari jalan sambungan.
+
+## Air & daratan (sungai, danau, tebing tepi)
+- Daratan dinaikkan `LAND_H = 1,2 m` di atas air (green mesh, jalan, pohon, rumah, kotak ikut). Tepi daratan (pantai,
+  sungai, danau) punya dinding tebing `LpmBanks` turun sampai -1 m (batas air/darat jelas, tidak flat).
+  Titik terendah model tetap -1 m, jadi posisi laut di tampilan Peta tidak berubah; `landRaise` di `maps.js` diturunkan
+  2 -> 0,8 supaya beda tinggi darat-laut total tetap 2 m.
+- Sungai Pusat Kota (3 penyeberangan) & kanal ke Danau Pemukiman (1) tadinya terpotong oleh jalan yang menyeberang
+  (jalan abu-abu terbaca sebagai daratan). `extract.py` (`RIVER_CROSSINGS`) menyimpan celahnya (`river_gaps`) dan
+  `build_lpm.py` membukanya lagi: sungai menerus, jalannya jadi jembatan kecil berpagar (`LpmBridges`).
+- Masker daratan dihaluskan (Gaussian) supaya garis pantai/sungai/danau tidak bergerigi; titik bantu dekat pantai
+  ditambahkan ke triangulasi supaya mesh air/darat tidak bolong.

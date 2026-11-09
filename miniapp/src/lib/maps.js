@@ -72,7 +72,9 @@ export const MAPS = [
     key: 'lpm',
     name: 'LPM',
     modelUrl: '/models/lpm.glb',
-    landRaise: 2, // daratan +2 m di atas laut, biar ombak gak naik ke atas pulau
+    // Daratan di glb sudah +1,2 m di atas air (tebing tepi pantai/sungai/danau) -> landRaise cukup 0,8
+    // supaya total beda tinggi daratan-laut di tampilan Peta tetap 2 m seperti sebelumnya.
+    landRaise: 0.8,
     walkWaterDrop: 0.6, // mode Jelajahi: air 0.6 m di bawah daratan, bukan rata = gak kelihatan genangan
     // Peta LPM = gugusan 7 pulau (Pusat Kota, Pemukiman, Olahraga, Industri,
     // Pelabuhan, Wisata, Terlarang), ~3,1 x 2,3 km (skala 250 m dunia per 1 km
