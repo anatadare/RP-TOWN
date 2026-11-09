@@ -179,6 +179,57 @@ for name, pl in BRIDGES:
     roads.append({'pts': p, 'kind': 'bridge', 'w': 0})
     bridge_lines.append((name, p))
 WIDTH_M = {'minor': 4.0, 'main': 6.0, 'bridge': 9.0}
+
+# ---- sambung jalan yang terputus -------------------------------------------------
+# Ekstraksi memecah jaringan jalan jadi puluhan potongan (celah di bawah ikon marker bernomor, di
+# persimpangan, garis kuning putus-putus). Ujung jalan yang menggantung disambung ke titik jalan terdekat
+# di komponen LAIN (selama garisnya tetap di daratan & tidak jauh) sampai tidak ada lagi yang bisa disambung.
+STITCH_R = 90.0   # px (~80 m) jarak maksimum satu sambungan
+def _road_labels():
+    m = np.zeros((IH, IW), np.uint8)
+    for r in roads:
+        th = max(2, int(round(WIDTH_M[r['kind']] / K)))
+        cv2.polylines(m, [np.round(r['pts']).astype(np.int32)], False, 1, th)
+    n_, lab_ = cv2.connectedComponents(m, connectivity=8)
+    ids = []
+    for r in roads:
+        c = 0
+        for q in r['pts']:
+            c = int(lab_[int(round(q[1])), int(round(q[0]))])
+            if c: break
+        ids.append(c)
+    return ids
+def _line_on_land(a, b):
+    t = np.linspace(0, 1, max(3, int(np.hypot(*(b - a)) / 3)))
+    P = a[None, :] * (1 - t[:, None]) + b[None, :] * t[:, None]
+    return at(land_d, P).mean() > 0.97
+n_before = len(set(_road_labels()))
+stitched = 0
+for _ in range(400):
+    ids = _road_labels()
+    allp = np.vstack([r['pts'] for r in roads]); owner = np.concatenate([[i] * len(r['pts']) for i, r in enumerate(roads)])
+    tree = cKDTree(allp); best = None
+    for i, r in enumerate(roads):
+        for e in (r['pts'][0], r['pts'][-1]):
+            cand = tree.query_ball_point(e, STITCH_R)
+            cand = sorted(cand, key=lambda j: np.hypot(*(allp[j] - e)))
+            for j_ in cand:
+                d_ = float(np.hypot(*(allp[j_] - e)))
+                if ids[owner[j_]] == ids[i]: continue
+                if roads[i]['kind'] != 'bridge' and not _line_on_land(np.asarray(e, float), allp[j_]): continue
+                if best is None or d_ < best[0]: best = (d_, np.asarray(e, float), allp[j_].copy(), i, owner[j_])
+                break
+    if best is None: break
+    _, a_, b_, i_, j_ = best
+    kind_ = 'main' if 'main' in (roads[i_]['kind'], roads[j_]['kind']) else 'minor'
+    if not _line_on_land(a_, b_): kind_ = 'bridge'   # ujung jembatan yang berhenti di laut sebelum pantai
+    roads.append({'pts': resample_open(np.array([a_, b_]), 5.0), 'kind': kind_, 'w': 0}); stitched += 1
+ids = _road_labels()
+from collections import Counter
+cnt = Counter(ids)
+for c_, n_ in cnt.most_common()[1:]:
+    pp = np.vstack([r['pts'] for r, i_ in zip(roads, ids) if i_ == c_]); print('  komponen kecil', c_, n_, 'jalan; pusat disp', (pp.mean(0) / 1.8).round().tolist(), 'bbox disp', (pp.min(0) / 1.8).round().tolist(), (pp.max(0) / 1.8).round().tolist())
+print('sambungan jalan', stitched, '| komponen jalan', n_before, '->', len(cnt), '| ukuran', sorted(cnt.values(), reverse=True)[:12])
 print('jalan', {k: sum(1 for r in roads if r['kind'] == k) for k in WIDTH_M})
 
 road_mask = np.zeros((IH, IW), np.uint8)
@@ -287,7 +338,7 @@ for it in range(80):
         H[i, 0] += dx_ * 0.6; H[i, 1] += dy_ * 0.6
         H[i, 0] = min(max(H[i, 0], 1), IW - 2); H[i, 1] = min(max(H[i, 1], 1), IH - 2)
         moved += math.hypot(dx_, dy_)
-    if moved / len(H) < 0.02: break
+    if it >= 8 and moved / len(H) < 0.002: break
 print('relaksasi selesai iterasi', it, 'rata-rata geser terakhir %.3f px' % (moved / len(H)))
 tree = cKDTree(H); dd, _ = tree.query(H, k=2)
 bad_pair = int((dd[:, 1] < 2 * rho_px * 0.92).sum())

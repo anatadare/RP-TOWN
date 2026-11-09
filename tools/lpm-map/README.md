@@ -20,3 +20,9 @@ Wisata-Olahraga, Wisata-Pemukiman, Pemukiman-Terlarang, Pemukiman-Pusat Kota, Ol
 Olahraga-Industri, Industri-Pusat Kota, Pusat Kota-Pelabuhan.
 Dek (9 m) ada di `TPX_RoadsOutlines_bridge` (bisa dipijak); pagar, tiang & pilar ada di node dekor `LpmBridges`
 (tanpa prefix `TPX_`, jadi tidak ikut tabrakan). `lpm_layout_world.json` memuat jalur tiap jembatan (`bridges`).
+
+## Penyambungan jalan
+Ekstraksi jalan dari gambar memecah jaringan jadi ~29 potongan (celah di bawah ikon marker, persimpangan,
+garis kuning putus-putus). `build_lpm.py` menyambung ujung jalan yang menggantung ke jalan terdekat di komponen
+lain (maks ~80 m, garis harus di daratan; ujung jembatan boleh melintasi pantai) sampai jaringan jadi 1 komponen.
+Relaksasi posisi rumah dijalankan minimal 8 iterasi supaya rumah menjauh dari jalan sambungan.
