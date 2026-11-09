@@ -74,17 +74,21 @@ export const MAPS = [
     modelUrl: '/models/lpm.glb',
     landRaise: 2, // daratan +2 m di atas laut, biar ombak gak naik ke atas pulau
     walkWaterDrop: 0.6, // mode Jelajahi: air 0.6 m di bawah daratan, bukan rata = gak kelihatan genangan
-    landExpand: 20, // BESARKAN PULAU: daratan baru 20 m ke arah laut di sekeliling
-    // pulau lama (cincin mengikuti garis pantai, lihat walkWorld.js). Tanpa ini
-    // layout perumahan rapi cuma muat ~50 rumah; dengan ini 67 rumah muat +
-    // banyak ruang hijau. Teluk timur-laut tetap terlihat (menyempit, tidak tertutup).
-    enterableBuildings: true, // semua bangunan bisa dimasuki di mode Jelajahi (lihat houseInteriorLpm.js)
+    // Peta LPM = gugusan 7 pulau (Pusat Kota, Pemukiman, Olahraga, Industri,
+    // Pelabuhan, Wisata, Terlarang), ~3,1 x 2,3 km (skala 250 m dunia per 1 km
+    // peta referensi). Dibangun dari gambar referensi: jalan, jembatan, danau,
+    // pohon & 500 titik rumah warga; 30 marker bernomor jadi KOTAK KOSONG
+    // (TPX_BuildingsFacility_N) yang nanti diisi bangunan fasilitas.
+    // Tata letak TETAP (node LpmFixedLayout di glb): lpmHouses.js memakai posisi
+    // & arah rumah dari glb apa adanya, tanpa menyusun jalan/slot sendiri.
+    walkCell: 4, // sel grid tanah jalan-jalan (m); 2 m di peta seluas ini = >1 jt segitiga
+    enterableBuildings: true, // semua rumah warga bisa dimasuki di mode Jelajahi (lihat houseInteriorLpm.js)
     interiorPlan: 'lpm', // Rumah LPM 2 lantai (lib/houseInteriorLpm.js + lib/lpmHouses.js)
     billboard: { offsetXFactor: -0.3, offsetZFactor: -1.15, imageUrl: null },
     walkBillboards: [
-      { x: 194, z: -80, imageUrl: null }, // samping persimpangan R2-CE (layout 67 rumah, pulau diperluas)
-      { x: 18, z: -108, imageUrl: null }, // samping persimpangan R3-CW
-      { x: 46, z: -62, imageUrl: null }, // samping persimpangan CW-R2
+      { x: 1695.0, z: -1378.4, imageUrl: null },
+      { x: 2297.1, z: -804.8, imageUrl: null },
+      { x: 1739.4, z: -1852.3, imageUrl: null },
     ],
   },
   {

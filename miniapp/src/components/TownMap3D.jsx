@@ -535,7 +535,7 @@ function TownModel({
       addPantaiHouses(scene)
       addPantaiSeaHouses(scene) // area laut: rumah panggung + jembatan (lib/pantaiLaut.js)
     } else if (mapDef?.interiorPlan === 'lpm') {
-      addLpmHouses(scene, mapDef.walkWaterDrop ?? 0, mapDef.landExpand ?? 0)
+      addLpmHouses(scene, mapDef.walkWaterDrop ?? 0, mapDef.landExpand ?? 0, mapDef.walkCell ?? 2)
     }
   }, [scene, modelUrl])
 
@@ -626,7 +626,7 @@ function TownModel({
       if (waterDrop > 0) {
         for (let i = 1; i < data.water.length; i += 3) data.water[i] -= waterDrop
       }
-      const world = buildWalkWorld({ ...data, props: [], floors: new Float32Array(0), cell: 2, landExpand: mapDef?.landExpand ?? 0 })
+      const world = buildWalkWorld({ ...data, props: [], floors: new Float32Array(0), cell: mapDef?.walkCell ?? 2, landExpand: mapDef?.landExpand ?? 0 })
       let groundColor = new THREE.Color('#8ad384')
       scene.traverse((obj) => {
         if (groundColor && obj.isMesh && obj.name.startsWith(GREEN_PREFIX) && obj.material?.color) {

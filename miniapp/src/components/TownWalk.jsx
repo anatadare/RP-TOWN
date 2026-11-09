@@ -377,7 +377,7 @@ function raiseTrees(root) {
 // & dipakai bareng TownMap3D (yang memodifikasinya), jadi di sini SELALU
 // bekerja di salinan (clone) supaya peta tampilan luar gak ikut berubah.
 // ---------------------------------------------------------------------------
-function prepareWalkScene(scene, waterDrop = 0, interiorPlan = null, landExpand = 0) {
+function prepareWalkScene(scene, waterDrop = 0, interiorPlan = null, landExpand = 0, cell = 2) {
   const root = scene.clone(true)
   root.position.set(0, 0, 0)
   root.scale.set(1, 1, 1)
@@ -393,7 +393,7 @@ function prepareWalkScene(scene, waterDrop = 0, interiorPlan = null, landExpand 
     // LPM: rumah diganti "Rumah LPM" 2 lantai (lib/lpmHouses.js). waterDrop
     // dipakai menilai tanah saat penempatan (lihat addLpmHouses). landExpand
     // = perluasan daratan ke laut (lihat maps.js).
-    addLpmHouses(root, waterDrop, landExpand)
+    addLpmHouses(root, waterDrop, landExpand, cell)
     root.updateMatrixWorld(true)
   }
 
@@ -886,11 +886,12 @@ function getWalkCache(scene, modelUrl) {
   let c = WALK_CACHE.get(scene)
   if (!c) {
     const mapDef = MAPS.find((m) => m.modelUrl === modelUrl)
-    const built = prepareWalkScene(scene, mapDef?.walkWaterDrop ?? 0, mapDef?.interiorPlan || null, mapDef?.landExpand ?? 0)
+    const built = prepareWalkScene(scene, mapDef?.walkWaterDrop ?? 0, mapDef?.interiorPlan || null, mapDef?.landExpand ?? 0, mapDef?.walkCell ?? 2)
     const defs = mapDef?.walkBillboards || []
     const world = buildWalkWorld({
       ...built.data,
       landExpand: mapDef?.landExpand ?? 0,
+      cell: mapDef?.walkCell ?? 2,
       props: defs.map((b) => ({
         x: b.x,
         z: b.z,

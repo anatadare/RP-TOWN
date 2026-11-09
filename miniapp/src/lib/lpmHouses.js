@@ -25,6 +25,7 @@ const MIN_SCALE = 0.7
 const GAP = 1.5 // jarak minimum antar rumah (meter)
 const MAX_SHIFT = 9 // rumah boleh digeser sejauh ini dari titik aslinya (meter)
 const BODY_H = 7.0
+const FIXED_K = 0.65 // skala rumah di tata letak tetap (sama dengan lpm.glb: 8,4 m lebar tapak)
 
 // Carport & pagar (denah, di depan rumah; dicerminkan bersama rumah, jadi di
 // model akhirnya carport ada di sisi berlawanan dari denah -- simetris dengan
@@ -739,8 +740,12 @@ function baseColliderGeo(sh, depth) {
 // peta ini (lihat maps.js: walkWaterDrop), dipakai menilai tanah saat penempatan.
 // `landExpand` = perluasan daratan LPM ke laut (lihat maps.js), dipakai di dunia
 // jalan lama & final supaya rumah/jalan di daratan baru ikut terhitung darat.
-export function addLpmHouses(scene, waterDrop = 0, landExpand = 0) {
+export function addLpmHouses(scene, waterDrop = 0, landExpand = 0, cell = 2) {
   if (!scene || scene.userData.lpmHouses) return
+  // Tata letak TETAP: glb membawa node 'LpmFixedLayout' (peta gugusan pulau hasil
+  // rombakan). Posisi & arah tiap rumah warga sudah ditentukan di glb
+  // (TPX_Buildings_N), jalannya juga -- jadi tidak ada penyusunan slot/jalan baru.
+  const fixed = !!scene.getObjectByName('LpmFixedLayout')
   scene.updateWorldMatrix(true, true)
   const inv = new THREE.Matrix4().copy(scene.matrixWorld).invert()
   const rel = new THREE.Matrix4()
@@ -754,7 +759,7 @@ export function addLpmHouses(scene, waterDrop = 0, landExpand = 0) {
   // Dunia jalan LAMA (jalan GLB) buat penempatan; lantai dihitung dari dunia
   // jalan FINAL (jalan baru) -- lihat di bawah.
   const tris = collectWalkTriangles(scene, inv, waterDrop)
-  const walkOld = buildWalkWorld({ ...tris, props: [], floors: new Float32Array(0), cell: 2, landExpand })
+  const walkOld = buildWalkWorld({ ...tris, props: [], floors: new Float32Array(0), cell, landExpand })
   // frame lokal (x, y) -> dunia (x, -y) buat uji tanah
   const onLand = (x, y) => walkOld.groundY(x, -y, Infinity) !== null
   const sh = shared()
@@ -786,7 +791,19 @@ export function addLpmHouses(scene, waterDrop = 0, landExpand = 0) {
     })
   }
 
-  const infos = computeLpmPlacement({ buildings, onLand })
+  let infos
+  if (fixed) {
+    // posisi & arah hadap dibaca dari transform node di glb (depan = +y lokal node)
+    const q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(), dir = new THREE.Vector3()
+    infos = buildings.map((b) => {
+      rel.multiplyMatrices(inv, b.obj.matrixWorld).decompose(pos, q, sc)
+      dir.set(0, 1, 0).applyQuaternion(q)
+      const n = Math.hypot(dir.x, dir.y) || 1
+      return { num: b.num, cx: pos.x, cy: pos.y, fx: dir.x / n, fy: dir.y / n, k: FIXED_K, x0: pos.x, y0: pos.y }
+    })
+  } else {
+    infos = computeLpmPlacement({ buildings, onLand })
+  }
   const byNum = new Map(infos.map((h) => [h.num, h]))
   for (const b of buildings) {
     const h = byNum.get(b.num)
@@ -802,18 +819,24 @@ export function addLpmHouses(scene, waterDrop = 0, landExpand = 0) {
   // Sembunyikan jalan lama, lalu bangun jalan baru + dunia jalan FINAL.
   // Lantai rumah dihitung dari dunia final (bukan dunia lama): tanah di bawah
   // rumah bisa selisih sampai ~0.4 m antara keduanya.
-  hideOldRoads(scene)
-  const roadParts = buildLpmRoadTriangles((x, y) => walkOld.groundY(x, -y, Infinity))
-  const newRoadWorld = []
-  for (const part of roadParts) {
-    for (let i = 0; i < part.tris.length; i += 3) {
-      newRoadWorld.push(part.tris[i], part.tris[i + 2], -part.tris[i + 1])
+  // Tata letak tetap: jalan glb dipakai apa adanya (tidak disembunyikan/diganti),
+  // dunia jalan lama sudah final.
+  let roadParts = []
+  let walk = walkOld
+  if (!fixed) {
+    hideOldRoads(scene)
+    roadParts = buildLpmRoadTriangles((x, y) => walkOld.groundY(x, -y, Infinity))
+    const newRoadWorld = []
+    for (const part of roadParts) {
+      for (let i = 0; i < part.tris.length; i += 3) {
+        newRoadWorld.push(part.tris[i], part.tris[i + 2], -part.tris[i + 1])
+      }
     }
+    walk = buildWalkWorld({
+      water: tris.water, green: tris.green, roads: Float32Array.from(newRoadWorld),
+      buildings: new Float32Array(0), trunks: tris.trunks, props: [], floors: new Float32Array(0), cell, landExpand,
+    })
   }
-  const walk = buildWalkWorld({
-    water: tris.water, green: tris.green, roads: Float32Array.from(newRoadWorld),
-    buildings: new Float32Array(0), trunks: tris.trunks, props: [], floors: new Float32Array(0), cell: 2, landExpand,
-  })
 
   // tinggi tanah di titik baru (dunia jalan yang sama dipakai penempatan);
   // cadangan: dasar rumah lama. Lantai = tanah tertinggi, jadi tidak ada
@@ -827,8 +850,10 @@ export function addLpmHouses(scene, waterDrop = 0, landExpand = 0) {
     let top = -Infinity, bottom = Infinity
     for (let i = 0; i < GROUND_GRID; i++) {
       for (let j = 0; j < GROUND_GRID; j++) {
-        const gx = h.cx + (i / (GROUND_GRID - 1) - 0.5) * w
-        const gy = h.cy + (j / (GROUND_GRID - 1) - 0.5) * d
+        const u = (i / (GROUND_GRID - 1) - 0.5) * (fixed ? MODEL_W * h.k : w) // sepanjang lebar rumah
+        const v = (j / (GROUND_GRID - 1) - 0.5) * (fixed ? MODEL_D * h.k : d) // sepanjang kedalaman
+        const gx = fixed ? h.cx + h.fy * u + h.fx * v : h.cx + (i / (GROUND_GRID - 1) - 0.5) * w
+        const gy = fixed ? h.cy - h.fx * u + h.fy * v : h.cy + (j / (GROUND_GRID - 1) - 0.5) * d
         const g = walk.groundY(gx, -gy, Infinity)
         if (g === null) continue
         if (g > top) top = g
@@ -929,7 +954,7 @@ export function addLpmHouses(scene, waterDrop = 0, landExpand = 0) {
     if (part.noCollide) mesh.userData.noCollide = true
     roadGroup.add(mesh)
   }
-  scene.add(roadGroup)
+  if (!fixed) scene.add(roadGroup)
 
   scene.add(group)
   scene.userData.lpmHouses = true
