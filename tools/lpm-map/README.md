@@ -12,3 +12,11 @@ Membangun `miniapp/public/models/lpm.glb` dari gambar referensi `reference-map.p
 - 500 titik rumah -> `TPX_Buildings_N` (diganti "Rumah LPM" 2 lantai oleh `lib/lpmHouses.js`).
 - 30 marker bernomor -> kotak kosong `TPX_Buildings_F<n>`.
 - Node `LpmFixedLayout` menandai tata letak tetap (lihat `addLpmHouses`).
+
+## Jembatan
+8 jembatan antar-pulau ditetapkan manual di `BRIDGES` (`build_lpm.py`, koordinat tampilan referensi 2000 px; x1.8 = piksel asli),
+bukan dari deteksi otomatis (deteksi memutus jembatan dan membuat Pulau Wisata & Industri terputus):
+Wisata-Olahraga, Wisata-Pemukiman, Pemukiman-Terlarang, Pemukiman-Pusat Kota, Olahraga-Pusat Kota,
+Olahraga-Industri, Industri-Pusat Kota, Pusat Kota-Pelabuhan.
+Dek (9 m) ada di `TPX_RoadsOutlines_bridge` (bisa dipijak); pagar, tiang & pilar ada di node dekor `LpmBridges`
+(tanpa prefix `TPX_`, jadi tidak ikut tabrakan). `lpm_layout_world.json` memuat jalur tiap jembatan (`bridges`).

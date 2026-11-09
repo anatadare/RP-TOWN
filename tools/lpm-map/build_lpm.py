@@ -157,7 +157,28 @@ for r in d['roads']:
         q = cv2.approxPolyDP(np.array(r['pts'], np.float32).reshape(-1, 1, 2), 18.0, False)[:, 0, :].astype(float)
         if len(q) >= 2: p = resample_open(chaikin(q, 2), 5.0)
     roads.append({'pts': p, 'kind': kind, 'w': r['w']})
-WIDTH_M = {'minor': 4.0, 'main': 6.0, 'bridge': 8.0}
+# 8 jembatan antar-pulau, digambar dari peta referensi (koordinat tampilan 2000 px lebar; x1.8 = piksel asli).
+# Hasil deteksi otomatis memutus jembatan jadi potongan-potongan (pagar -> skeleton zig-zag) dan
+# membuat Pulau Wisata & Industri terputus, jadi jalur jembatan ditetapkan di sini.
+DISP = 1.8
+BRIDGES = [
+    ('Wisata-Olahraga',      [(322, 386), (430, 361), (535, 343), (815, 252), (850, 245)]),
+    ('Wisata-Pemukiman',     [(293, 480), (268, 518), (228, 590), (192, 650), (180, 670)]),
+    ('Pemukiman-Terlarang',  [(303, 1165), (306, 1195), (307, 1220), (306, 1245)]),
+    ('Pemukiman-PusatKota',  [(585, 934), (690, 897), (770, 868), (822, 853), (860, 848)]),
+    ('Olahraga-PusatKota',   [(1052, 295), (1040, 352), (1033, 395), (1034, 430), (1042, 458)]),
+    ('Olahraga-Industri',    [(1215, 190), (1260, 205), (1340, 240), (1425, 300), (1450, 355), (1448, 420), (1445, 497)]),
+    ('Industri-PusatKota',   [(1445, 497), (1427, 512), (1379, 549), (1330, 590), (1296, 622)]),
+    ('PusatKota-Pelabuhan',  [(1290, 828), (1340, 858), (1404, 915), (1430, 945), (1440, 970), (1440, 990)]),
+]
+roads = [r for r in roads if r['kind'] != 'bridge']
+bridge_lines = []
+for name, pl in BRIDGES:
+    q = np.array(pl, float) * DISP
+    p = resample_open(chaikin(q, 2), 5.0)
+    roads.append({'pts': p, 'kind': 'bridge', 'w': 0})
+    bridge_lines.append((name, p))
+WIDTH_M = {'minor': 4.0, 'main': 6.0, 'bridge': 9.0}
 print('jalan', {k: sum(1 for r in roads if r['kind'] == k) for k in WIDTH_M})
 
 road_mask = np.zeros((IH, IW), np.uint8)
@@ -426,6 +447,56 @@ if dash_parts:
     road_children.append(g.node('TPX_RoadsOutlines_Center', mesh=mi, extras={'noCollide': True}))
 roads_root = g.node('TPX_RoadsOutlines', children=road_children)
 
+# pagar & tiang jembatan (dekor: di luar grup TPX_* jadi tidak ikut tabrakan/jalan)
+def wall_strip(p, off, z0, z1):
+    tg = np.gradient(p, axis=0); n = np.hypot(tg[:, 0], tg[:, 1])[:, None]; n[n == 0] = 1; tg = tg / n
+    nm = np.stack([-tg[:, 1], tg[:, 0]], 1); q = p + nm * off
+    V = np.zeros((2 * len(q), 3), np.float32); V[0::2, :2] = q; V[1::2, :2] = q; V[0::2, 2] = z0; V[1::2, 2] = z1
+    I = []
+    for i in range(len(q) - 1):
+        a, b, c, e = 2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3
+        I += [a, b, e, a, e, c]
+    return V, np.array(I, np.uint32)
+
+def box_tris(cx, cy, hx, hy, z0, z1, ang):
+    ca, sa = math.cos(ang), math.sin(ang)
+    c = [(-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy)]
+    V = []
+    for zz in (z0, z1):
+        for dx, dy in c: V.append((cx + dx * ca - dy * sa, cy + dx * sa + dy * ca, zz))
+    I = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7, 4, 5, 6, 4, 6, 7]
+    return np.array(V, np.float32), np.array(I, np.uint32)
+
+rail_parts, post_parts, pier_parts = [], [], []
+HW = WIDTH_M['bridge'] / 2
+for name, pl in bridge_lines:
+    pm = L(pl)
+    for sgn in (-1, 1):
+        rail_parts.append(wall_strip(pm, sgn * (HW - 0.15), ROAD_Z, ROAD_Z + 1.1))
+    seg = np.hypot(*np.diff(pm, axis=0).T); cum = np.concatenate([[0], np.cumsum(seg)])
+    s_ = 0.0
+    while s_ < cum[-1]:
+        x = float(np.interp(s_, cum, pm[:, 0])); y = float(np.interp(s_, cum, pm[:, 1]))
+        x2 = float(np.interp(min(s_ + 1, cum[-1]), cum, pm[:, 0])); y2 = float(np.interp(min(s_ + 1, cum[-1]), cum, pm[:, 1]))
+        ang = math.atan2(y2 - y, x2 - x) if (x2 != x or y2 != y) else 0.0
+        for sgn in (-1, 1):
+            ox, oy = -math.sin(ang) * sgn * (HW - 0.15), math.cos(ang) * sgn * (HW - 0.15)
+            post_parts.append(box_tris(x + ox, y + oy, 0.18, 0.18, ROAD_Z, ROAD_Z + 1.3, ang))
+        if int(s_ / 24.0) != int((s_ + 6.0) / 24.0) or s_ == 0.0:
+            pier_parts.append(box_tris(x, y, 0.9, HW - 0.8, -6.0, ROAD_Z - 0.05, ang))
+        s_ += 6.0
+bridge_children = []
+if rail_parts:
+    V, I = merge(rail_parts)
+    bridge_children.append(g.node('LpmBridgeRails', mesh=g.mesh('LpmBridgeRails', V, I, g.material('Bridge_rail', [0.86, 0.86, 0.88]))))
+if post_parts:
+    V, I = merge(post_parts)
+    bridge_children.append(g.node('LpmBridgePosts', mesh=g.mesh('LpmBridgePosts', V, I, g.material('Bridge_post', [0.55, 0.56, 0.60]))))
+if pier_parts:
+    V, I = merge(pier_parts)
+    bridge_children.append(g.node('LpmBridgePiers', mesh=g.mesh('LpmBridgePiers', V, I, g.material('Bridge_pier', [0.45, 0.46, 0.50]))))
+bridges_root = g.node('LpmBridges', children=bridge_children, extras={'count': len(bridge_lines)})
+
 # pohon (batang 6 sisi ber-flat shading = 24 verts; tajuk ikosfer 240 verts; lihat TRUNK_MAX_VERTS di TownWalk.jsx)
 def flat_mesh(tris):
     tris = np.asarray(tris, np.float32).reshape(-1, 3, 3)
@@ -513,11 +584,12 @@ for b in sorted(placed_boxes, key=lambda b: b['n']):
                         'marker_x': float(mx), 'marker_y': float(my)})
 buildings_root = g.node('TPX_Buildings', children=b_children)
 flag = g.node('LpmFixedLayout', extras={'version': 1, 'width': WM, 'height': HM, 'houseScale': KH})
-for n_ in (buildings_root, roads_root, water_root, trees_root, green_root, flag): g.root(n_)
+for n_ in (buildings_root, roads_root, bridges_root, water_root, trees_root, green_root, flag): g.root(n_)
 size = g.write(OUT + 'lpm_new.glb')
 print('GLB %.2f MB' % (size / 1e6), 'node', len(g.nodes))
 json.dump({'width': WM, 'height': HM, 'houses': house_records, 'facilities': fac_records,
            'billboards': [{'x': x, 'z': -y} for x, y in bills], 'houseScale': KH,
+           'bridges': [{'name': n_, 'pts': L(p_).round(2).tolist()} for n_, p_ in bridge_lines],
            'trees': len(tr), 'k_m_per_px': K}, open(OUT + 'lpm_layout_world.json', 'w'))
 
 # ------------------------------------------------------------------ gambar debug (atas-ke-bawah)
