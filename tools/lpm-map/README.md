@@ -10,6 +10,9 @@ Membangun `miniapp/public/models/lpm.glb` dari gambar referensi `reference-map.p
 - `MPK` = meter dunia per 1 km peta referensi (default 250 -> peta 3,1 x 2,3 km).
   Skala asli 1:1 (12 km) membuat dunia jalan-jalan ~2 juta segitiga, jadi tidak dipakai.
 - 500 titik rumah -> `TPX_Buildings_N` (diganti "Rumah LPM" 2 lantai oleh `lib/lpmHouses.js`).
+- `KH` = skala rumah (default 1.0 = ukuran asli interior; sebelumnya 0.65). Nilainya HARUS sama dengan `FIXED_K` di
+  `lib/lpmHouses.js`. Jari-jari pengaman rumah (`RHO`) dihitung otomatis dari ukuran tapak, dan skrip mencetak
+  diagnostik jarak rumah ke jalan (termasuk jangkauan pagar/carport depan).
 - 30 marker bernomor -> kotak kosong `TPX_Buildings_F<n>`.
 - Node `LpmFixedLayout` menandai tata letak tetap (lihat `addLpmHouses`).
 

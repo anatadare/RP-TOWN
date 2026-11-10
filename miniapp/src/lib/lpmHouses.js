@@ -25,7 +25,10 @@ const MIN_SCALE = 0.7
 const GAP = 1.5 // jarak minimum antar rumah (meter)
 const MAX_SHIFT = 9 // rumah boleh digeser sejauh ini dari titik aslinya (meter)
 const BODY_H = 7.0
-const FIXED_K = 0.65 // skala rumah di tata letak tetap (sama dengan lpm.glb: 8,4 m lebar tapak)
+// Skala rumah di tata letak tetap (HARUS sama dengan KH di tools/lpm-map/build_lpm.py & houseScale di lpm.glb).
+// 1.0 = ukuran asli denah/interior: plafon 3,0 m, lantai ke lantai 3,2 m, pintu ~2,1 m, tapak ~12,9 x 12,1 m.
+// Dulu 0.65 -> plafon cuma ~1,95 m & pintu ~1,4 m, lebih pendek dari karakter (1,75 m, lihat walkController.js).
+const FIXED_K = 1.0
 
 // Carport & pagar (denah, di depan rumah; dicerminkan bersama rumah, jadi di
 // model akhirnya carport ada di sisi berlawanan dari denah -- simetris dengan

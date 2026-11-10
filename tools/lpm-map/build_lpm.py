@@ -313,9 +313,9 @@ obs = (road_only > 0) | (fac_mask > 0)
 edt_obs = cv2.distanceTransform((~obs).astype(np.uint8), cv2.DIST_L2, 5)
 
 # ------------------------------------------------------------------ rumah warga (titik kecil)
-KH = 0.65                                   # skala rumah (lihat lpmHouses.js)
+KH = float(os.environ.get("KH", "1.0"))     # skala rumah (harus sama dengan FIXED_K di lpmHouses.js); 1.0 = ukuran asli interior
 HOUSE_W, HOUSE_D = 12.9 * KH, (10 + 1.2 + 0.9) * KH
-RHO = 5.8                                   # jari-jari lingkaran pengaman rumah (m): > setengah diagonal tapak (5,8 m)
+RHO = math.hypot(HOUSE_W, HOUSE_D) / 2 + 0.05   # jari-jari lingkaran pengaman rumah (m): setengah diagonal tapak + 5 cm (KH 0,65 -> 5,8 m)
 H = np.array([[h['x'], h['y']] for h in d['houses']], float)
 hcol = [h['c'] for h in d['houses']]
 # buang titik rumah yang jatuh di air
@@ -361,6 +361,11 @@ bad_pair = int((dd[:, 1] < 2 * rho_px * 0.92).sum())
 ixs, iys = np.round(H[:, 0]).astype(int), np.round(H[:, 1]).astype(int)
 bad_obs = int((edt_obs[iys, ixs] < rho_px * 0.9).sum()); bad_land = int((edt_land[iys, ixs] < rho_px * 0.9).sum())
 print('pelanggaran: antar rumah %d, jalan/kotak %d, pantai %d' % (bad_pair, bad_obs, bad_land))
+# pagar & carport depan menjorok 4,8 m dari fasad (denah) -> dari pusat rumah ke tepi pagar = HOUSE_D/2 + (4,8 - 1,25) * KH
+FENCE_REACH = HOUSE_D / 2 + (4.8 - 1.25) * KH
+clear_m = edt_obs[iys, ixs] * K
+print('jarak pusat rumah ke tepi jalan/kotak: min %.1f m, p5 %.1f m | jangkauan pagar depan %.1f m | pagar kena jalan: %d rumah' % (
+    clear_m.min(), np.percentile(clear_m, 5), FENCE_REACH, int((clear_m < FENCE_REACH).sum())))
 
 # arah hadap: ke titik jalan terdekat (px) -> vektor lokal (y dibalik)
 face = []
@@ -407,7 +412,7 @@ for t_ in T:
     x, y = t_['x'], t_['y']; ix, iy = int(round(x)), int(round(y))
     if not (0 <= ix < IW and 0 <= iy < IH) or not land[iy, ix] or edt_land[iy, ix] < 3: continue
     if edt_obs[iy, ix] * K < 1.6: continue                    # di jalan / kotak fasilitas
-    if htree.query(np.array([x, y]))[0] * K < 6.6: continue   # di rumah
+    if htree.query(np.array([x, y]))[0] * K < RHO + 0.8: continue   # di rumah (6,6 m pada KH 0,65)
     R = min(9.0, max(2.2, t_['r'] * K * 0.55))
     tr.append((x, y, R))
 print('pohon', len(T), '->', len(tr))
