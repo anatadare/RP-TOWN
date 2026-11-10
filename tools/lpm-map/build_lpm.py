@@ -13,7 +13,9 @@ X0, Y0, PXKM = M['X0'], M['Y0'], M['PXKM']
 IW, IH = M['W'], M['H']
 M_PER_KM = float(__import__("os").environ.get("MPK", "150"))   # meter dunia per km peta referensi
 K = M_PER_KM / PXKM              # meter per piksel
-LAND_H = 1.2                      # tinggi daratan di atas permukaan air (m); tepi daratan = tebing
+LAND_H = float(os.environ.get("LH", "3.2"))   # tinggi daratan di atas permukaan air (m); tepi daratan = tebing. Dulu 1,2 (terasa rata); 3,2 -> tebing pantai jelas.
+                                  # Rumah/jalan/pohon/jembatan/trotoar semua relatif ke nilai ini; JS membaca tinggi dari mesh (groundY), jadi tidak perlu diubah.
+                                  # Total beda tinggi daratan-laut: Jelajahi = LAND_H + walkWaterDrop (0,6) = 3,8 m; Peta = LAND_H + landRaise (0,8) = 4,0 m.
 PAD = 60.0                       # tepi laut di sekeliling pulau (m)
 rng = np.random.default_rng(7)
 

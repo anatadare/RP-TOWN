@@ -10,6 +10,9 @@ Membangun `miniapp/public/models/lpm.glb` dari gambar referensi `reference-map.p
 - `MPK` = meter dunia per 1 km peta referensi (default 250 -> peta 3,1 x 2,3 km).
   Skala asli 1:1 (12 km) membuat dunia jalan-jalan ~2 juta segitiga, jadi tidak dipakai.
 - 500 titik rumah -> `TPX_Buildings_N` (diganti "Rumah LPM" 2 lantai oleh `lib/lpmHouses.js`).
+- `LH` = tinggi daratan di atas air (m), default 3,2 (dulu 1,2 -> terasa rata). Tebing tepi pantai/sungai/danau, jalan, rumah,
+  pohon, jembatan & trotoar semua relatif ke nilai ini; JS membaca tinggi dari mesh jadi tidak perlu diubah. Total beda tinggi
+  daratan-laut: Jelajahi = LH + `walkWaterDrop` (0,6); Peta = LH + `landRaise` (0,8), keduanya di `maps.js`.
 - `KH` = skala rumah (default 1.0 = ukuran asli interior; sebelumnya 0.65). Nilainya HARUS sama dengan `FIXED_K` di
   `lib/lpmHouses.js`. Jari-jari pengaman rumah (`RHO`) dihitung otomatis dari ukuran tapak, dan skrip mencetak
   diagnostik jarak rumah ke jalan (termasuk jangkauan pagar/carport depan).

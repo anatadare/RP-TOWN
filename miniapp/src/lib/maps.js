@@ -72,8 +72,8 @@ export const MAPS = [
     key: 'lpm',
     name: 'LPM',
     modelUrl: '/models/lpm.glb',
-    // Daratan di glb sudah +1,2 m di atas air (tebing tepi pantai/sungai/danau) -> landRaise cukup 0,8
-    // supaya total beda tinggi daratan-laut di tampilan Peta tetap 2 m seperti sebelumnya.
+    // Daratan di glb sudah +3,2 m di atas air (LAND_H di tools/lpm-map/build_lpm.py; tebing tepi pantai/sungai/danau)
+    // -> landRaise 0,8 membuat total beda tinggi daratan-laut di tampilan Peta 4 m (dulu 1,2 + 0,8 = 2 m).
     landRaise: 0.8,
     walkWaterDrop: 0.6, // mode Jelajahi: air 0.6 m di bawah daratan, bukan rata = gak kelihatan genangan
     // Peta LPM = gugusan 7 pulau (Pusat Kota, Pemukiman, Olahraga, Industri,
