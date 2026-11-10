@@ -24,6 +24,14 @@ Olahraga-Industri, Industri-Pusat Kota, Pusat Kota-Pelabuhan.
 Dek (9 m) ada di `TPX_RoadsOutlines_bridge` (bisa dipijak); pagar, tiang & pilar ada di node dekor `LpmBridges`
 (tanpa prefix `TPX_`, jadi tidak ikut tabrakan). `lpm_layout_world.json` memuat jalur tiap jembatan (`bridges`).
 
+## Trotoar
+Jalan biasa & utama (jembatan tidak) punya trotoar beton terang di kedua sisi: lebar `SW` (default 1,6 m; `SW=0` = tanpa
+trotoar), naik 12 cm dari aspal, dengan kaki miring di tepi aspal dan di tepi rumput (tidak ada celah). Satu mesh
+`TPX_RoadsOutlines_sidewalk` (warna per titik) di grup jalan, jadi bisa dipijak dan tingginya dibaca persis oleh
+`walkWorld.js` (batas naik karakter 0,6 m). Jalurnya dipangkas di air/tepi pantai, kotak fasilitas, tikungan tajam,
+dan persimpangan (di dalam badan jalan lain); titik dijarangkan di bagian lurus. Rumah, pohon & billboard menghindari
+jalan + trotoar (`road_sw`), jadi pagar/carport depan tidak menimpa trotoar.
+
 ## Penyambungan jalan
 Ekstraksi jalan dari gambar memecah jaringan jadi ~29 potongan (celah di bawah ikon marker, persimpangan,
 garis kuning putus-putus). `build_lpm.py` menyambung ujung jalan yang menggantung ke jalan terdekat di komponen

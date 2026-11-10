@@ -192,6 +192,7 @@ for name, pl in BRIDGES:
     roads.append({'pts': p, 'kind': 'bridge', 'w': 0})
     bridge_lines.append((name, p))
 WIDTH_M = {'minor': 4.0, 'main': 6.0, 'bridge': 9.0}
+SIDEWALK_W = float(os.environ.get("SW", "1.6"))   # lebar trotoar tiap sisi (m), jalan biasa & utama; 0 = tanpa trotoar
 
 # ---- sambung jalan yang terputus -------------------------------------------------
 # Ekstraksi memecah jaringan jalan jadi puluhan potongan (celah di bawah ikon marker bernomor, di
@@ -254,6 +255,12 @@ for r in roads:
     th = max(2, int(round(WIDTH_M[r['kind']] / K)))
     cv2.polylines(road_only, [np.round(r['pts']).astype(np.int32)], False, 1, th)
 road_mask = road_only.copy()
+# jalan + trotoar: penghalang buat rumah/pohon/billboard (supaya halaman & pagar tidak menimpa trotoar)
+road_sw = road_only.copy()
+for r in roads:
+    if r['kind'] == 'bridge' or SIDEWALK_W <= 0: continue
+    th = max(2, int(round((WIDTH_M[r['kind']] + 2 * SIDEWALK_W) / K)))
+    cv2.polylines(road_sw, [np.round(r['pts']).astype(np.int32)], False, 1, th)
 
 # ------------------------------------------------------------------ marker -> kotak fasilitas
 APPROX = {1: (1890, 864), 2: (2124, 1192), 3: (1836, 1436), 4: (1688, 1075), 5: (472, 2552), 6: (2309, 1489),
@@ -309,7 +316,7 @@ for m in sorted(markers, key=lambda m: not m['big']):
     placed_boxes.append({**m, 'cx': cx, 'cy': cy, 'ang': ang, 'side': side * K, 'score': sc, 'poly': poly})
 print('kotak fasilitas', len(placed_boxes), 'skor buruk:', [(b['n'], round(b['score'], 2)) for b in placed_boxes if b['score'] > 0.2])
 
-obs = (road_only > 0) | (fac_mask > 0)
+obs = (road_sw > 0) | (fac_mask > 0)
 edt_obs = cv2.distanceTransform((~obs).astype(np.uint8), cv2.DIST_L2, 5)
 
 # ------------------------------------------------------------------ rumah warga (titik kecil)
@@ -543,6 +550,80 @@ if dash_parts:
     V, I = merge(dash_parts)
     mi = g.mesh('TPX_RoadsOutlines_Center', V, I, g.material('Road_dash', [232 / 255, 200 / 255, 80 / 255]))
     road_children.append(g.node('TPX_RoadsOutlines_Center', mesh=mi, extras={'noCollide': True}))
+# ---- trotoar: pita beton terang di kiri-kanan jalan biasa & utama (jembatan tidak), naik CURB_H dari aspal.
+# Penampang per sisi (dari tepi aspal ke luar): kaki miring di aspal -> atas datar (SIDEWALK_W) -> kaki miring ke rumput.
+# Satu mesh di grup TPX_RoadsOutlines (jadi bisa dipijak, tinggi dibaca persis oleh walkWorld; batas naik karakter 0,6 m).
+# Jalur dipangkas di: air/tepi pantai, kotak fasilitas, tikungan tajam, dan persimpangan (di dalam badan jalan LAIN).
+sw_tris = 0
+if SIDEWALK_W > 0:
+    CURB_H, SW_FOOT, SW_STEP, SW_MARGIN = 0.12, 0.12, 2.2, 0.3
+    SW_TOP, SW_EDGE = [0.80, 0.78, 0.74], [0.64, 0.63, 0.60]
+    HWm = {k_: v_ / 2 for k_, v_ in WIDTH_M.items()}
+    z_sw = ROAD_Z + CURB_H
+    d_P, d_hw, d_own = [], [], []
+    for ri_, r in enumerate(roads):
+        q_ = resample_open(L(r['pts']), 1.0)
+        d_P.append(q_); d_hw.append(np.full(len(q_), HWm[r['kind']])); d_own.append(np.full(len(q_), ri_))
+    d_P, d_hw, d_own = np.vstack(d_P), np.concatenate(d_hw), np.concatenate(d_own)
+    d_tree = cKDTree(d_P)
+    land_in = ero(land, 1)
+    fac_on = fac_mask > 0
+    sw_V, sw_I, sw_C = [], [], []
+    sw_nv = 0; sw_len = 0.0
+
+    def inside_other_road(Q, ri_):
+        res = np.zeros(len(Q), bool)
+        for i_, lst in enumerate(d_tree.query_ball_point(Q, max(HWm.values()) + SW_MARGIN)):
+            for j_ in lst:
+                if d_own[j_] != ri_ and math.hypot(*(Q[i_] - d_P[j_])) < d_hw[j_] + SW_MARGIN:
+                    res[i_] = True; break
+        return res
+
+    for ri_, r in enumerate(roads):
+        if r['kind'] == 'bridge': continue
+        pm = resample_open(L(r['pts']), SW_STEP)
+        if len(pm) < 3: continue
+        tg = np.gradient(pm, axis=0); nn_ = np.hypot(tg[:, 0], tg[:, 1])[:, None]; nn_[nn_ == 0] = 1; tg = tg / nn_
+        nm = np.stack([-tg[:, 1], tg[:, 0]], 1)
+        turn = np.degrees(np.arccos(np.clip((tg[1:] * tg[:-1]).sum(1), -1, 1)))
+        sharp = np.zeros(len(pm), bool); sharp[1:] |= turn > 25; sharp[:-1] |= turn > 25   # tikungan tajam: offset menyilang
+        hw = HWm[r['kind']]
+        for side in (1, -1):
+            ok = ~sharp
+            for off in (hw + SIDEWALK_W / 2, hw + SIDEWALK_W):
+                Q = pm + side * nm * off
+                pxx, pyy = to_px(Q[:, 0], Q[:, 1])
+                pxy = np.stack([pxx, pyy], 1)
+                ok &= at(land_in, pxy) & ~at(fac_on, pxy) & ~inside_other_road(Q, ri_)
+            n_ = len(pm); i_ = 0
+            while i_ < n_:
+                if not ok[i_]: i_ += 1; continue
+                j_ = i_
+                while j_ + 1 < n_ and ok[j_ + 1]: j_ += 1
+                if j_ - i_ >= 1:
+                    keep = [i_]; last = i_       # jarangkan titik di bagian lurus (>= 11 m atau belok > 7 derajat)
+                    for k_ in range(i_ + 1, j_):
+                        dang = math.degrees(math.acos(float(np.clip(tg[k_] @ tg[last], -1, 1))))
+                        if math.hypot(*(pm[k_] - pm[last])) >= 11.0 or dang > 7.0: keep.append(k_); last = k_
+                    keep.append(j_)
+                    for k_ in keep:
+                        for off, z, c in ((hw - SW_FOOT, ROAD_Z, SW_EDGE), (hw, z_sw, SW_TOP),
+                                          (hw + SIDEWALK_W, z_sw, SW_TOP), (hw + SIDEWALK_W + SW_FOOT, LAND_H, SW_EDGE)):
+                            p_ = pm[k_] + side * nm[k_] * off
+                            sw_V.append((p_[0], p_[1], z)); sw_C.append(c)
+                    for s_ in range(len(keep) - 1):
+                        for row in range(3):
+                            a_ = sw_nv + 4 * s_ + row; b_ = a_ + 1; c_ = a_ + 4; e_ = c_ + 1
+                            sw_I += [a_, b_, e_, a_, e_, c_]
+                    sw_nv += 4 * len(keep)
+                    sw_len += float(np.hypot(*(pm[keep[-1]] - pm[keep[0]])))
+                i_ = j_ + 1
+    if sw_V:
+        sw_tris = len(sw_I) // 3
+        mi = g.mesh('TPX_RoadsOutlines_sidewalk', np.array(sw_V, np.float32), np.array(sw_I, np.uint32),
+                    g.material('Road_sidewalk', [1.0, 1.0, 1.0]), colors=np.array(sw_C, np.float32))
+        road_children.append(g.node('TPX_RoadsOutlines_sidewalk', mesh=mi))
+    print('trotoar: %.1f km jalur (dua sisi), %d segitiga, %d titik' % (sw_len / 1000, sw_tris, len(sw_V)))
 roads_root = g.node('TPX_RoadsOutlines', children=road_children)
 
 # pagar & tiang jembatan (dekor: di luar grup TPX_* jadi tidak ikut tabrakan/jalan)
