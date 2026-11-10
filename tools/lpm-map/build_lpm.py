@@ -94,7 +94,7 @@ def jitter(P): return P + rng.normal(0, 0.05, P.shape)
 
 # ---- mesh daratan (warna vertex: pasir di tepi -> hijau ke dalam)
 SAND = np.array([232, 216, 168]) / 255.0
-GREEN = np.array([200, 224, 176]) / 255.0
+GREEN = np.array([156, 196, 112]) / 255.0     # rumput segar (#9CC470); dulu 200,224,176 terlalu pucat/krem di dalam game
 BASE = np.array([237, 237, 184]) / 255.0
 ring = contour_pts(ero(land, 22), 20.0)
 ring_pts = np.vstack(ring) if ring else np.zeros((0, 2))
