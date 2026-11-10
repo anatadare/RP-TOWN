@@ -25,12 +25,18 @@ Dek (9 m) ada di `TPX_RoadsOutlines_bridge` (bisa dipijak); pagar, tiang & pilar
 (tanpa prefix `TPX_`, jadi tidak ikut tabrakan). `lpm_layout_world.json` memuat jalur tiap jembatan (`bridges`).
 
 ## Trotoar
-Jalan biasa & utama (jembatan tidak) punya trotoar beton terang di kedua sisi: lebar `SW` (default 1,6 m; `SW=0` = tanpa
-trotoar), naik 12 cm dari aspal, dengan kaki miring di tepi aspal dan di tepi rumput (tidak ada celah). Satu mesh
-`TPX_RoadsOutlines_sidewalk` (warna per titik) di grup jalan, jadi bisa dipijak dan tingginya dibaca persis oleh
-`walkWorld.js` (batas naik karakter 0,6 m). Jalurnya dipangkas di air/tepi pantai, kotak fasilitas, tikungan tajam,
-dan persimpangan (di dalam badan jalan lain); titik dijarangkan di bagian lurus. Rumah, pohon & billboard menghindari
-jalan + trotoar (`road_sw`), jadi pagar/carport depan tidak menimpa trotoar.
+Jalan biasa & utama (jembatan tidak) punya trotoar abu-abu gelap di kedua sisi: lebar `SW` (default 1,6 m; `SW=0` =
+tanpa trotoar), naik 12 cm dari aspal, tepi miring landai ke aspal dan ke rumput. Dibuat sebagai SATU area utuh, bukan
+potongan per ruas jalan: jaringan jalan dirasterisasi halus (0,25 m/piksel), trotoar = pelebaran jalan - badan jalan,
+dihaluskan, diambil kontur-nya, lalu ditriangulasi dengan Delaunay yang dipaksa memuat semua sisi kontur (titik
+ditambah di tengah sisi yang belum ada) dan segitiga di dalam area dipilih eksak. Karena itu sudut persimpangan
+membulat mulus dan trotoar terpotong rapi di tepi jalan lain. Skrip mencetak luas permukaan atas vs luas poligon
+(harus selisih 0,000% = tanpa lubang/luapan). Satu mesh `TPX_RoadsOutlines_sidewalk` (warna per titik) di grup jalan,
+jadi bisa dipijak dan tingginya dibaca persis oleh `walkWorld.js` (batas naik karakter 0,6 m). Trotoar dipangkas di
+air/tepi pantai dan kotak fasilitas; rumah, pohon & billboard menghindari jalan + trotoar (`road_sw`).
+Pengaturan lewat env: `SW` (lebar), `SWP` (toleransi penyederhanaan kontur, piksel), `SWS` (jendela penghalus kontur),
+`SWE` (jarak maks titik kontur, m) -- semakin kecil `SWP`/`SWE` semakin halus tapi semakin banyak segitiga.
+Warna: `SW_TOP` / `SW_EDGE` di blok trotoar `build_lpm.py`.
 
 ## Penyambungan jalan
 Ekstraksi jalan dari gambar memecah jaringan jadi ~29 potongan (celah di bawah ikon marker, persimpangan,
