@@ -96,7 +96,7 @@ def jitter(P): return P + rng.normal(0, 0.05, P.shape)
 
 # ---- mesh daratan (warna vertex: pasir di tepi -> hijau ke dalam)
 SAND = np.array([232, 216, 168]) / 255.0
-GREEN = np.array([156, 196, 112]) / 255.0     # rumput segar (#9CC470); dulu 200,224,176 terlalu pucat/krem di dalam game
+GREEN = np.array([108, 190, 70]) / 255.0      # rumput hijau jenuh (#6CBE46); sebelumnya #9CC470 (156,196,112) masih pastel, dan 200,224,176 terlalu pucat/krem di game
 BASE = GREEN                                   # warna material = warna tanah di game (TownWalk/TownMap3D membaca material.color, BUKAN warna vertex);
                                                # dulu 237,237,184 (krem) sehingga tanah tetap krem walau warna vertex diganti
 ring = contour_pts(ero(land, 22), 20.0)
