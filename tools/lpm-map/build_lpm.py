@@ -95,7 +95,8 @@ def jitter(P): return P + rng.normal(0, 0.05, P.shape)
 # ---- mesh daratan (warna vertex: pasir di tepi -> hijau ke dalam)
 SAND = np.array([232, 216, 168]) / 255.0
 GREEN = np.array([156, 196, 112]) / 255.0     # rumput segar (#9CC470); dulu 200,224,176 terlalu pucat/krem di dalam game
-BASE = np.array([237, 237, 184]) / 255.0
+BASE = GREEN                                   # warna material = warna tanah di game (TownWalk/TownMap3D membaca material.color, BUKAN warna vertex);
+                                               # dulu 237,237,184 (krem) sehingga tanah tetap krem walau warna vertex diganti
 ring = contour_pts(ero(land, 22), 20.0)
 ring_pts = np.vstack(ring) if ring else np.zeros((0, 2))
 gx, gy = np.meshgrid(np.arange(int(rx0), int(rx1), 40), np.arange(int(ry0), int(ry1), 40))
@@ -108,7 +109,7 @@ tri = Delaunay(jitter(LP))
 ls = tri_filter(LP, tri.simplices, land, land_d)
 dpt = edt_land[np.clip(LP[:, 1].astype(int), 0, IH - 1), np.clip(LP[:, 0].astype(int), 0, IW - 1)]
 t = np.clip(dpt / 22.0, 0, 1)[:, None]
-col = (SAND * (1 - t) + GREEN * t) / BASE
+col = np.clip((SAND * (1 - t) + GREEN * t) / BASE, 0, 1)   # warna vertex glTF maks 1.0: pasir (lebih terang dari hijau) jadi ikut hijau
 chk = np.zeros((IH, IW), np.uint8)
 for s in ls: cv2.fillConvexPoly(chk, np.round(LP[s]).astype(np.int32), 1)
 chk = chk.astype(bool)
