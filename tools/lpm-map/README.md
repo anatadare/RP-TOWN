@@ -48,10 +48,16 @@ jadi semuanya tetap rata di `LH` (skrip mencetak selisih: jalan & tapak rumah ha
 mesh. JS membaca tinggi dari mesh, jadi karakter, rumah, dan tampilan Peta ikut otomatis.
 Variasi warna tanah (bercak terang/gelap/kering) ada di kode game: `groundVariation` di `maps.js` (mode Jelajahi; 0 = mati).
 
-## Rumput
-Tekstur rumput jarang di tanah: satu mesh dekor `LpmGrass` (tanpa prefix `TPX_`, `noCollide`, jadi tidak ikut tabrakan/tinggi
-tanah). Tiap rumpun = 3 helai segitiga, ditaruh di grid teracak hanya di daratan yang jauh dari pantai, jalan+trotoar, rumah
-dan pohon. Env: `GC` (jarak grid m, default 5,2 = ~34 ribu rumpun), `GP` (peluang ada, 0,55), `GB` (helai per rumpun, 3), `GH` (skala tinggi, 1,0), `GRASS=0` mematikan.
+## Dekor tanah (rumput, bunga, batu, tanah gundul)
+Semua node dekor tanpa prefix `TPX_` dan `noCollide` (tidak ikut tabrakan/tinggi tanah), menjauh dari pantai, jalan+trotoar,
+pohon, dan rumah; tinggi mengikuti permukaan relief.
+- `LpmGrass`: rumput gerombol, 3 helai/rumpun (sesekali gerombol besar), kepadatan berbintik (ada petak lebat & gundul),
+  ujung helai 4 variasi hijau. Env: `GC` (jarak grid m, 5,0), `GP` (kepadatan puncak 0,85), `GH` (skala tinggi), `GB` (helai).
+- `LpmFlowers`: bunga liar kecil di petak ~14 m, satu warna per petak (putih/kuning/pink/ungu/merah/oranye). `FL` (0,6; 0 = tanpa).
+- `LpmRocks`: batu kecil low-poly, normal rata. `RK` (0,5; 0 = tanpa).
+- `LpmDirt`: tanah gundul tak beraturan di tiap tapak rumah; dibatasi supaya tidak menembus jalan/pantai, tepi luar
+  memudar ke warna rumput. `DIRT=0` mematikan.
+`GRASS=0` mematikan semuanya. Total sekitar 4 MB di glb (sekitar 1,4 MB setelah gzip).
 
 ## Penyambungan jalan
 Ekstraksi jalan dari gambar memecah jaringan jadi ~29 potongan (celah di bawah ikon marker, persimpangan,

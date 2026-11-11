@@ -876,48 +876,173 @@ trees_root = g.node('TPX_Trees', children=tree_nodes)
 # rumput jarang: tekstur ringan di tanah. Satu mesh dekor (tanpa prefix TPX_, noCollide) => tidak ikut tabrakan/tinggi tanah.
 # Tiap rumpun = 3 helai segitiga tipis. Titik di grid teracak (GC m), dilewati acak (GP), hanya di daratan yang
 # jauh dari pantai, jalan+trotoar, rumah, dan pohon. env: GC (jarak grid), GP (peluang ada), GH (tinggi), GRASS=0 mematikan.
-grass_root = None
-GRASS_ON = os.environ.get("GRASS", "1") != "0"
-if GRASS_ON:
-    GC = float(os.environ.get("GC", "5.2")); GP = float(os.environ.get("GP", "0.55")); GH = float(os.environ.get("GH", "1.0"))
-    GB = int(os.environ.get("GB", "3"))
+# ---- dekor tanah (semua node dekor tanpa prefix TPX_ + noCollide => tidak ikut tabrakan / tinggi tanah):
+#   LpmGrass   rumput gerombol (kepadatan berbintik: ada petak lebat & petak gundul), 3 helai per rumpun, warna bervariasi
+#   LpmFlowers bunga liar kecil di petak-petak tertentu (warna sama per petak)
+#   LpmRocks   batu kecil low-poly
+#   LpmDirt    tanah gundul tak beraturan di sekeliling tiap rumah, tepinya memudar ke warna rumput
+# env: GRASS=0 matikan semuanya; GC (jarak grid rumput m), GP (kepadatan puncak), GH (skala tinggi), GB (helai/rumpun),
+#      FL (kepadatan bunga, 0=tanpa), RK (kepadatan batu, 0=tanpa), DIRT=0 tanpa tanah gundul.
+decor_roots = []
+if os.environ.get("GRASS", "1") != "0":
+    GC = float(os.environ.get("GC", "5.0")); GP = float(os.environ.get("GP", "0.85")); GH = float(os.environ.get("GH", "1.0"))
+    GB = int(os.environ.get("GB", "3")); FL = float(os.environ.get("FL", "0.6")); RK = float(os.environ.get("RK", "0.5"))
     rng = np.random.default_rng(7)
     ttree = cKDTree(np.array([[x, y] for x, y, _ in tr])) if tr else None
-    tufts = []
+    _n3, _r3 = _smooth_noise(14.0, 37)
+    def _ns(arr, res, x, y): return float(ndi.map_coordinates(arr, np.array([[y / res], [x / res]]), order=1, mode='nearest')[0])
+    def spot(x, y, hm=RHO + 4.0, om=1.5, cm=3.0, tm=1.0):
+        px_, py_ = to_px(x, y); px_, py_ = float(px_), float(py_); ix, iy = int(round(px_)), int(round(py_))
+        if not (0 <= ix < IW and 0 <= iy < IH) or not land[iy, ix]: return None
+        if edt_land[iy, ix] * K < cm or edt_obs[iy, ix] * K < om: return None
+        if htree.query(np.array([px_, py_]))[0] * K < hm: return None
+        if ttree is not None:
+            dd, jj = ttree.query(np.array([px_, py_]))
+            if dd * K < tr[jj][2] + tm: return None
+        return rel_mesh(px_, py_)
+    def mk_mesh(name, V, I, C, N, rough=1.0):
+        V = np.array(V, np.float32); I = np.array(I, np.uint32); C = np.clip(np.array(C, np.float32), 0, 1)
+        N = np.array(N, np.float32) if N is not None else np.tile(np.array([0, 0, 1], np.float32), (len(V), 1))
+        m = g.mesh(name, V, I, g.material(name + '_mat', [1.0, 1.0, 1.0], rough=rough), normals=N, colors=C)
+        decor_roots.append(g.node(name, mesh=m, extras={'noCollide': True}))
+        return len(I) // 3
+
+    # --- rumput
+    TIPS = [[0.18, 0.88, 0.08], [0.30, 0.92, 0.10], [0.50, 0.90, 0.12], [0.12, 0.78, 0.10]]
+    GV, GI, GCOL = [], [], []
+    nt = 0
     for gx in np.arange(GC / 2, WM, GC):
         for gy in np.arange(GC / 2, HM, GC):
-            if rng.random() > GP: continue
             x = gx + rng.uniform(-0.45, 0.45) * GC; y = gy + rng.uniform(-0.45, 0.45) * GC
-            px_, py_ = to_px(x, y); ix, iy = int(round(float(px_))), int(round(float(py_)))
-            if not (0 <= ix < IW and 0 <= iy < IH) or not land[iy, ix]: continue
-            if edt_land[iy, ix] * K < 3.0 or edt_obs[iy, ix] * K < 1.5: continue
-            if htree.query(np.array([float(px_), float(py_)]))[0] * K < RHO + 1.5: continue
-            if ttree is not None:
-                dd, jj = ttree.query(np.array([float(px_), float(py_)]))
-                if dd * K < tr[jj][2] + 1.0: continue
-            tufts.append((x, y, rel_mesh(float(px_), float(py_))))
-    GV, GI, GCOL = [], [], []
-    for (x, y, zr) in tufts:
-        hgt = GH * rng.uniform(0.4, 0.7); wd = 0.075 * rng.uniform(0.85, 1.3)
-        a0 = rng.uniform(0, 2 * math.pi)
-        for b in range(GB):
-            a = a0 + b * 2 * math.pi / GB + rng.uniform(-0.4, 0.4)      # helai menyebar keluar dari tengah rumpun
-            ca_, sa_ = math.cos(a), math.sin(a)
-            bx, by = x + ca_ * 0.05, y + sa_ * 0.05
-            lean = hgt * rng.uniform(0.15, 0.4); bh = hgt * rng.uniform(0.75, 1.15) + 0.12
-            dx, dy = -sa_ * wd, ca_ * wd                                  # lebar helai tegak lurus arah condong
-            n0 = len(GV)
-            GV += [(bx - dx, by - dy, LAND_H + zr - 0.12), (bx + dx, by + dy, LAND_H + zr - 0.12),
-                   (bx + ca_ * lean, by + sa_ * lean, LAND_H + zr - 0.12 + bh)]
-            GI += [n0, n0 + 1, n0 + 2]
-            tint = rng.uniform(0.85, 1.15)
-            GCOL += [[0.04 * tint, 0.42 * tint, 0.04 * tint]] * 2 + [[0.18 * tint, 0.88 * min(tint, 1.13), 0.08 * tint]]
-    if GV:
-        GV = np.array(GV, np.float32); GI = np.array(GI, np.uint32); GCOL = np.clip(np.array(GCOL, np.float32), 0, 1)
-        GN = np.zeros_like(GV); GN[:, 2] = 1.0
-        gm = g.mesh('LpmGrass', GV, GI, g.material('Grass_tuft', [1.0, 1.0, 1.0], rough=1.0), normals=GN, colors=GCOL)
-        grass_root = g.node('LpmGrass', mesh=gm, extras={'noCollide': True})
-    print('rumput: %d rumpun, %d segitiga' % (len(tufts), len(GI) // 3 if GV is not None and len(GV) else 0))
+            n = _ns(_n2, _r2, x, y)                                       # petak lebat / gundul skala ~20 m
+            p = GP * min(1.0, max(0.12, 0.55 + 0.6 * n))
+            if rng.random() > p: continue
+            zr = spot(x, y, hm=RHO + 4.0, om=1.5, cm=3.0, tm=1.0)
+            if zr is None: continue
+            nt += 1
+            big = 1.7 if rng.random() < 0.12 else 1.0                    # sesekali gerombol besar
+            hgt = GH * big * rng.uniform(0.22, 0.5); wd = 0.05 * rng.uniform(0.85, 1.3) * (1.0 + 0.3 * (big > 1))
+            a0 = rng.uniform(0, 2 * math.pi)
+            tip = TIPS[min(len(TIPS) - 1, int(rng.random() ** 2 * len(TIPS)))]
+            for b in range(GB + (1 if big > 1 else 0)):
+                a = a0 + b * 2 * math.pi / (GB + (1 if big > 1 else 0)) + rng.uniform(-0.4, 0.4)
+                ca_, sa_ = math.cos(a), math.sin(a)
+                bx, by = x + ca_ * 0.04, y + sa_ * 0.04
+                lean = hgt * rng.uniform(0.15, 0.45); bh = hgt * rng.uniform(0.75, 1.2) + 0.12
+                dx, dy = -sa_ * wd, ca_ * wd
+                z0 = LAND_H + zr - 0.12; n0 = len(GV)
+                GV += [(bx - dx, by - dy, z0), (bx + dx, by + dy, z0), (bx + ca_ * lean, by + sa_ * lean, z0 + bh)]
+                GI += [n0, n0 + 1, n0 + 2]
+                tint = rng.uniform(0.85, 1.12)
+                GCOL += [[0.04 * tint, 0.36 * tint, 0.04 * tint]] * 2 + [[t_ * tint for t_ in tip]]
+    ntri = mk_mesh('LpmGrass', GV, GI, GCOL, None) if GV else 0
+    print('rumput: %d rumpun, %d segitiga' % (nt, ntri))
+
+    # --- bunga liar (petak ~14 m, satu warna per petak)
+    FLC = [[1.0, 1.0, 0.95], [1.0, 0.86, 0.15], [0.95, 0.45, 0.62], [0.65, 0.5, 0.95], [0.95, 0.3, 0.2], [1.0, 0.65, 0.2]]
+    FV, FI, FCOL = [], [], []
+    nf = 0
+    if FL > 0:
+        FG = 3.0
+        for gx in np.arange(FG / 2, WM, FG):
+            for gy in np.arange(FG / 2, HM, FG):
+                x = gx + rng.uniform(-0.45, 0.45) * FG; y = gy + rng.uniform(-0.45, 0.45) * FG
+                n = _ns(_n3, _r3, x, y)
+                if n < 1.15 or rng.random() > 0.5 * FL: continue
+                zr = spot(x, y, hm=RHO + 4.0, om=2.0, cm=4.0, tm=1.5)
+                if zr is None: continue
+                nf += 1
+                col = FLC[int(abs(math.floor(x / 14) * 7 + math.floor(y / 14) * 13)) % len(FLC)]
+                h = rng.uniform(0.22, 0.38); r = rng.uniform(0.09, 0.14); z0 = LAND_H + zr - 0.1
+                lean = rng.uniform(0.0, 0.08); la = rng.uniform(0, 2 * math.pi)
+                tx, ty = x + math.cos(la) * lean, y + math.sin(la) * lean
+                n0 = len(FV)
+                FV += [(x - 0.012, y, z0), (x + 0.012, y, z0), (tx, ty, z0 + h)]; FI += [n0, n0 + 1, n0 + 2]
+                FCOL += [[0.05, 0.38, 0.05]] * 2 + [[0.15, 0.62, 0.08]]
+                n0 = len(FV)
+                FV += [(tx, ty, z0 + h + 0.05)] + [(tx + math.cos(k * math.pi / 2 + la) * r, ty + math.sin(k * math.pi / 2 + la) * r, z0 + h) for k in range(4)]
+                FI += [n0, n0 + 1, n0 + 2, n0, n0 + 2, n0 + 3, n0, n0 + 3, n0 + 4, n0, n0 + 4, n0 + 1]
+                FCOL += [[min(1, c_ * 1.0) for c_ in col]] + [[c_ * 0.88 for c_ in col]] * 4
+        ft = mk_mesh('LpmFlowers', FV, FI, FCOL, None) if FV else 0
+        print('bunga: %d kuntum, %d segitiga' % (nf, ft))
+
+    # --- batu kecil (low-poly, normal rata)
+    RV, RN, RC = [], [], []
+    nr = 0
+    if RK > 0:
+        RG = 16.0
+        for gx in np.arange(RG / 2, WM, RG):
+            for gy in np.arange(RG / 2, HM, RG):
+                x = gx + rng.uniform(-0.45, 0.45) * RG; y = gy + rng.uniform(-0.45, 0.45) * RG
+                if rng.random() > 0.2 * RK: continue
+                zr = spot(x, y, hm=RHO + 4.0, om=2.5, cm=4.0, tm=2.0)
+                if zr is None: continue
+                nr += 1
+                s_ = rng.uniform(0.18, 0.6); sz = rng.uniform(0.5, 0.85); z0 = LAND_H + zr - 0.15
+                rot = rng.uniform(0, 2 * math.pi); gr = rng.uniform(0.42, 0.62); warm = rng.uniform(0.0, 0.05)
+                ra = [(x + math.cos(rot + k * 2 * math.pi / 5) * s_ * rng.uniform(0.75, 1.0), y + math.sin(rot + k * 2 * math.pi / 5) * s_ * rng.uniform(0.75, 1.0), z0 + s_ * sz * 0.9) for k in range(5)]
+                rb = [(x + math.cos(rot + k * 2 * math.pi / 5 + 0.3) * s_ * 1.15, y + math.sin(rot + k * 2 * math.pi / 5 + 0.3) * s_ * 1.15, z0) for k in range(5)]
+                top = (x + rng.uniform(-0.1, 0.1) * s_, y + rng.uniform(-0.1, 0.1) * s_, z0 + s_ * sz * 1.35)
+                tris = [(top, ra[k], ra[(k + 1) % 5]) for k in range(5)]
+                for k in range(5):
+                    j = (k + 1) % 5
+                    tris += [(ra[k], rb[k], rb[j]), (ra[k], rb[j], ra[j])]
+                for t_ in tris:
+                    a_, b_, c_ = (np.array(v) for v in t_)
+                    nn = np.cross(b_ - a_, c_ - a_); nl = np.linalg.norm(nn)
+                    if nl < 1e-9: continue
+                    nn = nn / nl
+                    if nn[0] * (a_[0] - x) + nn[1] * (a_[1] - y) < 0 and abs(nn[2]) < 0.99: nn = -nn if False else nn
+                    for v in t_:
+                        RV.append(v); RN.append(nn)
+                        RC.append([gr + warm, gr, gr - warm] if v[2] > z0 + s_ * sz * 0.5 else [gr * 0.78 + warm, gr * 0.78, gr * 0.78 - warm])
+        if RV:
+            RVa = np.array(RV, np.float32); RIa = np.arange(len(RVa), dtype=np.uint32)
+            rt = mk_mesh('LpmRocks', RVa, RIa, RC, RN, rough=0.95)
+            print('batu: %d, %d segitiga' % (nr, rt))
+
+    # --- tanah gundul di sekeliling rumah (tidak menembus jalan/pantai; tepinya memudar ke warna rumput)
+    if os.environ.get("DIRT", "1") != "0":
+        DV, DI, DC = [], [], []
+        NA = 18
+        DIRT_C, DIRT_E, GRASS_C = [0.50, 0.38, 0.24], [0.56, 0.45, 0.29], [0.43, 0.72, 0.28]
+        for i in range(len(H)):
+            hx, hy = float(H[i][0]), float(H[i][1])
+            ph = rng.uniform(0, 2 * math.pi)
+            r1, r2 = [], []
+            for k in range(NA):
+                a = ph + k * 2 * math.pi / NA
+                ca_, sa_ = math.cos(a), math.sin(a)
+                want = RHO + rng.uniform(1.4, 3.0)
+                lim = want
+                d = RHO * 0.6
+                while d < want + 1.4:
+                    qx, qy = int(round(hx + ca_ * d / K)), int(round(hy - sa_ * d / K))   # px: y ke bawah; lokal y ke atas
+                    if not (0 <= qx < IW and 0 <= qy < IH) or not land[qy, qx] or edt_obs[qy, qx] * K < 1.2 or edt_land[qy, qx] * K < 2.5:
+                        lim = min(lim, max(RHO * 0.6, d - 0.8)); break
+                    d += 0.5
+                lim = max(RHO * 0.6, lim)
+                r1.append(lim); r2.append(min(lim + 1.4, max(lim, (d if d < want + 1.4 else want + 1.4) - 0.3)))
+            lx0, ly0 = to_local(hx, hy); z = LAND_H + 0.05
+            c0 = len(DV); DV.append((lx0, ly0, z)); DC.append(DIRT_C)
+            for k in range(NA):
+                a = ph + k * 2 * math.pi / NA
+                DV.append((lx0 + math.cos(a) * r1[k], ly0 + math.sin(a) * r1[k], z)); DC.append(DIRT_E)
+            for k in range(NA):
+                a = ph + k * 2 * math.pi / NA
+                DV.append((lx0 + math.cos(a) * r2[k], ly0 + math.sin(a) * r2[k], z - 0.01)); DC.append(GRASS_C)
+            for k in range(NA):
+                j = (k + 1) % NA
+                DI += [c0, c0 + 1 + k, c0 + 1 + j]
+                DI += [c0 + 1 + k, c0 + 1 + NA + k, c0 + 1 + NA + j, c0 + 1 + k, c0 + 1 + NA + j, c0 + 1 + j]
+        if DV:
+            DIa = np.array(DI, np.uint32).reshape(-1, 3)
+            # pastikan CCW (normal ke atas) di bidang xy
+            Va = np.array(DV, np.float32)
+            cr_ = (Va[DIa[:, 1], 0] - Va[DIa[:, 0], 0]) * (Va[DIa[:, 2], 1] - Va[DIa[:, 0], 1]) - (Va[DIa[:, 1], 1] - Va[DIa[:, 0], 1]) * (Va[DIa[:, 2], 0] - Va[DIa[:, 0], 0])
+            DIa[cr_ < 0] = DIa[cr_ < 0][:, [0, 2, 1]]
+            dt = mk_mesh('LpmDirt', Va, DIa.reshape(-1), DC, None, rough=1.0)
+            print('tanah rumah: %d tapak, %d segitiga' % (len(H), dt))
 
 # bangunan: rumah warga (penampung -> diganti Rumah LPM oleh lpmHouses.js) + kotak fasilitas
 def box_tris(w, dd, h):
@@ -964,7 +1089,7 @@ for b in sorted(placed_boxes, key=lambda b: b['n']):
                         'marker_x': float(mx), 'marker_y': float(my)})
 buildings_root = g.node('TPX_Buildings', children=b_children)
 flag = g.node('LpmFixedLayout', extras={'version': 1, 'width': WM, 'height': HM, 'houseScale': KH})
-for n_ in (buildings_root, roads_root, bridges_root, banks_root, water_root, trees_root, green_root, grass_root, flag):
+for n_ in (buildings_root, roads_root, bridges_root, banks_root, water_root, trees_root, green_root, *decor_roots, flag):
     if n_ is not None: g.root(n_)
 size = g.write(OUT + 'lpm_new.glb')
 print('GLB %.2f MB' % (size / 1e6), 'node', len(g.nodes))
