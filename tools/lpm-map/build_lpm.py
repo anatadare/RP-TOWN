@@ -838,7 +838,8 @@ trees_root = g.node('TPX_Trees', children=tree_nodes)
 grass_root = None
 GRASS_ON = os.environ.get("GRASS", "1") != "0"
 if GRASS_ON:
-    GC = float(os.environ.get("GC", "6.3")); GP = float(os.environ.get("GP", "0.55")); GH = float(os.environ.get("GH", "1.0"))
+    GC = float(os.environ.get("GC", "4.27")); GP = float(os.environ.get("GP", "0.55")); GH = float(os.environ.get("GH", "1.0"))
+    GB = int(os.environ.get("GB", "2"))
     rng = np.random.default_rng(7)
     ttree = cKDTree(np.array([[x, y] for x, y, _ in tr])) if tr else None
     tufts = []
@@ -858,9 +859,9 @@ if GRASS_ON:
     for (x, y) in tufts:
         hgt = GH * rng.uniform(0.35, 0.6); wd = 0.09 * rng.uniform(0.8, 1.3)
         a0 = rng.uniform(0, math.pi)
-        for b in range(3):
-            a = a0 + b * math.pi / 3 + rng.uniform(-0.2, 0.2)
-            ox, oy = math.cos(a) * 0.12 * (b - 1), math.sin(a) * 0.12 * (b - 1)
+        for b in range(GB):
+            a = a0 + b * math.pi / GB + rng.uniform(-0.2, 0.2)
+            ox, oy = math.cos(a) * 0.12 * (b - (GB - 1) / 2), math.sin(a) * 0.12 * (b - (GB - 1) / 2)
             lean = rng.uniform(0.05, 0.22); la = rng.uniform(0, 2 * math.pi)
             bh = hgt * rng.uniform(0.75, 1.15)
             bx, by = x + ox, y + oy; dx, dy = math.cos(a) * wd, math.sin(a) * wd
