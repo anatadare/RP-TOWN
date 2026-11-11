@@ -838,8 +838,8 @@ trees_root = g.node('TPX_Trees', children=tree_nodes)
 grass_root = None
 GRASS_ON = os.environ.get("GRASS", "1") != "0"
 if GRASS_ON:
-    GC = float(os.environ.get("GC", "4.27")); GP = float(os.environ.get("GP", "0.55")); GH = float(os.environ.get("GH", "1.0"))
-    GB = int(os.environ.get("GB", "2"))
+    GC = float(os.environ.get("GC", "5.2")); GP = float(os.environ.get("GP", "0.55")); GH = float(os.environ.get("GH", "1.0"))
+    GB = int(os.environ.get("GB", "3"))
     rng = np.random.default_rng(7)
     ttree = cKDTree(np.array([[x, y] for x, y, _ in tr])) if tr else None
     tufts = []
@@ -857,24 +857,24 @@ if GRASS_ON:
             tufts.append((x, y))
     GV, GI, GCOL = [], [], []
     for (x, y) in tufts:
-        hgt = GH * rng.uniform(0.35, 0.6); wd = 0.09 * rng.uniform(0.8, 1.3)
-        a0 = rng.uniform(0, math.pi)
+        hgt = GH * rng.uniform(0.4, 0.7); wd = 0.075 * rng.uniform(0.85, 1.3)
+        a0 = rng.uniform(0, 2 * math.pi)
         for b in range(GB):
-            a = a0 + b * math.pi / GB + rng.uniform(-0.2, 0.2)
-            ox, oy = math.cos(a) * 0.12 * (b - (GB - 1) / 2), math.sin(a) * 0.12 * (b - (GB - 1) / 2)
-            lean = rng.uniform(0.05, 0.22); la = rng.uniform(0, 2 * math.pi)
-            bh = hgt * rng.uniform(0.75, 1.15)
-            bx, by = x + ox, y + oy; dx, dy = math.cos(a) * wd, math.sin(a) * wd
+            a = a0 + b * 2 * math.pi / GB + rng.uniform(-0.4, 0.4)      # helai menyebar keluar dari tengah rumpun
+            ca_, sa_ = math.cos(a), math.sin(a)
+            bx, by = x + ca_ * 0.05, y + sa_ * 0.05
+            lean = hgt * rng.uniform(0.15, 0.4); bh = hgt * rng.uniform(0.75, 1.15)
+            dx, dy = -sa_ * wd, ca_ * wd                                  # lebar helai tegak lurus arah condong
             n0 = len(GV)
             GV += [(bx - dx, by - dy, LAND_H), (bx + dx, by + dy, LAND_H),
-                   (bx + math.cos(la) * lean, by + math.sin(la) * lean, LAND_H + bh)]
+                   (bx + ca_ * lean, by + sa_ * lean, LAND_H + bh)]
             GI += [n0, n0 + 1, n0 + 2]
-            tint = rng.uniform(0.9, 1.1)
-            GCOL += [[0.55 * tint, 0.78 * tint, 0.35 * tint]] * 2 + [[0.85 * min(tint, 1.1), 1.0, 0.6 * tint]]
+            tint = rng.uniform(0.85, 1.15)
+            GCOL += [[0.04 * tint, 0.42 * tint, 0.04 * tint]] * 2 + [[0.18 * tint, 0.88 * min(tint, 1.13), 0.08 * tint]]
     if GV:
         GV = np.array(GV, np.float32); GI = np.array(GI, np.uint32); GCOL = np.clip(np.array(GCOL, np.float32), 0, 1)
         GN = np.zeros_like(GV); GN[:, 2] = 1.0
-        gm = g.mesh('LpmGrass', GV, GI, g.material('Grass_tuft', [1.0, 1.0, 1.0]), normals=None, colors=GCOL)
+        gm = g.mesh('LpmGrass', GV, GI, g.material('Grass_tuft', [1.0, 1.0, 1.0], rough=1.0), normals=GN, colors=GCOL)
         grass_root = g.node('LpmGrass', mesh=gm, extras={'noCollide': True})
     print('rumput: %d rumpun, %d segitiga' % (len(tufts), len(GI) // 3 if GV is not None and len(GV) else 0))
 
