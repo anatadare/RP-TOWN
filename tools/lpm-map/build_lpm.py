@@ -474,7 +474,7 @@ def ccw_fix(P2, S):
 
 # ---- relief: bukit landai. Tinggi tambahan di atas LAND_H; nol di dekat pantai, jalan+trotoar, kotak fasilitas & rumah
 # (jadi semuanya tetap rata di LAND_H), makin ke tengah lahan kosong makin naik-turun. JS membaca tinggi dari mesh.
-RH = float(os.environ.get("RH", "1.0"))
+RH = float(os.environ.get("RH", "2.5"))
 def _smooth_noise(sigma_m, seed):
     res = 4.0
     nx_, ny_ = int(WM / res) + 3, int(HM / res) + 3
@@ -487,7 +487,7 @@ def relief_at(P):                       # P: (n,2) piksel dasar -> tinggi tambah
     P = np.asarray(P, float).reshape(-1, 2)
     lx_, ly_ = to_local(P[:, 0], P[:, 1])
     pts_ = np.stack([ly_ / _r1, lx_ / _r1])
-    n = 0.65 * ndi.map_coordinates(_n1, pts_, order=1, mode='nearest') + 0.35 * ndi.map_coordinates(_n2, pts_, order=1, mode='nearest')
+    n = 0.75 * ndi.map_coordinates(_n1, pts_, order=1, mode='nearest') + 0.25 * ndi.map_coordinates(_n2, pts_, order=1, mode='nearest')
     ix_ = np.clip(np.round(P[:, 0]).astype(int), 0, IW - 1); iy_ = np.clip(np.round(P[:, 1]).astype(int), 0, IH - 1)
     dh = htree.query(P)[0] * K
     f = _ss((edt_obs[iy_, ix_] * K - 7) / 12) * _ss((edt_land[iy_, ix_] * K - 6) / 14) * _ss((dh - (RHO + 8)) / 14)
@@ -499,6 +499,9 @@ used = np.unique(S); remap = -np.ones(len(LP), int); remap[used] = np.arange(len
 rel_v = relief_at(LP[used])
 pos = np.column_stack([LP2[used], LAND_H + rel_v])
 from scipy.interpolate import LinearNDInterpolator
+_T = remap[S]; _p0, _p1, _p2 = pos[_T[:, 0]], pos[_T[:, 1]], pos[_T[:, 2]]
+_nrm = np.cross(_p1 - _p0, _p2 - _p0); _slope = np.hypot(_nrm[:, 0], _nrm[:, 1]) / np.maximum(np.abs(_nrm[:, 2]), 1e-9)
+print('kemiringan tanah: maks %.2f (%.0f derajat), persentil 99 %.2f, rata-rata %.3f' % (_slope.max(), np.degrees(np.arctan(_slope.max())), np.percentile(_slope, 99), _slope.mean()))
 _rel_int = LinearNDInterpolator(LP[used], rel_v, fill_value=0.0)
 def rel_mesh(x, y): return float(_rel_int(x, y))   # tinggi relief permukaan mesh (px dasar), mendekati interpolasi segitiga
 _rr = [abs(rel_mesh(*p)) for r in roads for q in (r['pts'][::2],) for p in q if r['kind'] != 'bridge']

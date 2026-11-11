@@ -43,7 +43,7 @@ Warna: `SW_TOP` / `SW_EDGE` di blok trotoar `build_lpm.py`.
 
 ## Relief (bukit landai)
 Mesh daratan punya titik rapat (`GS` m, default 10) dan tinggi tiap titik = `LH` + relief (noise halus 2 skala, ~60 m & ~22 m).
-Amplitudo `RH` (default 1,0 m; `RH=0` = datar). Relief dipaksa nol di dekat pantai, jalan+trotoar, kotak fasilitas dan rumah,
+Amplitudo `RH` (default 2,5 m, puncak sampai sekitar ±3 m, kemiringan maks ~17°; `RH=0` = datar). Relief dipaksa nol di dekat pantai, jalan+trotoar, kotak fasilitas dan rumah,
 jadi semuanya tetap rata di `LH` (skrip mencetak selisih: jalan & tapak rumah harus ~0). Pohon dan rumput mengikuti permukaan
 mesh. JS membaca tinggi dari mesh, jadi karakter, rumah, dan tampilan Peta ikut otomatis.
 Variasi warna tanah (bercak terang/gelap/kering) ada di kode game: `groundVariation` di `maps.js` (mode Jelajahi; 0 = mati).

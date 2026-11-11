@@ -1150,7 +1150,7 @@ function MapVisuals({ cached, clip }) {
         const big = valueNoise(x / 38, z / 38) - 0.5                 // bercak ~40 m
         const mid = valueNoise(x / 13 + 7.3, z / 13 + 2.1) - 0.5     // bercak ~13 m
         const dry = Math.max(0, valueNoise(x / 55 + 31.7, z / 55 + 9.4) - 0.62) / 0.38 // area agak kering/kekuningan
-        const l = 1 + variation * (big * 0.55 + mid * 0.45)
+        const l = Math.min(1.45, Math.max(0.55, 1 + variation * (big * 0.55 + mid * 0.45)))
         col[k * 3] = l * (1 + dry * 0.28 * variation)
         col[k * 3 + 1] = l * (1 - dry * 0.04 * variation)
         col[k * 3 + 2] = l * (1 - dry * 0.38 * variation)
