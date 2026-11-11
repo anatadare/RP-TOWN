@@ -900,7 +900,7 @@ function getWalkCache(scene, modelUrl) {
         y1: 1e4,
       })),
     })
-    c = { built, world, defs }
+    c = { built, world, defs, groundVariation: mapDef?.groundVariation ?? 0 }
     WALK_CACHE.set(scene, c)
   }
   return c
@@ -1109,8 +1109,22 @@ function mapSpan(world) {
   return Math.max(world.bounds.maxX - world.bounds.minX, world.bounds.maxZ - world.bounds.minZ)
 }
 
+// Noise nilai 2D halus (0..1) untuk variasi warna tanah: hash kisi + interpolasi smoothstep.
+function hash2(i, j) {
+  const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453
+  return s - Math.floor(s)
+}
+function valueNoise(x, z) {
+  const i = Math.floor(x), j = Math.floor(z)
+  const fx = x - i, fz = z - j
+  const u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz)
+  const a = hash2(i, j), b = hash2(i + 1, j), c = hash2(i, j + 1), d = hash2(i + 1, j + 1)
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
+}
+
 function MapVisuals({ cached, clip }) {
   const { built, world } = cached
+  const variation = cached.groundVariation || 0
   // Billboard kecil peta ini (posisi x/z diatur di lib/maps.js).
   // Tinggi tanah di kaki tiap billboard (kalau di luar daratan -> dilewati).
   const billboards = useMemo(
@@ -1125,10 +1139,28 @@ function MapVisuals({ cached, clip }) {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(world.groundMesh.positions, 3))
     g.setIndex(new THREE.BufferAttribute(world.groundMesh.indices, 1))
+    if (variation > 0) {
+      // Variasi warna tanah (pengali warna dasar): bercak besar terang/gelap + bercak kecil + sedikit
+      // semburat kekuningan, supaya tanah tidak satu warna rata. Interpolasi per titik -> batas lembut.
+      const pos = world.groundMesh.positions
+      const n = pos.length / 3
+      const col = new Float32Array(n * 3)
+      for (let k = 0; k < n; k++) {
+        const x = pos[k * 3], z = pos[k * 3 + 2]
+        const big = valueNoise(x / 38, z / 38) - 0.5                 // bercak ~40 m
+        const mid = valueNoise(x / 13 + 7.3, z / 13 + 2.1) - 0.5     // bercak ~13 m
+        const dry = Math.max(0, valueNoise(x / 55 + 31.7, z / 55 + 9.4) - 0.62) / 0.38 // area agak kering/kekuningan
+        const l = 1 + variation * (big * 0.55 + mid * 0.45)
+        col[k * 3] = l * (1 + dry * 0.28 * variation)
+        col[k * 3 + 1] = l * (1 - dry * 0.04 * variation)
+        col[k * 3 + 2] = l * (1 - dry * 0.38 * variation)
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    }
     g.computeVertexNormals()
     g.computeBoundingSphere()
     return g
-  }, [world])
+  }, [world, variation])
 
   const span = mapSpan(world)
   const cx = (world.bounds.minX + world.bounds.maxX) / 2
@@ -1143,6 +1175,7 @@ function MapVisuals({ cached, clip }) {
       <mesh geometry={groundGeo}>
         <meshStandardMaterial
           color={built.groundColor}
+          vertexColors={variation > 0}
           roughness={0.9}
           metalness={0}
           flatShading

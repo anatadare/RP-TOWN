@@ -106,7 +106,16 @@ grid = np.stack([gx.ravel(), gy.ravel()], 1).astype(float)
 grid = grid[edt_land[grid[:, 1].astype(int), grid[:, 0].astype(int)] > 34]
 ring8 = contour_pts(ero(land, 8), 12.0)
 ring8_pts = np.vstack(ring8) if ring8 else np.zeros((0, 2))
-LP = np.vstack([coast_pts, ring8_pts, ring_pts, grid])
+# titik rapat di daratan supaya relief (bukit landai) bisa dibentuk: jarak GS m, hanya >10 m dari pantai
+GS = float(os.environ.get("GS", "10"))
+dgx, dgy = np.meshgrid(np.arange(rx0 + GS / K / 2, rx1, GS / K), np.arange(ry0 + GS / K / 2, ry1, GS / K))
+dense = np.stack([dgx.ravel(), dgy.ravel()], 1)
+dense = dense[(dense[:, 0] < IW - 1) & (dense[:, 1] < IH - 1)]
+dense = dense[edt_land[dense[:, 1].astype(int), dense[:, 0].astype(int)] * K > 10.0]
+LP0 = np.vstack([coast_pts, ring8_pts, ring_pts, grid])
+if len(dense):
+    dense = dense[cKDTree(LP0).query(dense)[0] * K > 3.0]    # buang yang nyaris kembar dengan titik lama
+LP = np.vstack([LP0, dense])
 tri = Delaunay(jitter(LP))
 ls = tri_filter(LP, tri.simplices, land, land_d)
 dpt = edt_land[np.clip(LP[:, 1].astype(int), 0, IH - 1), np.clip(LP[:, 0].astype(int), 0, IW - 1)]
@@ -463,10 +472,39 @@ def ccw_fix(P2, S):
     S[neg] = S[neg][:, [0, 2, 1]]
     return S[np.abs(cr) > 1e-6]
 
+# ---- relief: bukit landai. Tinggi tambahan di atas LAND_H; nol di dekat pantai, jalan+trotoar, kotak fasilitas & rumah
+# (jadi semuanya tetap rata di LAND_H), makin ke tengah lahan kosong makin naik-turun. JS membaca tinggi dari mesh.
+RH = float(os.environ.get("RH", "1.0"))
+def _smooth_noise(sigma_m, seed):
+    res = 4.0
+    nx_, ny_ = int(WM / res) + 3, int(HM / res) + 3
+    a_ = np.random.default_rng(seed).standard_normal((ny_, nx_)).astype(np.float32)
+    a_ = cv2.GaussianBlur(a_, (0, 0), sigma_m / res)
+    return a_ / a_.std(), res
+_n1, _r1 = _smooth_noise(60.0, 11); _n2, _r2 = _smooth_noise(22.0, 23)
+def _ss(v): v = np.clip(v, 0, 1); return v * v * (3 - 2 * v)
+def relief_at(P):                       # P: (n,2) piksel dasar -> tinggi tambahan (m)
+    P = np.asarray(P, float).reshape(-1, 2)
+    lx_, ly_ = to_local(P[:, 0], P[:, 1])
+    pts_ = np.stack([ly_ / _r1, lx_ / _r1])
+    n = 0.65 * ndi.map_coordinates(_n1, pts_, order=1, mode='nearest') + 0.35 * ndi.map_coordinates(_n2, pts_, order=1, mode='nearest')
+    ix_ = np.clip(np.round(P[:, 0]).astype(int), 0, IW - 1); iy_ = np.clip(np.round(P[:, 1]).astype(int), 0, IH - 1)
+    dh = htree.query(P)[0] * K
+    f = _ss((edt_obs[iy_, ix_] * K - 7) / 12) * _ss((edt_land[iy_, ix_] * K - 6) / 14) * _ss((dh - (RHO + 8)) / 14)
+    return np.clip(RH * 0.6 * n, -1.6 * RH, 1.6 * RH) * f
+
 # daratan
 LP2 = L(LP); S = ccw_fix(LP2, ls)
 used = np.unique(S); remap = -np.ones(len(LP), int); remap[used] = np.arange(len(used))
-pos = np.column_stack([LP2[used], np.full(len(used), LAND_H)])
+rel_v = relief_at(LP[used])
+pos = np.column_stack([LP2[used], LAND_H + rel_v])
+from scipy.interpolate import LinearNDInterpolator
+_rel_int = LinearNDInterpolator(LP[used], rel_v, fill_value=0.0)
+def rel_mesh(x, y): return float(_rel_int(x, y))   # tinggi relief permukaan mesh (px dasar), mendekati interpolasi segitiga
+_rr = [abs(rel_mesh(*p)) for r in roads for q in (r['pts'][::2],) for p in q if r['kind'] != 'bridge']
+_hh = [abs(rel_mesh(h[0] + dx_, h[1] + dy_)) for h in H for dx_, dy_ in ((0, 0), (RHO * 0.9, 0), (-RHO * 0.9, 0), (0, RHO * 0.9), (0, -RHO * 0.9))]
+print('relief di jalan: maks %.3f m | di tapak rumah: maks %.3f m' % (max(_rr), max(_hh)))
+print('relief: min %.2f max %.2f m, vertex %d' % (rel_v.min(), rel_v.max(), len(used)))
 m_green = g.material('Material_LpmGround', BASE)
 mi = g.mesh('TPX_GreenAreas_0', pos, remap[S], m_green, colors=col[used])
 green_node = g.node('TPX_GreenAreas_0', mesh=mi)
@@ -829,7 +867,7 @@ tree_nodes = []
 for i, (x, y, R) in enumerate(tr):
     lx, ly = to_local(x, y); s = R / 5.0
     tn_ = g.node('trunk', mesh=trunk_mesh); cn = g.node('crown', mesh=crown_meshes[0 if R < 3.6 else (1 if R < 5.8 else 2)])
-    tree_nodes.append(g.node('TPX_Trees_tree_%d' % i, t=[lx, ly, s - 1.0 + LAND_H], s=[s, s, s], children=[tn_, cn]))
+    tree_nodes.append(g.node('TPX_Trees_tree_%d' % i, t=[lx, ly, s - 1.0 + LAND_H + rel_mesh(x, y)], s=[s, s, s], children=[tn_, cn]))
 trees_root = g.node('TPX_Trees', children=tree_nodes)
 
 # rumput jarang: tekstur ringan di tanah. Satu mesh dekor (tanpa prefix TPX_, noCollide) => tidak ikut tabrakan/tinggi tanah.
@@ -854,20 +892,20 @@ if GRASS_ON:
             if ttree is not None:
                 dd, jj = ttree.query(np.array([float(px_), float(py_)]))
                 if dd * K < tr[jj][2] + 1.0: continue
-            tufts.append((x, y))
+            tufts.append((x, y, rel_mesh(float(px_), float(py_))))
     GV, GI, GCOL = [], [], []
-    for (x, y) in tufts:
+    for (x, y, zr) in tufts:
         hgt = GH * rng.uniform(0.4, 0.7); wd = 0.075 * rng.uniform(0.85, 1.3)
         a0 = rng.uniform(0, 2 * math.pi)
         for b in range(GB):
             a = a0 + b * 2 * math.pi / GB + rng.uniform(-0.4, 0.4)      # helai menyebar keluar dari tengah rumpun
             ca_, sa_ = math.cos(a), math.sin(a)
             bx, by = x + ca_ * 0.05, y + sa_ * 0.05
-            lean = hgt * rng.uniform(0.15, 0.4); bh = hgt * rng.uniform(0.75, 1.15)
+            lean = hgt * rng.uniform(0.15, 0.4); bh = hgt * rng.uniform(0.75, 1.15) + 0.12
             dx, dy = -sa_ * wd, ca_ * wd                                  # lebar helai tegak lurus arah condong
             n0 = len(GV)
-            GV += [(bx - dx, by - dy, LAND_H), (bx + dx, by + dy, LAND_H),
-                   (bx + ca_ * lean, by + sa_ * lean, LAND_H + bh)]
+            GV += [(bx - dx, by - dy, LAND_H + zr - 0.12), (bx + dx, by + dy, LAND_H + zr - 0.12),
+                   (bx + ca_ * lean, by + sa_ * lean, LAND_H + zr - 0.12 + bh)]
             GI += [n0, n0 + 1, n0 + 2]
             tint = rng.uniform(0.85, 1.15)
             GCOL += [[0.04 * tint, 0.42 * tint, 0.04 * tint]] * 2 + [[0.18 * tint, 0.88 * min(tint, 1.13), 0.08 * tint]]

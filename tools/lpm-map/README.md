@@ -41,6 +41,13 @@ Pengaturan lewat env: `SW` (lebar), `SWP` (toleransi penyederhanaan kontur, piks
 `SWE` (jarak maks titik kontur, m) -- semakin kecil `SWP`/`SWE` semakin halus tapi semakin banyak segitiga.
 Warna: `SW_TOP` / `SW_EDGE` di blok trotoar `build_lpm.py`.
 
+## Relief (bukit landai)
+Mesh daratan punya titik rapat (`GS` m, default 10) dan tinggi tiap titik = `LH` + relief (noise halus 2 skala, ~60 m & ~22 m).
+Amplitudo `RH` (default 1,0 m; `RH=0` = datar). Relief dipaksa nol di dekat pantai, jalan+trotoar, kotak fasilitas dan rumah,
+jadi semuanya tetap rata di `LH` (skrip mencetak selisih: jalan & tapak rumah harus ~0). Pohon dan rumput mengikuti permukaan
+mesh. JS membaca tinggi dari mesh, jadi karakter, rumah, dan tampilan Peta ikut otomatis.
+Variasi warna tanah (bercak terang/gelap/kering) ada di kode game: `groundVariation` di `maps.js` (mode Jelajahi; 0 = mati).
+
 ## Rumput
 Tekstur rumput jarang di tanah: satu mesh dekor `LpmGrass` (tanpa prefix `TPX_`, `noCollide`, jadi tidak ikut tabrakan/tinggi
 tanah). Tiap rumpun = 3 helai segitiga, ditaruh di grid teracak hanya di daratan yang jauh dari pantai, jalan+trotoar, rumah
