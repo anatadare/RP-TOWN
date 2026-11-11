@@ -838,7 +838,7 @@ trees_root = g.node('TPX_Trees', children=tree_nodes)
 grass_root = None
 GRASS_ON = os.environ.get("GRASS", "1") != "0"
 if GRASS_ON:
-    GC = float(os.environ.get("GC", "14")); GP = float(os.environ.get("GP", "0.55")); GH = float(os.environ.get("GH", "1.0"))
+    GC = float(os.environ.get("GC", "6.3")); GP = float(os.environ.get("GP", "0.55")); GH = float(os.environ.get("GH", "1.0"))
     rng = np.random.default_rng(7)
     ttree = cKDTree(np.array([[x, y] for x, y, _ in tr])) if tr else None
     tufts = []
@@ -873,7 +873,7 @@ if GRASS_ON:
     if GV:
         GV = np.array(GV, np.float32); GI = np.array(GI, np.uint32); GCOL = np.clip(np.array(GCOL, np.float32), 0, 1)
         GN = np.zeros_like(GV); GN[:, 2] = 1.0
-        gm = g.mesh('LpmGrass', GV, GI, g.material('Grass_tuft', [1.0, 1.0, 1.0]), normals=GN, colors=GCOL)
+        gm = g.mesh('LpmGrass', GV, GI, g.material('Grass_tuft', [1.0, 1.0, 1.0]), normals=None, colors=GCOL)
         grass_root = g.node('LpmGrass', mesh=gm, extras={'noCollide': True})
     print('rumput: %d rumpun, %d segitiga' % (len(tufts), len(GI) // 3 if GV is not None and len(GV) else 0))
 
