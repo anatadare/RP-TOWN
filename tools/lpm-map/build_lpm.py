@@ -832,6 +832,51 @@ for i, (x, y, R) in enumerate(tr):
     tree_nodes.append(g.node('TPX_Trees_tree_%d' % i, t=[lx, ly, s - 1.0 + LAND_H], s=[s, s, s], children=[tn_, cn]))
 trees_root = g.node('TPX_Trees', children=tree_nodes)
 
+# rumput jarang: tekstur ringan di tanah. Satu mesh dekor (tanpa prefix TPX_, noCollide) => tidak ikut tabrakan/tinggi tanah.
+# Tiap rumpun = 3 helai segitiga tipis. Titik di grid teracak (GC m), dilewati acak (GP), hanya di daratan yang
+# jauh dari pantai, jalan+trotoar, rumah, dan pohon. env: GC (jarak grid), GP (peluang ada), GH (tinggi), GRASS=0 mematikan.
+grass_root = None
+GRASS_ON = os.environ.get("GRASS", "1") != "0"
+if GRASS_ON:
+    GC = float(os.environ.get("GC", "14")); GP = float(os.environ.get("GP", "0.55")); GH = float(os.environ.get("GH", "1.0"))
+    rng = np.random.default_rng(7)
+    ttree = cKDTree(np.array([[x, y] for x, y, _ in tr])) if tr else None
+    tufts = []
+    for gx in np.arange(GC / 2, WM, GC):
+        for gy in np.arange(GC / 2, HM, GC):
+            if rng.random() > GP: continue
+            x = gx + rng.uniform(-0.45, 0.45) * GC; y = gy + rng.uniform(-0.45, 0.45) * GC
+            px_, py_ = to_px(x, y); ix, iy = int(round(float(px_))), int(round(float(py_)))
+            if not (0 <= ix < IW and 0 <= iy < IH) or not land[iy, ix]: continue
+            if edt_land[iy, ix] * K < 3.0 or edt_obs[iy, ix] * K < 1.5: continue
+            if htree.query(np.array([float(px_), float(py_)]))[0] * K < RHO + 1.5: continue
+            if ttree is not None:
+                dd, jj = ttree.query(np.array([float(px_), float(py_)]))
+                if dd * K < tr[jj][2] + 1.0: continue
+            tufts.append((x, y))
+    GV, GI, GCOL = [], [], []
+    for (x, y) in tufts:
+        hgt = GH * rng.uniform(0.35, 0.6); wd = 0.09 * rng.uniform(0.8, 1.3)
+        a0 = rng.uniform(0, math.pi)
+        for b in range(3):
+            a = a0 + b * math.pi / 3 + rng.uniform(-0.2, 0.2)
+            ox, oy = math.cos(a) * 0.12 * (b - 1), math.sin(a) * 0.12 * (b - 1)
+            lean = rng.uniform(0.05, 0.22); la = rng.uniform(0, 2 * math.pi)
+            bh = hgt * rng.uniform(0.75, 1.15)
+            bx, by = x + ox, y + oy; dx, dy = math.cos(a) * wd, math.sin(a) * wd
+            n0 = len(GV)
+            GV += [(bx - dx, by - dy, LAND_H), (bx + dx, by + dy, LAND_H),
+                   (bx + math.cos(la) * lean, by + math.sin(la) * lean, LAND_H + bh)]
+            GI += [n0, n0 + 1, n0 + 2]
+            tint = rng.uniform(0.9, 1.1)
+            GCOL += [[0.55 * tint, 0.78 * tint, 0.35 * tint]] * 2 + [[0.85 * min(tint, 1.1), 1.0, 0.6 * tint]]
+    if GV:
+        GV = np.array(GV, np.float32); GI = np.array(GI, np.uint32); GCOL = np.clip(np.array(GCOL, np.float32), 0, 1)
+        GN = np.zeros_like(GV); GN[:, 2] = 1.0
+        gm = g.mesh('LpmGrass', GV, GI, g.material('Grass_tuft', [1.0, 1.0, 1.0]), normals=GN, colors=GCOL)
+        grass_root = g.node('LpmGrass', mesh=gm, extras={'noCollide': True})
+    print('rumput: %d rumpun, %d segitiga' % (len(tufts), len(GI) // 3 if GV is not None and len(GV) else 0))
+
 # bangunan: rumah warga (penampung -> diganti Rumah LPM oleh lpmHouses.js) + kotak fasilitas
 def box_tris(w, dd, h):
     x0, x1, y0, y1, z0, z1 = -w / 2, w / 2, -dd / 2, dd / 2, 0.0, h
@@ -877,7 +922,8 @@ for b in sorted(placed_boxes, key=lambda b: b['n']):
                         'marker_x': float(mx), 'marker_y': float(my)})
 buildings_root = g.node('TPX_Buildings', children=b_children)
 flag = g.node('LpmFixedLayout', extras={'version': 1, 'width': WM, 'height': HM, 'houseScale': KH})
-for n_ in (buildings_root, roads_root, bridges_root, banks_root, water_root, trees_root, green_root, flag): g.root(n_)
+for n_ in (buildings_root, roads_root, bridges_root, banks_root, water_root, trees_root, green_root, grass_root, flag):
+    if n_ is not None: g.root(n_)
 size = g.write(OUT + 'lpm_new.glb')
 print('GLB %.2f MB' % (size / 1e6), 'node', len(g.nodes))
 json.dump({'width': WM, 'height': HM, 'houses': house_records, 'facilities': fac_records,

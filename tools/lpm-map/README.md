@@ -41,6 +41,11 @@ Pengaturan lewat env: `SW` (lebar), `SWP` (toleransi penyederhanaan kontur, piks
 `SWE` (jarak maks titik kontur, m) -- semakin kecil `SWP`/`SWE` semakin halus tapi semakin banyak segitiga.
 Warna: `SW_TOP` / `SW_EDGE` di blok trotoar `build_lpm.py`.
 
+## Rumput
+Tekstur rumput jarang di tanah: satu mesh dekor `LpmGrass` (tanpa prefix `TPX_`, `noCollide`, jadi tidak ikut tabrakan/tinggi
+tanah). Tiap rumpun = 3 helai segitiga, ditaruh di grid teracak hanya di daratan yang jauh dari pantai, jalan+trotoar, rumah
+dan pohon. Env: `GC` (jarak grid m, default 14), `GP` (peluang ada, 0,55), `GH` (skala tinggi, 1,0), `GRASS=0` mematikan.
+
 ## Penyambungan jalan
 Ekstraksi jalan dari gambar memecah jaringan jadi ~29 potongan (celah di bawah ikon marker, persimpangan,
 garis kuning putus-putus). `build_lpm.py` menyambung ujung jalan yang menggantung ke jalan terdekat di komponen
