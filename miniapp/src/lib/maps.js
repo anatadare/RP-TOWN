@@ -72,6 +72,9 @@ export const MAPS = [
     key: 'lpm',
     name: 'LPM',
     modelUrl: '/models/lpm.glb',
+    // Tampilan luar (Peta) pakai gambar 2D ringan dari glb ini (tools/lpm-map/build_lpm.py -> out/lpm_preview.webp), bukan Peta 3D;
+    // lpm.glb (besar) baru dimuat saat pemain masuk mode Jelajahi. Hapus baris ini untuk kembali ke Peta 3D.
+    preview2d: '/maps/lpm-preview.webp',
     // Daratan di glb sudah +3,2 m di atas air (LAND_H di tools/lpm-map/build_lpm.py; tebing tepi pantai/sungai/danau)
     // -> landRaise 0,8 membuat total beda tinggi daratan-laut di tampilan Peta 4 m (dulu 1,2 + 0,8 = 2 m).
     landRaise: 0.8,

@@ -2981,3 +2981,70 @@ body {
   background: rgba(234, 246, 255, 0.14);
   border-color: rgba(234, 246, 255, 0.35);
 }
+
+/* ===== Preview peta 2D (LPM) ===== */
+.map2d-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  background: #2b86c9;
+  cursor: grab;
+}
+.map2d-viewport:active { cursor: grabbing; }
+.map2d-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  max-width: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  will-change: transform;
+}
+.map2d-img.is-loaded { opacity: 1; }
+.map2d-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  margin: 0;
+  pointer-events: none;
+}
+.map2d-billboard {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 84px);
+  transform: translateX(-50%);
+  width: min(52vw, 220px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
+  z-index: 3;
+}
+.map2d-billboard-lamps { display: flex; gap: 14%; justify-content: center; width: 88%; margin-bottom: 3px; }
+.map2d-billboard-lamps i { width: 8px; height: 5px; border-radius: 2px; background: #fff2c2; box-shadow: 0 0 6px 1px #fff2c2; }
+.map2d-billboard-frame { width: 100%; background: #3a3f4a; padding: 4px; border-radius: 4px; }
+.map2d-billboard-panel {
+  width: 100%;
+  aspect-ratio: 1 / 0.42;
+  background: #fff;
+  border-radius: 2px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c5c9d3;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+.map2d-billboard-panel img { width: 100%; height: 100%; object-fit: cover; }
+.map2d-billboard-pole { width: 7px; height: 16px; background: #5a6172; border-radius: 0 0 2px 2px; }

@@ -59,6 +59,13 @@ pohon, dan rumah; tinggi mengikuti permukaan relief.
   memudar ke warna rumput. `DIRT=0` mematikan.
 `GRASS=0` mematikan semuanya. Total sekitar 4 MB di glb (sekitar 1,4 MB setelah gzip).
 
+## Preview 2D (tampilan luar)
+`build_lpm.py` juga merender `out/lpm_preview.webp` (atas-ke-bawah: laut berlapis, relief ber-hillshade, jalan+trotoar,
+jembatan, pohon, rumah, kotak fasilitas bernomor, nama pulau) dari data yang sama dengan glb. Salin ke
+`miniapp/public/maps/lpm-preview.webp`. `maps.js` (`preview2d`) membuat layar Peta LPM memakai gambar ini lewat
+`MapPreview2D.jsx` (geser + cubit zoom + billboard), sehingga `lpm.glb` baru diunduh saat pemain masuk Jelajahi.
+Env: `PREV_W` (lebar px, 2400), `PREV_Q` (kualitas webp, 86), `PREV=0` melewati. `out/lpm_preview_check.png` = salinan PNG untuk dicek.
+
 ## Penyambungan jalan
 Ekstraksi jalan dari gambar memecah jaringan jadi ~29 potongan (celah di bawah ikon marker, persimpangan,
 garis kuning putus-putus). `build_lpm.py` menyambung ujung jalan yang menggantung ke jalan terdekat di komponen

@@ -8,6 +8,7 @@ import GatchaReveal from './components/GatchaReveal'
 import Market from './components/Market'
 import { requestKuaInvite, kuaInviteErrorMessage } from './lib/kua'
 import TownMap3D from './components/TownMap3D'
+import MapPreview2D from './components/MapPreview2D'
 import TownWalk from './components/TownWalk'
 import HousingDistrict from './components/HousingDistrict'
 import BuildingSearch from './components/BuildingSearch'
@@ -546,12 +547,12 @@ export default function App() {
             ))}
           </div>
 
-          <BuildingSearch
+          {!activeMap.preview2d && <BuildingSearch
             key={activeMapKey}
             buildings={buildingDirectory}
             mapName={activeMap.name}
             onSelectBuilding={handleSelectBuildingFromSearch}
-          />
+          />}
         </div>
       )}
 
@@ -562,7 +563,11 @@ export default function App() {
         <Landing citizen={citizen} phase={phase} />
       )}
 
-      {!loading && !error && screen === 'map' && (
+      {!loading && !error && screen === 'map' && activeMap.preview2d && (
+        <MapPreview2D key={activeMap.key} src={activeMap.preview2d} billboard={activeMap.billboard} />
+      )}
+
+      {!loading && !error && screen === 'map' && !activeMap.preview2d && (
         <TownMap3D
           mapKey={activeMap.key}
           modelUrl={activeMap.modelUrl}

@@ -775,7 +775,8 @@ function TownModel({
 
 // Preload semua peta yang terdaftar (bukan cuma yang lagi aktif), biar pas
 // user pindah peta modelnya sudah kebaca duluan di background dan gak nunggu.
-MAPS.forEach((map) => useGLTF.preload(map.modelUrl))
+// peta ber-preview 2D (mis. LPM, glb besar) tidak ikut dimuat di muka: baru dimuat saat Jelajahi
+MAPS.filter((map) => !map.preview2d).forEach((map) => useGLTF.preload(map.modelUrl))
 useGLTF.preload(OCEAN_SURFACE_URL)
 
 // Naro posisi kamera SEKALI aja pas model pertama kali kebaca, fokus ke area

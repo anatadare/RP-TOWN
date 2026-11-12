@@ -1098,6 +1098,119 @@ json.dump({'width': WM, 'height': HM, 'houses': house_records, 'facilities': fac
            'bridges': [{'name': n_, 'pts': L(p_).round(2).tolist()} for n_, p_ in bridge_lines],
            'trees': len(tr), 'k_m_per_px': K}, open(OUT + 'lpm_layout_world.json', 'w'))
 
+# ------------------------------------------------------------------ peta 2D (preview tampilan luar)
+# Gambar atas-ke-bawah yang dirender dari data yang sama dengan glb (garis pantai, relief, jalan, jembatan, pohon, rumah,
+# fasilitas), jadi selalu cocok dengan peta game. Dipakai app sebagai pengganti Peta 3D yang berat (lihat maps.js `preview2d`).
+# env: PREV_W (lebar px, 2400), PREV_Q (kualitas webp, 86), PREV=0 melewati.
+if os.environ.get("PREV", "1") != "0":
+    from PIL import Image, ImageDraw, ImageFont
+    OW = int(os.environ.get("PREV_W", "2400")); sc = OW / (rx1 - rx0); OH = int(round((ry1 - ry0) * sc)); pm = sc / K   # px keluaran per meter
+    x0i, y0i = int(rx0), int(ry0)
+    def O(p):    # piksel dasar -> piksel keluaran (float)
+        p = np.asarray(p, float); return np.stack([(p[..., 0] - rx0) * sc, (p[..., 1] - ry0) * sc], -1)
+    def Oi(p): return np.round(O(p) * 16).astype(np.int32)      # untuk shift=4 (anti-alias sub-piksel)
+    SH = 4
+    lf = land[y0i:int(ry1) + 1, x0i:int(rx1) + 1].astype(np.float32)
+    lm = cv2.resize(cv2.GaussianBlur(lf, (0, 0), 1.0), (OW, OH), interpolation=cv2.INTER_CUBIC)
+    la = np.clip((lm - 0.5) * 5 + 0.5, 0, 1)[..., None]
+    ew = cv2.resize(edt_water[y0i:int(ry1) + 1, x0i:int(rx1) + 1], (OW, OH), interpolation=cv2.INTER_LINEAR)
+    tw = np.clip(ew * K / 220.0, 0, 1)[..., None] ** 0.7
+    SHALLOW, DEEP = np.array([104, 205, 232], np.float32), np.array([30, 120, 196], np.float32)
+    img = SHALLOW * (1 - tw) + DEEP * tw
+    # bayangan tebing di air (cahaya dari barat laut)
+    shd = cv2.GaussianBlur(np.roll(np.roll(la[..., 0], int(2.2 * pm * 1.6), 0), int(1.6 * pm * 1.6), 1), (0, 0), 2.0 * pm)
+    img *= (1 - 0.32 * np.clip(shd - la[..., 0], 0, 1))[..., None]
+    # tanah: hijau + bercak noise + hillshade dari relief
+    cw, ch = int(WM / 4.0), int(HM / 4.0)
+    gxs = rx0 + (np.arange(cw) + 0.5) * 4.0 / K; gys = ry1 - (np.arange(ch) + 0.5) * 4.0 / K
+    GXg, GYg = np.meshgrid(gxs, gys)
+    Rg = relief_at(np.stack([GXg.ravel(), GYg.ravel()], 1)).reshape(ch, cw)
+    Rg = np.flipud(Rg)                                           # baris 0 = utara (sama dgn gambar)
+    gy_, gx_ = np.gradient(Rg, 4.0, 4.0)
+    shade = np.clip(1.0 + 0.9 * (0.5 * gx_ + 0.5 * gy_), 0.7, 1.3)
+    shade = cv2.resize(shade.astype(np.float32), (OW, OH), interpolation=cv2.INTER_CUBIC)
+    nn = np.flipud(0.65 * _n1[:ch + 1, :cw + 1][:ch, :cw] + 0.35 * _n2[:ch + 1, :cw + 1][:ch, :cw])
+    nn = cv2.resize(nn.astype(np.float32), (OW, OH), interpolation=cv2.INTER_CUBIC)
+    n3f = cv2.resize(np.flipud(_n3[:ch, :cw]).astype(np.float32), (OW, OH), interpolation=cv2.INTER_CUBIC)
+    lum = np.clip(1.0 + 0.10 * nn, 0.8, 1.2) * shade
+    dry = np.clip((n3f - 0.7) / 1.2, 0, 1) * 0.45
+    G0 = np.array([108, 190, 70], np.float32)
+    DRYC = np.array([176, 190, 84], np.float32)
+    land_rgb = (G0 * (1 - dry[..., None]) + DRYC * dry[..., None]) * lum[..., None]
+    # pasir tipis di pantai + garis tebing gelap
+    dl = cv2.resize(edt_land[y0i:int(ry1) + 1, x0i:int(rx1) + 1], (OW, OH), interpolation=cv2.INTER_LINEAR) * K
+    sand = np.clip(1 - (dl - 1.0) / 3.5, 0, 1)[..., None] * 0.9
+    land_rgb = land_rgb * (1 - sand) + np.array([236, 220, 170], np.float32) * sand
+    land_rgb *= (1 - 0.18 * np.clip(1 - dl / 1.1, 0, 1))[..., None]
+    img = img * (1 - la) + land_rgb * la
+    cv2s = np.clip(img, 0, 255).astype(np.uint8)[..., ::-1].copy()       # BGR
+    def poly_line(pts, col, w_m):
+        cv2.polylines(cv2s, [Oi(pts)], False, col, max(1, int(round(w_m * pm))), cv2.LINE_AA, SH)
+    # jalan: trotoar (gelap) -> aspal; jembatan terakhir
+    for kind in ('minor', 'main'):
+        for r in roads:
+            if r['kind'] == kind: poly_line(r['pts'], (84, 82, 80), WIDTH_M[kind] + 2 * SIDEWALK_W)
+    for kind, col in (('minor', (126, 124, 120)), ('main', (104, 102, 98))):
+        for r in roads:
+            if r['kind'] == kind: poly_line(r['pts'], col, WIDTH_M[kind])
+    for r in roads:
+        if r['kind'] == 'bridge': poly_line(r['pts'], (70, 70, 74), WIDTH_M['bridge'] + 1.6)
+    for r in roads:
+        if r['kind'] == 'bridge': poly_line(r['pts'], (150, 150, 148), WIDTH_M['bridge'])
+    ov_s = np.zeros_like(cv2s); ov_a = np.zeros((OH, OW), np.uint8)
+    # bayangan pohon & rumah (digambar ke lapisan lalu dicampur gelap)
+    sdx, sdy = 0.9 * pm * 1.4, 1.2 * pm * 1.4
+    for (x, y, R) in tr:
+        c = O([x, y]); cv2.circle(ov_a, (int(round((c[0] + sdx * R * 0.35) * 16)), int(round((c[1] + sdy * R * 0.35) * 16))), int(round(R * pm * 16)), 255, -1, cv2.LINE_AA, SH)
+    HP = []
+    for i in range(len(H)):
+        fx, fy = face[i]; ang = math.atan2(-fy, fx) - math.pi / 2
+        ca, sa = math.cos(ang), math.sin(ang); w, dd_ = HOUSE_W / K, HOUSE_D / K
+        pts = np.array([(H[i][0] + ca * x - sa * y, H[i][1] + sa * x + ca * y) for x, y in [(-w / 2, -dd_ / 2), (w / 2, -dd_ / 2), (w / 2, dd_ / 2), (-w / 2, dd_ / 2)]])
+        HP.append(pts)
+        cv2.fillPoly(ov_a, [Oi(pts + np.array([1.6, 2.2]) / K)], 255, cv2.LINE_AA, SH)
+    a = (cv2.GaussianBlur(ov_a, (0, 0), 0.8 * pm).astype(np.float32) / 255.0 * 0.38)[..., None]
+    cv2s = (cv2s * (1 - a)).astype(np.uint8)
+    # pohon: tajuk 2 lapis (gelap -> terang) + highlight
+    CR = [(88, 168, 88), (104, 176, 96), (120, 184, 104)]
+    for (x, y, R) in tr:
+        c = O([x, y]); rp = R * pm
+        base = CR[0 if R < 3.6 else (1 if R < 5.8 else 2)][::-1]
+        cv2.circle(cv2s, (int(round(c[0] * 16)), int(round(c[1] * 16))), int(round(rp * 16)), tuple(int(v * 0.72) for v in base), -1, cv2.LINE_AA, SH)
+        cv2.circle(cv2s, (int(round((c[0] - rp * 0.08) * 16)), int(round((c[1] - rp * 0.1) * 16))), int(round(rp * 0.86 * 16)), base, -1, cv2.LINE_AA, SH)
+        cv2.circle(cv2s, (int(round((c[0] - rp * 0.28) * 16)), int(round((c[1] - rp * 0.3) * 16))), int(round(rp * 0.42 * 16)), tuple(min(255, int(v * 1.22)) for v in base), -1, cv2.LINE_AA, SH)
+    # rumah: atap terang + tepi gelap + garis depan
+    ROOFS = [(232, 226, 214), (216, 212, 206), (226, 214, 200), (210, 218, 222)]
+    for i, pts in enumerate(HP):
+        cv2.fillPoly(cv2s, [Oi(pts)], ROOFS[i % len(ROOFS)][::-1], cv2.LINE_AA, SH)
+        cv2.polylines(cv2s, [Oi(pts)], True, (110, 108, 106), max(1, int(round(0.5 * pm))), cv2.LINE_AA, SH)
+        m = (pts[0] + pts[1]) / 2; m2 = (pts[2] + pts[3]) / 2
+        cv2.line(cv2s, tuple(Oi(0.5 * (pts[0] + pts[3]))[:2] // 1), tuple(Oi(0.5 * (pts[1] + pts[2]))[:2] // 1), (170, 168, 166), 1, cv2.LINE_AA, SH) if False else None
+    # fasilitas bernomor
+    for b in placed_boxes:
+        c_ = [int(v * 255) for v in FAC_COL[b['c']]][::-1]
+        cv2.fillPoly(cv2s, [Oi(b['poly'] + np.array([1.8, 2.4]) / K)], (40, 60, 40), cv2.LINE_AA, SH) if False else None
+        cv2.fillPoly(cv2s, [Oi(b['poly'])], c_, cv2.LINE_AA, SH)
+        cv2.polylines(cv2s, [Oi(b['poly'])], True, tuple(int(v * 0.55) for v in c_), max(1, int(round(0.7 * pm))), cv2.LINE_AA, SH)
+    pil = Image.fromarray(cv2s[..., ::-1]); dr = ImageDraw.Draw(pil, 'RGBA')
+    def font(sz, bold=True):
+        for pth in ('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf' if bold else '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',):
+            try: return ImageFont.truetype(pth, sz)
+            except Exception: pass
+        return ImageFont.load_default()
+    fn = font(int(max(10, 5.2 * pm)))
+    for b in placed_boxes:
+        c = O([b['cx'], b['cy']]); t = str(b['n'])
+        dr.text((c[0], c[1]), t, font=fn, fill=(255, 255, 255, 255), anchor='mm', stroke_width=max(1, int(0.5 * pm)), stroke_fill=(0, 0, 0, 150))
+    fl = font(int(max(18, OW / 52)))
+    for nm, (cx, cy) in ISL_CENTERS:
+        c = O([cx, cy]); txt = nm.upper()
+        dr.text((c[0], c[1]), ' '.join(txt), font=fl, fill=(255, 255, 255, 235), anchor='mm', stroke_width=max(2, OW // 800), stroke_fill=(20, 60, 40, 190))
+    pq = int(os.environ.get("PREV_Q", "86"))
+    pil.save(OUT + 'lpm_preview.webp', quality=pq, method=5)
+    print('preview 2D: %dx%d, %.2f MB, px/m %.3f' % (OW, OH, os.path.getsize(OUT + 'lpm_preview.webp') / 1e6, pm))
+    pil.save(OUT + 'lpm_preview_check.png')
+
 # ------------------------------------------------------------------ gambar debug (atas-ke-bawah)
 S = 0.33
 ov = np.zeros((int(IH * S), int(IW * S), 3), np.uint8); ov[:] = (224, 192, 136)  # BGR laut
